@@ -2096,3 +2096,86 @@ async def handle_office_hold(payload: Dict[str, Any], request: Request):
         "choice_prompt": choice_prompt
     }
 
+
+@router.post("/notify_callback_queue")
+async def notify_callback_queue(request: Request):
+    """
+    Broadcast callback queue summary to all on-call agents via SMS.
+    Requires Bearer token. No input payload needed.
+    
+    Returns: { ok, sent_count, queue_depth, message_preview }
+    """
+    _auth(request)
+    
+    # Get pending callbacks
+    pending = list(callback_queue.find({"status": "pending"}).sort([("requested_at", ASCENDING)]).limit(10))
+    
+    if not pending:
+        return {
+            "ok": True,
+            "sent_count": 0,
+            "queue_depth": 0,
+            "message": "No pending callbacks"
+        }
+    
+    queue_depth = callback_queue.count_documents({"status": "pending"})
+    
+    # Build summary for SMS (max 320 chars)
+    first = pending[0]
+    caller = first.get("caller", {})
+    inmate = first.get("inmate", {})
+    
+    summary = f"Callback Queue: {queue_depth} pending. Next: {inmate.get('full_name', 'Unknown')} ({first.get('county', '?')}), Caller: {caller.get('name', '?')} {caller.get('phone', '?')}"
+    
+    if len(summary) > 320:
+        summary = summary[:317] + "..."
+    
+    # Send to all agents
+    to_phones_str = settings.ONCALL_AGENTS_JSON or "[]"
+    try:
+        import json as _json
+        agents_config = _json.loads(to_phones_str)
+        to_phones = []
+        for agent_name, agent_info in agents_config.items():
+            ph = agent_info.get("phone") if isinstance(agent_info, dict) else None
+            if ph and _e164(ph):
+                to_phones.append(ph)
+    except Exception:
+        to_phones = []
+    
+    if not to_phones:
+        return {
+            "ok": True,
+            "sent_count": 0,
+            "queue_depth": queue_depth,
+            "message": "No agent phones configured"
+        }
+    
+    # Send SMS via send_sms
+    sent_count = 0
+    errors = []
+    for phone in to_phones:
+        try:
+            result = send_sms(phone, summary)
+            if result:
+                sent_count += 1
+        except Exception as e:
+            errors.append({"phone": phone, "error": str(e)})
+    
+    logs.insert_one({
+        "type": "telnyx_notify_callback_queue",
+        "queue_depth": queue_depth,
+        "sent_count": sent_count,
+        "total_recipients": len(to_phones),
+        "errors": errors,
+        "ts": int(time.time())
+    })
+    
+    return {
+        "ok": True,
+        "sent_count": sent_count,
+        "queue_depth": queue_depth,
+        "total_recipients": len(to_phones),
+        "errors": errors if errors else None
+    }
+
