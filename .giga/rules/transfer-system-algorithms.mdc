@@ -1,35 +1,41 @@
 ---
-description: Documentation for complex transfer routing algorithms including agent scheduling, language preferences, and warm transfer workflows
+description: Documents core transfer routing algorithms including availability, language preferences, and warm transfer workflows
 ---
 
 
 # transfer-system-algorithms
 
-The transfer system implements specialized workflows for warrant service and inmate tracking communications:
+The transfer system implements intelligent call routing based on county jurisdiction and agent availability with several key components:
 
-## Agent Availability Routing
-- Consent-based warm transfer system coordinates handoffs between initial contact and law enforcement agents
-- Configurable hold states with custom audio during transfer wait periods
-- Multi-attempt calling sequences with timeout thresholds
+## Core Transfer Routing
 
-## Transfer Acceptance Flows
-- DTMF-based accept/decline decision points for receiving agents
-- Agent whisper messaging system provides case context before connection
-- Fallback routing logic when primary agent unavailable
+`app/main.py` manages warm transfer workflows through:
+- County jurisdiction-based routing logic
+- Hold music state management during active transfers 
+- DTMF-based transfer acceptance/rejection by agents
 
-## Communication Channels
-- Hybrid SMS and voice channel coordination
-- Bail status notification integration
-- Real-time status updates during transfer process
+## Agent Context Handling
 
-## Location Integration 
-- Geographic agent assignment based on warrant jurisdiction
-- Last known location tracking during transfer coordination
-- Administrative geofencing for permitted transfer zones
+The system preserves and transmits case context during transfers via:
+- Expanded agent whisper functionality
+- Case details preservation across transfer hops
+- Jurisdiction-specific routing rules
 
-Importance Score: 75/100
+## Scoring: 75/100
+Key factors:
+- Complex jurisdiction-based routing
+- Multi-step transfer workflow management  
+- Agent availability coordination
+- Context preservation requirements
+- Critical communication handoff points
 
-The score reflects the specialized nature of law enforcement transfer workflows while acknowledging this is a supporting rather than core system component.
+## Domain-Specific Features
+
+1. County-aware routing logic maps calls to appropriate jurisdictions
+2. Agent whisper system provides case context
+3. Hold state management during transfers
+4. DTMF-based transfer acceptance workflow
+5. Multi-jurisdiction transfer handling
 
 $END$
 

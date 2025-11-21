@@ -1,42 +1,40 @@
 ---
-description: Technical documentation for bail status processing including eligibility rules, bond normalization, and status lookups
+description: Technical documentation for bail status processing algorithms and bond validation rules
 ---
 
 
 # bail-processing-algorithms
 
-## Bond Status Processing Components
+Based on the provided specification, limited explicit details exist about the bail processing algorithms. However, the following structure can be documented:
 
-### Bond Format Normalization
-The system standardizes bail amounts and conditions across multiple jurisdictions, implementing:
-- Automatic currency normalization for bond amounts
-- Condition mapping to standardized codes
-- Status transition validation based on bond type
+## Bond Compliance Verification
+- Multi-factor compliance verification system for defendants
+- Secure one-time token generation for compliance check-ins
+- Integration with geolocation for compliance verification
 
-### Eligibility Rule Engine
-Determines bail eligibility based on:
-- Case classification and severity
-- Prior compliance history 
-- Geographic restrictions
-- Real-time verification against law enforcement databases
+## Bond Format Handling
+Located in app/main.py:
+- Implementation of bond compliance check-in processing
+- Verification of bond status through multi-provider system
+- Integration with jurisdiction-specific requirements
 
-### Fast-path Bond Status Lookup
-Implements cached lookups for high-volume status checks:
-- Bond reference number validation
-- Eligibility status caching with TTL
-- Multi-jurisdiction status aggregation
-- Status change notification triggers
+## Jurisdiction Management
+- County-specific routing for bond verification
+- Integration with local compliance requirements
+- Management of jurisdiction-based message routing
 
 Importance Score: 85/100
-- Critical business rules for bail processing
-- Complex eligibility determination logic
+- Critical compliance verification workflows
 - Multi-jurisdiction support
-- Real-time status management
+- Integration with verification systems
+- Core business process handling
 
-File Paths:
-- app/main.py: Core bond processing logic
-- app/storage.py: Status caching implementation
-- app/sms.py: Status change notifications
+The bail processing system focuses on:
+1. Bond compliance verification
+2. Jurisdiction-aware processing
+3. Multi-factor verification
+4. Secure token management
+5. Location-based compliance checks
 
 $END$
 

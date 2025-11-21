@@ -1,49 +1,65 @@
 ---
-description: Documents core data models and relationships between key business entities in bond compliance monitoring system
+description: Specification for analyzing data models and relationships in bond compliance monitoring systems
 ---
 
 
 # data-models-relationships
 
-Core business domain entities:
+## Core Data Models
 
-1. Bond Compliance Records
-- Tracks check-in history and verification status
-- Links between inmates, cases and verification attempts
-- Stores geolocation data and timestamps for compliance events
-- Associates compliance photos with verification sessions
+The system revolves around the following key entities and their relationships:
 
-2. Inmate Management
-- Tracks inmate status, bond details and case assignments
-- Links to bond compliance verification records
-- Associates with agent contact records and notification preferences
-- Maintains audit trail of status changes
+1. Defendants
+- Connected to bond compliance records
+- Associated with jurisdiction/county data
+- Linked to GPS check-in history and photo verifications
 
-3. Location Verification
-- Caches verified location results with TTL
-- Links geographic coordinates to compliance sessions
-- Associates VPN/proxy detection results
-- Maps boundaries for allowed check-in areas
+2. Compliance Records
+- Tracks bond verification status
+- Stores GPS coordinates and accuracy data
+- Contains photo verification timestamps
+- Links to SMS notification history
 
-4. Communication Records
-- Stores multi-channel notification statuses (SMS, WhatsApp)
-- Links messages to compliance events
-- Tracks message delivery attempts and fallbacks
-- Associates templates with notification types
+3. Agent Records
+- Maps to jurisdiction assignments
+- Contains warm transfer capabilities
+- Stores case context for whisper functionality
 
-Key Relationships:
-- Inmates -> Cases (1:M)
-- Cases -> Bond Records (1:1)  
-- Bond Records -> Compliance Events (1:M)
-- Compliance Events -> Location Verifications (1:1)
-- Agents -> Cases (M:M)
-- Notifications -> Compliance Events (M:1)
+4. Location Data
+- Geolocation verification points
+- Accuracy radius calculations 
+- VPN/proxy detection flags
+- Multi-provider verification status
 
-Importance Score: 90/100
-- Critical domain entities for bond compliance
-- Complex relationships between verification components
-- Core audit trail requirements
-- Mission-critical tracking of inmates and cases
+5. Communication Records
+- Multi-provider message delivery status
+- Jurisdiction-specific routing data
+- One-time token associations
+- SMS template mappings
+
+## Key Relationships
+
+1. Defendant -> Compliance
+- One-to-many relationship tracking verification events
+- Links GPS data to photo submissions
+- Maps notification attempts and responses
+
+2. Agent -> Jurisdiction
+- Many-to-many mapping for coverage
+- Links to warm transfer capabilities
+- Associates case context data
+
+3. Location -> Compliance
+- One-to-one mapping per verification event
+- Ties accuracy data to compliance checks
+- Links proxy detection results
+
+4. Communication -> Defendant
+- One-to-many tracking of notifications
+- Maps provider delivery status
+- Links verification tokens
+
+Importance Score: 95/100
 
 $END$
 

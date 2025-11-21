@@ -567,9 +567,106 @@ def _transfer_numbers_by_schedule(county: Optional[str], lang: Optional[str] = N
 # ---------- FAST PATH over simple_* collections ----------
 SIMPLE_COUNTIES = ["harris", "brazoria", "galveston", "fortbend"]
 
-def _list_simple_cols():
+def _normalize_county_key(county: Optional[str]) -> Optional[str]:
+    if not county:
+        return None
+    key = re.sub(r"[^a-z0-9]", "", county.lower())
+    suffixes = ["county", "countyjail", "parish", "borough", "jail", "co"]
+    changed = True
+    while key and changed:
+        changed = False
+        for suffix in suffixes:
+            if key.endswith(suffix):
+                key = key[: -len(suffix)]
+                changed = True
+                break
+    return key or None
+
+def _county_matches(record_county: Optional[str], requested: Optional[str]) -> bool:
+    if not requested:
+        return True
+    req = _normalize_county_key(requested)
+    rec = _normalize_county_key(record_county)
+    return bool(req and rec and req == rec)
+
+def _build_county_patterns(county: Optional[str]) -> List[str]:
+    if not county:
+        return []
+    trimmed = county.strip()
+    if not trimmed:
+        return []
+    patterns = [trimmed]
+    simplified = re.sub(r"(?i)\b(county|co\.?|parish|borough)\b", "", trimmed).strip()
+    if simplified and simplified not in patterns:
+        patterns.append(simplified)
+    return [p for p in patterns if p]
+
+def _custody_for_requested_county(person_id: str, county: Optional[str]) -> Optional[dict]:
+    if not person_id:
+        return None
+    if not county:
+        return _latest_custody(person_id)
+
+    latest = _latest_custody(person_id)
+    if latest and _county_matches(latest.get("county"), county):
+        return latest
+
+    for pattern in _build_county_patterns(county):
+        regex = {"$regex": re.escape(pattern), "$options": "i"}
+        specific = custody_events.find_one(
+            {"person_id": person_id, "county": regex},
+            sort=[("scraped_at", -1)]
+        )
+        if specific and _county_matches(specific.get("county"), county):
+            return specific
+    return None
+
+def _lookup_person_by_name(full_name: str, dob: Optional[str], county: Optional[str]) -> tuple[Optional[dict], Optional[dict]]:
+    name_variants = _name_variants(full_name)
+    name_filters: List[Dict[str, Any]] = []
+    for variant in name_variants or [full_name]:
+        name_filters.append({"full_name": {"$regex": f"^{re.escape(variant)}$", "$options": "i"}})
+
+    if not name_filters:
+        name_filters.append({"full_name": {"$regex": f"^{re.escape(full_name)}$", "$options": "i"}})
+
+    if dob:
+        q: Dict[str, Any] = {"$and": [{"dob": dob}, {"$or": name_filters}]}
+    else:
+        q = {"$or": name_filters}
+
+    cursor = persons.find(q).limit(10)
+    for pdoc in cursor:
+        pid = str(pdoc.get("_id"))
+        custody = _custody_for_requested_county(pid, county)
+        if county:
+            if custody:
+                return pdoc, custody
+            continue
+        return pdoc, custody
+    return None, None
+
+def _list_simple_cols(county_hint: Optional[str] = None, *, exclusive: bool = False):
     existing = set(_db.list_collection_names())
-    return [_db[f"simple_{c}"] for c in SIMPLE_COUNTIES if f"simple_{c}" in existing]
+    available: Dict[str, Any] = {}
+    for c in SIMPLE_COUNTIES:
+        name = f"simple_{c}"
+        if name in existing:
+            available[c] = _db[name]
+
+    ordered: List[Any] = []
+    if county_hint:
+        key = _normalize_county_key(county_hint)
+        if key and key in available:
+            ordered.append(available[key])
+            if exclusive:
+                return ordered
+
+    for c in SIMPLE_COUNTIES:
+        col = available.get(c)
+        if col and col not in ordered:
+            ordered.append(col)
+    return ordered
 
 def _split_name(full_name: str) -> tuple[Optional[str], Optional[str]]:
     if not full_name:
@@ -644,10 +741,13 @@ def _find_in_simple(full_name: str, *, dob: Optional[str]=None, county_hint: Opt
     if not queries:
         queries.append({"first_name": {"$regex": f"^{re.escape(first or last or full_name)}", "$options": "i"}})
 
-    cols = _list_simple_cols()
+    cols: List[Any] = []
     if county_hint:
-        hint = county_hint.lower()
-        cols = sorted(cols, key=lambda c: 0 if c.name.endswith(hint) else 1)
+        cols = _list_simple_cols(county_hint, exclusive=True)
+    if not cols:
+        cols = _list_simple_cols()
+    if not cols:
+        return None
 
     best = None
     best_score = -1
@@ -767,30 +867,12 @@ async def find_person(payload: Dict[str, Any], request: Request):
         }
         return {"found": True, "person": person_out, "latest_custody": latest}
 
-    # FALLBACK: persons + custody_events
-    name_variants = _name_variants(full_name)
-    name_filters: List[Dict[str, Any]] = []
-    for variant in name_variants or [full_name]:
-        name_filters.append({"full_name": {"$regex": f"^{re.escape(variant)}$", "$options": "i"}})
-
-    q: Dict[str, Any]
-    if dob:
-        q = {"$and": [{"dob": dob}, {"$or": name_filters}]}
-    else:
-        q = {"$or": name_filters}
-
-    pdoc = persons.find_one(q)
+    # FALLBACK: persons + custody_events scoped to requested county
+    pdoc, latest = _lookup_person_by_name(full_name, dob, county)
     if not pdoc:
         return {"found": False}
 
     pid = str(pdoc.get("_id"))
-    latest = _latest_custody(pid)
-
-    if county and latest and (latest.get("county") or "").lower() != county.lower():
-        latest = custody_events.find_one(
-            {"person_id": pid, "county": {"$regex": f"^{re.escape(county)}$", "$options": "i"}},
-            sort=[("scraped_at", -1)]
-        ) or latest
 
     custody = None
     if latest:
@@ -838,29 +920,30 @@ async def get_bail_status(payload: Dict[str, Any], request: Request):
 
     # FALLBACK: persons + custody_events
     pdoc = None
+    pid: Optional[str] = None
+    c: Optional[dict] = None
     if person_id:
         oid = _objid(person_id)
         if not oid:
             raise HTTPException(400, "Invalid person_id")
         pdoc = persons.find_one({"_id": oid})
+        if pdoc:
+            pid = str(pdoc.get("_id"))
+            c = _custody_for_requested_county(pid, county)
     elif full_name:
-        name_variants = _name_variants(full_name)
-        name_filters: List[Dict[str, Any]] = []
-        for variant in name_variants or [full_name]:
-            name_filters.append({"full_name": {"$regex": f"^{re.escape(variant)}$", "$options": "i"}})
-        if dob:
-            q = {"$and": [{"dob": dob}, {"$or": name_filters}]}
-        else:
-            q = {"$or": name_filters}
-        pdoc = persons.find_one(q)
+        pdoc, c = _lookup_person_by_name(full_name, dob, county)
+        if pdoc:
+            pid = str(pdoc.get("_id"))
     else:
         raise HTTPException(400, "Provide person_id OR full_name")
 
     if not pdoc:
         return {"found": False}
 
-    pid = str(pdoc.get("_id"))
-    c = _latest_custody(pid)
+    if not pid:
+        pid = str(pdoc.get("_id"))
+    if c is None:
+        c = _custody_for_requested_county(pid, county)
     if not c:
         return {"found": True, "has_custody": False}
 

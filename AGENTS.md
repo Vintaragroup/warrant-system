@@ -13,38 +13,48 @@
 - Explain your OBSERVATIONS clearly, then provide REASONING to identify the exact issue. Add console logs when needed to gather more information.
 
 
-Bond Compliance Monitoring System organizes its core business logic around location-based compliance verification and multi-channel notifications.
+Bond Compliance Monitoring System integrating location verification, secure check-ins, and multi-channel communications across jurisdictions.
 
-Key Business Components:
+## Core Components
 
-1. Location Compliance Tracking (`app/main.py`)
-- Bond compliance check-in workflow management
-- Secure location and photo verification processing
-- Compliance/refusal event recording with geolocation
-- Check-in history tracking with verification timestamps
+### Bond Compliance Check-in (app/main.py)
+- GPS and photo-based compliance verification for defendants
+- Secure one-time token system for check-in validation
+- Admin monitoring interface for location tracking
+- Multi-provider SMS notification system for compliance requests
 
-2. Geographic Verification Engine (`app/geo.py`) 
-- Multi-provider location validation system
-- Accuracy radius calculations for compliance boundaries
-- VPN/proxy detection for verification integrity
-- Location verification result caching
+### Location Verification (app/geo.py)
+- Multi-provider geolocation service with automatic failover
+- VPN/proxy detection for compliance integrity
+- Location accuracy radius calculations and verification
 
-3. Communication System (`app/sms.py`)
-- Multi-channel compliance notifications (SMS, WhatsApp)
-- Provider fallback routing for guaranteed delivery
-- Compliance alert templating and distribution
+### Warm Transfer System (app/main.py)
+- County jurisdiction-based call routing
+- Hold music management during transfers
+- Agent whisper system with case context delivery
+- DTMF transfer acceptance/rejection handling
 
-Core Business Features:
-- Secure one-time verification tokens
-- Geographic boundary enforcement
-- Comprehensive compliance audit trails
-- Automated violation notifications
+### Communication Management (app/sms.py)
+- Prioritized provider failover (Telnyx → Twilio → WhatsApp)
+- Jurisdiction-specific message routing rules
+- Compliance message templating and delivery confirmation
 
-Business Logic Score: 85/100
-- Mission-critical compliance verification
-- Complex geographic validation requirements
-- Multi-provider notification system
-- Specialized bond condition monitoring
+## Domain-Specific Features
+
+1. Multi-factor compliance verification combining GPS, photo, and location data
+2. Jurisdiction-aware routing for all communications
+3. Secure single-use verification links
+4. Contextual agent notification workflow
+5. Location accuracy verification system
+
+## Business Impact Score: 85/100
+
+Justification:
+- Complex compliance verification workflows
+- Multi-jurisdiction handling capabilities
+- Sophisticated location verification system
+- Critical communications failover
+- Integration of multiple verification methods
 
 $END$
 
