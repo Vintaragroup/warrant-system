@@ -7,9 +7,10 @@ from typing import Any, Dict, Optional, List
 import time, re
 from difflib import SequenceMatcher
 from bson import ObjectId
+from pymongo import ASCENDING
 
 from .config import settings
-from .db import persons, custody_events, inquiries, logs, cases  # no 'db' import
+from .db import persons, custody_events, inquiries, logs, cases, callback_queue  # no 'db' import
 from .sms import send_sms
 
 # Expose Bearer auth in OpenAPI/Swagger; _auth below still validates the exact token
@@ -1881,3 +1882,217 @@ async def telnyx_call_log(
         return {"ok": True, "count": len(items), "items": items}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"call_log error: {e}")
+
+# --------- CALLBACK QUEUE HANDLING ---------
+
+@router.post("/enqueue_callback")
+async def enqueue_callback(payload: Dict[str, Any], request: Request):
+    """
+    Insert a caller into the callback queue when they request a callback instead of live hold.
+    Input JSON:
+    - caller_name (required)
+    - caller_phone (E.164, required)
+    - inmate_full_name (required)
+    - inmate_dob (optional)
+    - county (required)
+    - topic (optional)
+    - urgency (optional, default "medium")
+    Returns: { ok, queue_entry_id, queue_position }
+    """
+    _auth(request)
+    
+    caller_name = (payload.get("caller_name") or "").strip()
+    caller_phone = _e164(payload.get("caller_phone"))
+    inmate_name = (payload.get("inmate_full_name") or "").strip()
+    inmate_dob = (payload.get("inmate_dob") or "").strip() or None
+    county = (payload.get("county") or "").strip()
+    topic = (payload.get("topic") or "").strip() or None
+    urgency = payload.get("urgency") or "medium"
+    
+    if not caller_name or not caller_phone:
+        raise HTTPException(400, "caller_name and caller_phone (E.164) required")
+    if not inmate_name or not county:
+        raise HTTPException(400, "inmate_full_name and county required")
+    
+    # Get current queue depth for position
+    pending = callback_queue.count_documents({"status": "pending"})
+    queue_position = pending + 1
+    
+    doc = {
+        "caller": {
+            "name": caller_name,
+            "phone": caller_phone
+        },
+        "inmate": {
+            "full_name": inmate_name,
+            "dob": inmate_dob
+        },
+        "county": county,
+        "topic": topic,
+        "urgency": urgency,
+        "status": "pending",
+        "requested_at": int(time.time()),
+        "queue_position": queue_position,
+        "calling_ts": None,
+        "completed_ts": None,
+        "notes": None
+    }
+    
+    res = callback_queue.insert_one(doc)
+    
+    logs.insert_one({
+        "type": "telnyx_enqueue_callback",
+        "queue_entry_id": str(res.inserted_id),
+        "caller_phone": caller_phone,
+        "inmate": inmate_name,
+        "county": county,
+        "urgency": urgency,
+        "queue_position": queue_position,
+        "ts": int(time.time())
+    })
+    
+    return {
+        "ok": True,
+        "queue_entry_id": str(res.inserted_id),
+        "queue_position": queue_position
+    }
+
+
+@router.get("/callback_queue")
+async def get_callback_queue(request: Request, status: Optional[str] = None, limit: int = 100):
+    """
+    Retrieve pending callbacks in FIFO order (by requested_at).
+    Query params:
+    - status: filter by "pending", "calling", "completed" (default: "pending")
+    - limit: max records to return (default 100)
+    Returns: { ok, count, items: [{ id, queue_position, caller, inmate, county, urgency, requested_at }] }
+    """
+    _auth(request)
+    
+    q: Dict[str, Any] = {}
+    if status:
+        q["status"] = status
+    else:
+        q["status"] = "pending"
+    
+    lim = max(1, min(int(limit or 100), 500))
+    cur = callback_queue.find(q).sort([("requested_at", ASCENDING)]).limit(lim)
+    
+    items = []
+    for d in cur:
+        items.append({
+            "id": str(d.get("_id")),
+            "queue_position": d.get("queue_position"),
+            "caller": d.get("caller"),
+            "inmate": d.get("inmate"),
+            "county": d.get("county"),
+            "topic": d.get("topic"),
+            "urgency": d.get("urgency"),
+            "status": d.get("status"),
+            "requested_at": d.get("requested_at"),
+            "calling_ts": d.get("calling_ts"),
+            "completed_ts": d.get("completed_ts")
+        })
+    
+    return {"ok": True, "count": len(items), "items": items}
+
+
+@router.patch("/callback_queue/{queue_entry_id}")
+async def update_callback_entry(queue_entry_id: str, payload: Dict[str, Any], request: Request):
+    """
+    Update a callback queue entry (mark as calling, completed, or add notes).
+    Input JSON:
+    - status: "pending" | "calling" | "completed" (optional)
+    - notes: additional text (optional)
+    Returns: { ok, updated_entry }
+    """
+    _auth(request)
+    
+    entry_id = ObjectId(queue_entry_id) if queue_entry_id else None
+    if not entry_id:
+        raise HTTPException(400, "Invalid queue_entry_id")
+    
+    entry = callback_queue.find_one({"_id": entry_id})
+    if not entry:
+        raise HTTPException(404, "Queue entry not found")
+    
+    new_status = (payload.get("status") or "").strip() or None
+    notes = (payload.get("notes") or "").strip() or None
+    
+    update_doc: Dict[str, Any] = {}
+    if new_status:
+        update_doc["status"] = new_status
+        if new_status == "calling":
+            update_doc["calling_ts"] = int(time.time())
+        elif new_status == "completed":
+            update_doc["completed_ts"] = int(time.time())
+    if notes:
+        update_doc["notes"] = notes
+    
+    if update_doc:
+        callback_queue.update_one({"_id": entry_id}, {"$set": update_doc})
+    
+    updated = callback_queue.find_one({"_id": entry_id})
+    
+    logs.insert_one({
+        "type": "telnyx_callback_updated",
+        "queue_entry_id": queue_entry_id,
+        "new_status": new_status,
+        "ts": int(time.time())
+    })
+    
+    return {
+        "ok": True,
+        "updated_entry": {
+            "id": str(updated.get("_id")),
+            "status": updated.get("status"),
+            "caller": updated.get("caller"),
+            "inmate": updated.get("inmate"),
+            "county": updated.get("county"),
+            "requested_at": updated.get("requested_at")
+        }
+    }
+
+
+@router.post("/handle_office_hold")
+async def handle_office_hold(payload: Dict[str, Any], request: Request):
+    """
+    Webhook endpoint called by Telnyx AI when the office leg is placed on hold.
+    This endpoint detects hold and informs the AI assistant of the situation.
+    Input JSON:
+    - call_control_id (required)
+    - inmate_full_name, inmate_dob, county (to identify the case)
+    - caller_full_name, caller_phone, caller_relationship (caller info)
+    - topic, urgency (context)
+    
+    Returns: { ok, message, choice_prompt }
+    The AI should then ask the caller to choose between live hold or callback.
+    """
+    _auth(request)
+    
+    call_control_id = (payload.get("call_control_id") or "").strip()
+    inmate_name = (payload.get("inmate_full_name") or "").strip()
+    
+    if not call_control_id:
+        raise HTTPException(400, "call_control_id required")
+    
+    logs.insert_one({
+        "type": "telnyx_office_hold_detected",
+        "call_control_id": call_control_id,
+        "inmate": inmate_name,
+        "ts": int(time.time())
+    })
+    
+    choice_prompt = (
+        "The office is experiencing a high volume of calls right now. "
+        "You have two options: You can stay on hold and wait for the next available agent, "
+        "or I can place you in our callback queue and have an agent call you back. "
+        "Would you like to wait on hold, or request a callback?"
+    )
+    
+    return {
+        "ok": True,
+        "message": "Office has placed us on hold",
+        "choice_prompt": choice_prompt
+    }
+
