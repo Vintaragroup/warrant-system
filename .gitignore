@@ -1,9 +1,47 @@
+# Python
 .venv/
 __pycache__/
 *.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Environment & Secrets (NEVER COMMIT)
 .env
+.env.local
+.env.*.local
+.env.prod
+config/secrets.*
+*.key
+*.pem
+*.pfx
+credentials.json
+
+# OS
 .DS_Store
-node_modules/
+.AppleDouble
+.LSOverride
+
+# IDE
 .cursor/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Documentation (generated, not source-controlled)
 docs/
+
+# Node (if used)
+node_modules/
+
+# Logs
+logs/
+*.log
+
+# Database backups
+*.db
+*.sqlite
+*.sqlite3
 
