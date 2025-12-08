@@ -1,41 +1,47 @@
 ---
-description: Documents core transfer routing algorithms including availability, language preferences, and warm transfer workflows
+description: Specifications for complex call transfer routing and agent scheduling algorithms
 ---
 
 
 # transfer-system-algorithms
 
-The transfer system implements intelligent call routing based on county jurisdiction and agent availability with several key components:
+IMPORTANCE SCORE: 75/100
 
-## Core Transfer Routing
+The transfer system implements sophisticated routing logic for managing call transfers and agent availability:
 
-`app/main.py` manages warm transfer workflows through:
-- County jurisdiction-based routing logic
-- Hold music state management during active transfers 
-- DTMF-based transfer acceptance/rejection by agents
+1. Dynamic Agent Routing
+- County-based transfer mapping to appropriate office locations
+- Time-zone aware scheduling for agent availability
+- Language preference matching between callers and available agents
+- Warm transfer coordination with AI assistance
 
-## Agent Context Handling
+2. Time-Sensitive Routing Rules
+```python
+# app/main.py
+- Office hours verification before transfer attempts
+- Fallback routing for after-hours calls
+- Dynamic hold queue management during peak periods
+- Automatic rerouting based on wait time thresholds
+```
 
-The system preserves and transmits case context during transfers via:
-- Expanded agent whisper functionality
-- Case details preservation across transfer hops
-- Jurisdiction-specific routing rules
+3. Warm Transfer Workflow
+- Agent context synchronization during transfers
+- Dynamic whisper messages for receiving agents
+- Call state preservation during handoff
+- Multi-party bridging for smooth transitions
 
-## Scoring: 75/100
-Key factors:
-- Complex jurisdiction-based routing
-- Multi-step transfer workflow management  
-- Agent availability coordination
-- Context preservation requirements
-- Critical communication handoff points
+4. Agent Availability Management
+- Real-time status tracking for agent availability
+- Skills-based routing for specialized inquiries
+- Load balancing across available agents
+- Priority queue management for urgent transfers
 
-## Domain-Specific Features
-
-1. County-aware routing logic maps calls to appropriate jurisdictions
-2. Agent whisper system provides case context
-3. Hold state management during transfers
-4. DTMF-based transfer acceptance workflow
-5. Multi-jurisdiction transfer handling
+Key Business Rules:
+- Transfers must respect office hours by location
+- Language matching is required when available
+- Warm transfers take priority over cold transfers
+- Agent specialization influences routing decisions
+- Maximum wait times trigger automatic rerouting
 
 $END$
 

@@ -1,60 +1,49 @@
 ---
-description: Documentation for location tracking system with geolocation services, accuracy verification, and VPN detection
+description: Analysis of geolocation verification system with provider fallback and accuracy tracking for legal compliance
 ---
 
 
 # location-tracking-system
 
-## Core Components (app/geo.py)
+IMPORTANCE SCORE: 65/100
 
-1. Multi-Provider Geolocation Service
-- Primary and fallback location providers
-- Automatic provider switching on failure
-- Location data normalization across providers
+The location tracking system provides multi-provider geolocation verification focused on legal compliance verification.
 
-2. Accuracy Verification
-- Radius-based location accuracy calculations
-- Confidence scoring for location precision
-- Jurisdiction boundary validation
+Key Components:
+
+1. Provider Fallback Chain (geo.py)
+- Cascading verification through multiple location providers
+- Automatic failover when primary provider fails
+- Weighted accuracy calculations across providers
+- Provider-specific error handling
+
+2. Accuracy Validation (geo.py)
+- Radius-based compliance verification
+- Location confidence scoring
+- Geographic boundary enforcement 
+- Historical accuracy tracking
 
 3. Security Features
-- VPN/proxy detection system
+- VPN/Proxy detection
 - Location spoofing prevention
-- Compliance verification checks
+- Cached verification for repeat checks
+- Validation timeout handling
 
-## Data Flow
+Business Rules:
+- Location must be verified through minimum of two providers
+- Accuracy radius must meet compliance thresholds
+- VPN usage automatically fails verification
+- Geographic boundaries enforced per bond requirements
+- Failed verifications trigger compliance alerts
 
-1. Location Request Chain
-- Initial geolocation request
-- Provider availability check
-- Fallback provider selection
-- Location data normalization
-
-2. Verification Process
-- Accuracy radius calculation
-- Boundary validation against jurisdiction
-- VPN/proxy status check
-- Compliance status determination
-
-## Business Rules
-
-1. Location Compliance
-- Required accuracy thresholds by jurisdiction
-- Maximum allowed radius variance
-- Required check-in frequency
-- Geographic boundary restrictions
-
-2. Provider Management
-- Provider priority order
-- Failure threshold definitions
-- Data quality requirements
-- Service level agreements
-
-Importance Score: 85/100
-- Critical for compliance verification
-- Core business requirement for monitoring
-- Essential security component
-- Key integration point for verification workflow
+Data Flow:
+1. Initial location request received
+2. Primary provider verification attempted
+3. Fallback chain activated if needed
+4. Accuracy calculations performed
+5. VPN/Proxy checks executed
+6. Results cached for configured duration
+7. Verification status returned to compliance system
 
 $END$
 

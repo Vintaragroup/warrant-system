@@ -13,48 +13,40 @@
 - Explain your OBSERVATIONS clearly, then provide REASONING to identify the exact issue. Add console logs when needed to gather more information.
 
 
-Bond Compliance Monitoring System integrating location verification, secure check-ins, and multi-channel communications across jurisdictions.
+The system implements a bond compliance verification platform with two core business domains:
 
-## Core Components
+## Bond Compliance Management
+- Location-based compliance verification using GPS and photo check-ins 
+- One-time token verification system for secure check-in sessions
+- Automated refusal tracking and documentation
+- Geo-fencing validation for location compliance boundaries
+- Two-factor compliance workflow combining photo and GPS verification
+- Beacon-based tracking integration
 
-### Bond Compliance Check-in (app/main.py)
-- GPS and photo-based compliance verification for defendants
-- Secure one-time token system for check-in validation
-- Admin monitoring interface for location tracking
-- Multi-provider SMS notification system for compliance requests
+## Communication Control System
+- County-specific call routing for office transfers
+- Time-aware scheduling based on office hours
+- AI-assisted call transfers with webhook integration
+- Dynamic hold music management
+- Multi-channel notifications via SMS/WhatsApp
+- Agent support with dynamic whisper text generation
 
-### Location Verification (app/geo.py)
-- Multi-provider geolocation service with automatic failover
-- VPN/proxy detection for compliance integrity
-- Location accuracy radius calculations and verification
+## Location Services (app/geo.py)
+- Multi-provider geolocation verification
+- VPN/Proxy detection for location validation
+- Location accuracy radius calculations
+- Caching for repeat verification requests
 
-### Warm Transfer System (app/main.py)
-- County jurisdiction-based call routing
-- Hold music management during transfers
-- Agent whisper system with case context delivery
-- DTMF transfer acceptance/rejection handling
+## Core Business Rules
+1. Mandatory location sharing during compliance checks
+2. Photo verification requirements for identity confirmation
+3. Geographic boundary enforcement
+4. Secure single-use verification tokens
+5. Automated documentation of compliance refusals
+6. Office hours-based routing restrictions
 
-### Communication Management (app/sms.py)
-- Prioritized provider failover (Telnyx → Twilio → WhatsApp)
-- Jurisdiction-specific message routing rules
-- Compliance message templating and delivery confirmation
-
-## Domain-Specific Features
-
-1. Multi-factor compliance verification combining GPS, photo, and location data
-2. Jurisdiction-aware routing for all communications
-3. Secure single-use verification links
-4. Contextual agent notification workflow
-5. Location accuracy verification system
-
-## Business Impact Score: 85/100
-
-Justification:
-- Complex compliance verification workflows
-- Multi-jurisdiction handling capabilities
-- Sophisticated location verification system
-- Critical communications failover
-- Integration of multiple verification methods
+Importance Score: 65/100
+Primary focus on legal compliance verification and secure monitoring with sophisticated location validation.
 
 $END$
 
