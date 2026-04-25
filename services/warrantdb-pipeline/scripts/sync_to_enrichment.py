@@ -12,6 +12,7 @@ Environment:
     ENRICHMENT_MONGO_DB             Enrichment database name (default: inmate_enrichment)
     ENRICHMENT_SUBJECTS_COLLECTION  Target collection name (default: inmates)
     SYNC_DRY_RUN                    Set to 'true' to skip writes and report only (default: false)
+    ENRICHMENT_WINDOW_HOURS         Rolling eligibility window in hours (default: 72)
 
 Upsert key (primary):  spn + county
 Upsert key (fallback): sync_identity_key + county
@@ -33,7 +34,7 @@ import argparse
 import os
 import re
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -72,11 +73,71 @@ _URI_USERINFO_RE = re.compile(r"(://)[^@/]+@")
 
 PROGRESS_INTERVAL = 500  # print a progress line every N records per collection
 
+# Rolling window: only records with a timestamp within this many hours of NOW
+# are eligible for enrichment (enrichment_status=NEW / enrichment_flag=True).
+ENRICHMENT_WINDOW_HOURS: int = int(os.getenv("ENRICHMENT_WINDOW_HOURS", "72"))
+
+# Statuses that indicate enrichment work is done or in-flight; never overwrite.
+PROTECTED_ENRICHMENT_STATUSES = frozenset({"ENRICHED", "COMPLETE", "COMPLETED", "FAILED", "ERROR"})
+
 # ---------------------------------------------------------------------------
 # Type alias
 # ---------------------------------------------------------------------------
 
 CollectionResult = Dict[str, Any]
+
+# ---------------------------------------------------------------------------
+# Timestamp resolution
+# ---------------------------------------------------------------------------
+
+_TIMESTAMP_PRIORITY = (
+    "booking_datetime",
+    "booking_date",
+    "first_seen_at",
+    "scraped_at",
+    "_normalized_at",
+    "_ingested_at",
+)
+
+
+def _resolve_record_timestamp(doc: Dict[str, Any]) -> Optional[datetime]:
+    """Resolve the canonical timestamp for a record using priority-ordered fields.
+
+    Returns a timezone-aware UTC datetime, or None if no usable timestamp exists.
+    Priority: booking_datetime → booking_date → first_seen_at → scraped_at
+              → _normalized_at → _ingested_at.
+    """
+    for field in _TIMESTAMP_PRIORITY:
+        val = doc.get(field)
+        if not val:
+            continue
+        if isinstance(val, datetime):
+            if val.tzinfo is None:
+                val = val.replace(tzinfo=timezone.utc)
+            return val.astimezone(timezone.utc)
+        if isinstance(val, str):
+            s = val.strip()
+            if not s:
+                continue
+            # Date-only field (booking_date) → treat as midnight UTC
+            if field == "booking_date" and _BOOKING_DATE_RE.match(s):
+                try:
+                    return datetime(
+                        int(s[0:4]), int(s[5:7]), int(s[8:10]), tzinfo=timezone.utc
+                    )
+                except (ValueError, IndexError):
+                    continue
+            # ISO-8601 string (with or without trailing Z)
+            try:
+                if s.endswith("Z") and "+" not in s:
+                    s = s[:-1] + "+00:00"
+                dt = datetime.fromisoformat(s)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                return dt.astimezone(timezone.utc)
+            except ValueError:
+                continue
+    return None
 
 
 def _zero_result(collection: str) -> CollectionResult:
@@ -88,6 +149,9 @@ def _zero_result(collection: str) -> CollectionResult:
         "unchanged": 0,
         "skipped": 0,
         "fallback_key_used": 0,
+        "eligible_new": 0,
+        "stale_inserted": 0,
+        "stale_updated": 0,
         "errors": [],
     }
 
@@ -208,6 +272,7 @@ def _build_update(
     collection_name: str,
     now_iso: str,
     sync_identity_key: Optional[str] = None,
+    is_eligible: bool = True,
 ) -> Dict[str, Any]:
     """Build the pymongo update payload for a single record."""
     # Tolerate charge/offense alias
@@ -257,15 +322,18 @@ def _build_update(
     if sync_identity_key is not None:
         set_fields["sync_identity_key"] = sync_identity_key
 
-    # Enrichment lifecycle — seeded once on first insert, never overwritten
+    # Enrichment lifecycle — seeded once on first insert, never overwritten.
+    # enrichment_status and enrichment_flag reflect window eligibility at insert time.
     set_on_insert_fields: Dict[str, Any] = {
-        "enrichment_status": "NEW",
-        "enrichment_flag": True,
+        "enrichment_status": "NEW" if is_eligible else "STALE",
+        "enrichment_flag": is_eligible,
         "_ingested_at": _ingest_timestamp(doc),
         "enrichment_providers": [],
         "_enriched_at": None,
         "_enrichment_attempted_at": None,
     }
+    if not is_eligible:
+        set_on_insert_fields["stale_reason"] = "outside_72_hour_window"
 
     return {
         "$set": set_fields,
@@ -305,6 +373,7 @@ def _sync_collection(
     inmates_col,
     collection_name: str,
     dry_run: bool,
+    cutoff: datetime,
 ) -> CollectionResult:
     result = _zero_result(collection_name)
 
@@ -356,27 +425,59 @@ def _sync_collection(
                 filter_doc = {"sync_identity_key": sync_identity_key, "county": doc["county"]}
                 result["fallback_key_used"] += 1
 
+            # ── window eligibility check ──────────────────────────────────
+            rec_ts = _resolve_record_timestamp(doc)
+            if rec_ts is None:
+                result["skipped"] += 1
+                result["errors"].append({
+                    "spn": doc.get("spn"),
+                    "county": doc.get("county"),
+                    "collection": collection_name,
+                    "reason": "no resolvable timestamp for window check",
+                })
+                continue
+            is_eligible = rec_ts >= cutoff
+
             # ── dry-run: read-only check ──────────────────────────────────
             if dry_run:
                 existing = inmates_col.find_one(filter_doc, {"_id": 1})
                 if existing is None:
                     result["inserted"] += 1
+                    if is_eligible:
+                        result["eligible_new"] += 1
+                    else:
+                        result["stale_inserted"] += 1
                 else:
-                    # Cannot know if $set would change values without writing;
-                    # report as "updated" (conservative estimate).
                     result["updated"] += 1
+                    if not is_eligible:
+                        result["stale_updated"] += 1
                 continue
 
             # ── live upsert ───────────────────────────────────────────────
-            update_doc = _build_update(doc, collection_name, now_iso, sync_identity_key)
+            update_doc = _build_update(doc, collection_name, now_iso, sync_identity_key, is_eligible)
             try:
                 res = inmates_col.update_one(filter_doc, update_doc, upsert=True)
                 if res.upserted_id is not None:
                     result["inserted"] += 1
-                elif res.modified_count > 0:
-                    result["updated"] += 1
+                    if is_eligible:
+                        result["eligible_new"] += 1
+                    else:
+                        result["stale_inserted"] += 1
                 else:
-                    result["unchanged"] += 1
+                    if res.modified_count > 0:
+                        result["updated"] += 1
+                    else:
+                        result["unchanged"] += 1
+                    # Keep enrichment status in sync with the current window.
+                    # Only touches records not yet in a protected (enriched/failed) state.
+                    _s = "NEW" if is_eligible else "STALE"
+                    _sf = {**filter_doc, "enrichment_status": {"$nin": list(PROTECTED_ENRICHMENT_STATUSES)}}
+                    _ss: Dict[str, Any] = {"enrichment_status": _s, "enrichment_flag": is_eligible}
+                    if not is_eligible:
+                        _ss["stale_reason"] = "outside_72_hour_window"
+                    inmates_col.update_one(_sf, {"$set": _ss})
+                    if not is_eligible:
+                        result["stale_updated"] += 1
             except PyMongoError as exc:
                 result["errors"].append({
                     "spn": doc.get("spn"),
@@ -405,6 +506,9 @@ def _print_collection_line(result: CollectionResult, dry_run: bool) -> None:
         f"updated={result['updated']:<6} "
         f"unchanged={result['unchanged']:<6} "
         f"skipped={result['skipped']:<6} "
+        f"eligible_new={result['eligible_new']:<6} "
+        f"stale_inserted={result['stale_inserted']:<6} "
+        f"stale_updated={result['stale_updated']:<6} "
         f"fallback={result['fallback_key_used']:<6} "
         f"errors={err_count}"
     )
@@ -426,6 +530,9 @@ def _print_totals(totals: CollectionResult, dry_run: bool) -> None:
         f"updated={totals['updated']:<6} "
         f"unchanged={totals['unchanged']:<6} "
         f"skipped={totals['skipped']:<6} "
+        f"eligible_new={totals['eligible_new']:<6} "
+        f"stale_inserted={totals['stale_inserted']:<6} "
+        f"stale_updated={totals['stale_updated']:<6} "
         f"fallback={totals['fallback_key_used']:<6} "
         f"errors={err_total}"
     )
@@ -437,11 +544,14 @@ def _print_totals(totals: CollectionResult, dry_run: bool) -> None:
 # Main adapter
 # ---------------------------------------------------------------------------
 
-def run(dry_run: bool = False) -> int:
+def run(dry_run: bool = False, window_hours: int = ENRICHMENT_WINDOW_HOURS) -> int:
     """Sync all source collections. Returns 0 on success, 1 if any errors occurred."""
-    print(f"[sync] Starting simple_* → inmates sync | dry_run={dry_run}")
+    now_utc = datetime.now(timezone.utc)
+    cutoff = now_utc - timedelta(hours=window_hours)
+    print(f"[sync] Starting simple_* \u2192 inmates sync | dry_run={dry_run}")
     print(f"[sync] Pipeline:    {_mask_uri(PIPELINE_MONGO_URI)}  db={PIPELINE_MONGO_DB}")
     print(f"[sync] Enrichment:  {_mask_uri(ENRICHMENT_MONGO_URI)}  db={ENRICHMENT_MONGO_DB}  col={ENRICHMENT_SUBJECTS_COLLECTION}")
+    print(f"[sync] Window:      {window_hours}h (cutoff={cutoff.isoformat()})")
 
     pipeline_client = MongoClient(PIPELINE_MONGO_URI)
     # Reuse the same client when both databases are on the same host.
@@ -459,10 +569,10 @@ def run(dry_run: bool = False) -> int:
     try:
         for col_name in SOURCE_COLLECTIONS:
             print(f"\n[sync] Processing {col_name} …")
-            result = _sync_collection(pipeline_db, inmates_col, col_name, dry_run)
+            result = _sync_collection(pipeline_db, inmates_col, col_name, dry_run, cutoff)
             _print_collection_line(result, dry_run)
 
-            for key in ("scanned", "inserted", "updated", "unchanged", "skipped", "fallback_key_used"):
+            for key in ("scanned", "inserted", "updated", "unchanged", "skipped", "fallback_key_used", "eligible_new", "stale_inserted", "stale_updated"):
                 totals[key] += result[key]
             totals["errors"].extend(result["errors"])
 
@@ -495,9 +605,19 @@ def _parse_args() -> argparse.Namespace:
         default=os.getenv("SYNC_DRY_RUN", "").lower() in ("1", "true", "yes"),
         help="Print what would be upserted without writing to MongoDB.",
     )
+    parser.add_argument(
+        "--window-hours",
+        type=int,
+        default=int(os.getenv("ENRICHMENT_WINDOW_HOURS", str(ENRICHMENT_WINDOW_HOURS))),
+        metavar="N",
+        help=(
+            f"Rolling enrichment eligibility window in hours (default: {ENRICHMENT_WINDOW_HOURS}). "
+            "Records whose timestamp falls outside this window are inserted/updated as STALE."
+        ),
+    )
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = _parse_args()
-    raise SystemExit(run(dry_run=args.dry_run))
+    raise SystemExit(run(dry_run=args.dry_run, window_hours=args.window_hours))
