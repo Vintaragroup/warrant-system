@@ -21,19 +21,19 @@ Every document written by the normalizer **must** contain these fields. If a val
 cannot be determined, the field must be present with a `null` value — it must never
 be absent.
 
-| Field | Type | Notes |
-|---|---|---|
-| `spn` | `string` | Harris County SPN or equivalent county booking ID. Primary shared identifier. Must be non-empty. |
-| `full_name` | `string \| null` | Normalized full name. Null if source does not provide one. |
-| `county` | `string` | Lowercase slug. See [county-normalization.md](./county-normalization.md). |
-| `booking_date` | `string` (YYYY-MM-DD) | Dashboard-compatible date. Required. See [timestamps.md](./timestamps.md). |
-| `booking_datetime` | `string` (ISO 8601) \| `null` | Full timestamp when available. Canonical timestamp field. |
-| `bond_amount` | `number \| null` | Always numeric after normalization. See [bond-normalization.md](./bond-normalization.md). |
-| `status` | `string \| null` | Booking or bond status string from source. Raw value, not normalized. |
-| `charge` | `string \| null` | Primary charge description. Null if source does not provide one. |
-| `_upsert_key` | `object` | Composite upsert metadata (see below). |
-| `_normalized_at` | `string` (ISO 8601) | Timestamp when the normalizer wrote this document. Set by pipeline only. |
-| `_source` | `string` | Identifies the scraper that produced the raw record (e.g. `harris_inmate`, `brazoria_direct`). |
+| Field              | Type                          | Notes                                                                                            |
+| ------------------ | ----------------------------- | ------------------------------------------------------------------------------------------------ |
+| `spn`              | `string`                      | Harris County SPN or equivalent county booking ID. Primary shared identifier. Must be non-empty. |
+| `full_name`        | `string \| null`              | Normalized full name. Null if source does not provide one.                                       |
+| `county`           | `string`                      | Lowercase slug. See [county-normalization.md](./county-normalization.md).                        |
+| `booking_date`     | `string` (YYYY-MM-DD)         | Dashboard-compatible date. Required. See [timestamps.md](./timestamps.md).                       |
+| `booking_datetime` | `string` (ISO 8601) \| `null` | Full timestamp when available. Canonical timestamp field.                                        |
+| `bond_amount`      | `number \| null`              | Always numeric after normalization. See [bond-normalization.md](./bond-normalization.md).        |
+| `status`           | `string \| null`              | Booking or bond status string from source. Raw value, not normalized.                            |
+| `charge`           | `string \| null`              | Primary charge description. Null if source does not provide one.                                 |
+| `_upsert_key`      | `object`                      | Composite upsert metadata (see below).                                                           |
+| `_normalized_at`   | `string` (ISO 8601)           | Timestamp when the normalizer wrote this document. Set by pipeline only.                         |
+| `_source`          | `string`                      | Identifies the scraper that produced the raw record (e.g. `harris_inmate`, `brazoria_direct`).   |
 
 ---
 
@@ -52,10 +52,10 @@ reproduce the same key without reimplementing the county-specific logic.
 }
 ```
 
-| Sub-field | Type | Notes |
-|---|---|---|
-| `fields` | `string[]` | Field names that form the composite key |
-| `value` | `string` | Concatenated value used as the actual unique key |
+| Sub-field | Type       | Notes                                            |
+| --------- | ---------- | ------------------------------------------------ |
+| `fields`  | `string[]` | Field names that form the composite key          |
+| `value`   | `string`   | Concatenated value used as the actual unique key |
 
 ---
 
@@ -66,13 +66,13 @@ specific county scrapers. The normalizer must backfill the canonical field
 if the alias is present but the canonical field is absent. The alias may remain
 on the document — do not strip it.
 
-| Alias | Canonical field | Notes |
-|---|---|---|
-| `booking_datetime` (only) | `booking_date` | If `booking_date` is absent, backfill from `booking_datetime` using `[:10]` slice |
-| `dob` | `date_of_birth` | `dob` appears in some Harris scrapers; `date_of_birth` is preferred |
-| `name` | `full_name` | Older Brazoria records use `name` |
-| `offense` | `charge` | Some Fort Bend records use `offense` |
-| `bond` | `bond_amount` | Some raw records use `bond` before normalization |
+| Alias                     | Canonical field | Notes                                                                             |
+| ------------------------- | --------------- | --------------------------------------------------------------------------------- |
+| `booking_datetime` (only) | `booking_date`  | If `booking_date` is absent, backfill from `booking_datetime` using `[:10]` slice |
+| `dob`                     | `date_of_birth` | `dob` appears in some Harris scrapers; `date_of_birth` is preferred               |
+| `name`                    | `full_name`     | Older Brazoria records use `name`                                                 |
+| `offense`                 | `charge`        | Some Fort Bend records use `offense`                                              |
+| `bond`                    | `bond_amount`   | Some raw records use `bond` before normalization                                  |
 
 ---
 
@@ -94,13 +94,13 @@ fields above verbatim from `simple_*` without modification.
 
 The following fields belong to other collections and must not appear in `simple_*`:
 
-| Field | Where it belongs |
-|---|---|
-| `enrichment_status` | `inmates` (enrichment service) |
+| Field                  | Where it belongs               |
+| ---------------------- | ------------------------------ |
+| `enrichment_status`    | `inmates` (enrichment service) |
 | `enrichment_providers` | `inmates` (enrichment service) |
-| `_enriched_at` | `inmates` (enrichment service) |
-| `bond_agent` | CRM overlay (dashboard) |
-| `case_notes` | CRM overlay (dashboard) |
+| `_enriched_at`         | `inmates` (enrichment service) |
+| `bond_agent`           | CRM overlay (dashboard)        |
+| `case_notes`           | CRM overlay (dashboard)        |
 
 ---
 
@@ -109,8 +109,8 @@ The following fields belong to other collections and must not appear in `simple_
 The pipeline is responsible for maintaining these indexes on each `simple_<county>`
 collection:
 
-| Index | Fields | Type |
-|---|---|---|
+| Index                | Fields          | Type            |
+| -------------------- | --------------- | --------------- |
 | Primary upsert index | `spn`, `county` | unique compound |
-| Date range queries | `booking_date` | ascending |
-| Status filter | `status` | ascending |
+| Date range queries   | `booking_date`  | ascending       |
+| Status filter        | `status`        | ascending       |

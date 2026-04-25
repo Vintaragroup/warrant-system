@@ -11,6 +11,7 @@
 Both `warrantdb-pipeline` and `inmate-enrichment` make HTTP requests to the Harris County Sheriff's Office (HCSO) system. They do so using separate client implementations, separate configuration variables, and no shared state. A concurrent run of both services can send HCSO requests at double the rate without either service being aware of the other.
 
 HCSO does not publish a rate limit. Observed behavior is the only constraint. An IP-level block from HCSO would simultaneously disable:
+
 - DOB lookups in the inmate enrichment service (breaking provider candidate scoring)
 - DOB enrichment in the pipeline's HCSO enrichment step (breaking normalization quality)
 
@@ -64,10 +65,10 @@ The scheduling constraint is sufficient for the current operational volume.
 
 ## Phase 1 Affected Files
 
-| File | Change |
-|---|---|
-| `services/warrantdb-pipeline/RUNBOOK.md` | Add section: "HCSO Scheduling Constraint" |
-| `services/warrantdb-pipeline/SCHEDULING.md` | Add note: do not schedule HCSO steps during enrichment worker active hours |
+| File                                           | Change                                                                                   |
+| ---------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `services/warrantdb-pipeline/RUNBOOK.md`       | Add section: "HCSO Scheduling Constraint"                                                |
+| `services/warrantdb-pipeline/SCHEDULING.md`    | Add note: do not schedule HCSO steps during enrichment worker active hours               |
 | `warrant-system/docs/architecture/OVERVIEW.md` | Add note to HCSO row in service topology: shared HCSO dependency, no shared rate limiter |
 
 No code changes required for Phase 1.
@@ -102,13 +103,16 @@ def _hcso_rate_limit_check(r: redis.Redis, min_interval_ms: int = 1000):
 **TypeScript client pattern:**
 
 ```typescript
-async function hcsoRateLimit(redis: Redis, minIntervalMs = 1000): Promise<void> {
-  const key = 'hcso:last_request_at';
+async function hcsoRateLimit(
+  redis: Redis,
+  minIntervalMs = 1000,
+): Promise<void> {
+  const key = "hcso:last_request_at";
   const last = await redis.get(key);
   if (last) {
     const elapsed = Date.now() - parseInt(last, 10);
     if (elapsed < minIntervalMs) {
-      await new Promise(r => setTimeout(r, minIntervalMs - elapsed));
+      await new Promise((r) => setTimeout(r, minIntervalMs - elapsed));
     }
   }
   await redis.set(key, String(Date.now()));
@@ -123,11 +127,11 @@ async function hcsoRateLimit(redis: Redis, minIntervalMs = 1000): Promise<void> 
 
 ### Phase 2 affected files (for reference only — not implementing now)
 
-| File | Change |
-|---|---|
-| `services/warrantdb-pipeline/enrichment/*.py` | Wrap HCSO HTTP calls with `_hcso_rate_limit_check()` |
-| `services/inmate-enrichment/worker/src/providers/hcsoClient.ts` | Wrap HCSO HTTP calls with `hcsoRateLimit()` |
-| Both `.env.example` files | Add `HCSO_REDIS_URL=` and `HCSO_GLOBAL_MIN_INTERVAL_MS=` |
+| File                                                            | Change                                                   |
+| --------------------------------------------------------------- | -------------------------------------------------------- |
+| `services/warrantdb-pipeline/enrichment/*.py`                   | Wrap HCSO HTTP calls with `_hcso_rate_limit_check()`     |
+| `services/inmate-enrichment/worker/src/providers/hcsoClient.ts` | Wrap HCSO HTTP calls with `hcsoRateLimit()`              |
+| Both `.env.example` files                                       | Add `HCSO_REDIS_URL=` and `HCSO_GLOBAL_MIN_INTERVAL_MS=` |
 
 ---
 
@@ -154,15 +158,15 @@ HCSO_SCRAPE_MODE=http
 
 ## Risks If Deferred (Phase 1 constraint)
 
-| Risk | Severity |
-|---|---|
-| Concurrent HCSO runs from both services cause IP-level throttle or block | High — disables DOB lookup for both services simultaneously with no warning |
-| Recovery from an HCSO IP block is manual and time-indeterminate | High — no automated retry or failover |
+| Risk                                                                         | Severity                                                                           |
+| ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Concurrent HCSO runs from both services cause IP-level throttle or block     | High — disables DOB lookup for both services simultaneously with no warning        |
+| Recovery from an HCSO IP block is manual and time-indeterminate              | High — no automated retry or failover                                              |
 | Pipeline HCSO step and enrichment worker overlap during a large pipeline run | Medium — likely during initial data load when both run together for the first time |
 
 ## Risks If Phase 2 Continues To Be Deferred
 
-| Risk | Severity |
-|---|---|
-| Operational scheduling constraint breaks down as team grows | Medium — harder to enforce manually with multiple engineers |
+| Risk                                                                                        | Severity                                                                 |
+| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Operational scheduling constraint breaks down as team grows                                 | Medium — harder to enforce manually with multiple engineers              |
 | High-volume enrichment queue plus a large pipeline batch creates sustained HCSO concurrency | Medium — detectable by monitoring request counts, but no automatic brake |

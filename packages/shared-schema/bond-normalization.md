@@ -65,10 +65,10 @@ worker must guard against null:
 const bondAmount = subject.bond_amount;
 if (bondAmount === null || bondAmount === undefined) {
   // Cannot determine bondability — set to skipped or pending
-  return { bondable: null, reason: 'bond_amount_unknown' };
+  return { bondable: null, reason: "bond_amount_unknown" };
 }
 if (bondAmount < config.bondThreshold) {
-  return { bondable: false, reason: 'below_threshold' };
+  return { bondable: false, reason: "below_threshold" };
 }
 ```
 
@@ -94,23 +94,23 @@ The dashboard displays `bond_amount` to agents. Rules:
 
 ### Common raw formats from county sources
 
-| Raw value | Coerced result | Notes |
-|---|---|---|
-| `"$1,500.00"` | `1500.0` | Standard US currency string |
-| `"1500"` | `1500.0` | Plain numeric string |
-| `"N/A"` | `null` | Source does not set bond |
-| `"No Bond"` | `null` | Held without bond — maps to null, not 0 |
-| `0` | `0.0` | Zero bond is valid (released on PR / PR bond) |
-| `null` | `null` | Already null |
-| `""` | `null` | Empty string |
+| Raw value     | Coerced result | Notes                                         |
+| ------------- | -------------- | --------------------------------------------- |
+| `"$1,500.00"` | `1500.0`       | Standard US currency string                   |
+| `"1500"`      | `1500.0`       | Plain numeric string                          |
+| `"N/A"`       | `null`         | Source does not set bond                      |
+| `"No Bond"`   | `null`         | Held without bond — maps to null, not 0       |
+| `0`           | `0.0`          | Zero bond is valid (released on PR / PR bond) |
+| `null`        | `null`         | Already null                                  |
+| `""`          | `null`         | Empty string                                  |
 
 ### Temporarily tolerated aliases
 
-| Alias | Canonical field | Notes |
-|---|---|---|
-| `bond` | `bond_amount` | Appears on raw pre-normalization records from some scrapers |
-| `total_bond` | `bond_amount` | Appears in some older Fort Bend raw records |
-| `bail_amount` | `bond_amount` | Appears in some Brazoria raw records |
+| Alias         | Canonical field | Notes                                                       |
+| ------------- | --------------- | ----------------------------------------------------------- |
+| `bond`        | `bond_amount`   | Appears on raw pre-normalization records from some scrapers |
+| `total_bond`  | `bond_amount`   | Appears in some older Fort Bend raw records                 |
+| `bail_amount` | `bond_amount`   | Appears in some Brazoria raw records                        |
 
 The normalizer must map these aliases to `bond_amount` and coerce the value.
 The alias field may remain on the raw record but must not be the only source
@@ -120,9 +120,9 @@ of truth in the normalized document.
 
 ## Edge Cases
 
-| Case | Handling |
-|---|---|
-| Multiple charges with separate bond amounts | Sum all numeric amounts; if any is unknown use total or null as appropriate |
-| Bond amount changes after rebooking | Pipeline re-run updates `simple_*`; sync script propagates to `inmates` via `$set` |
-| Negative bond amount in source | Treat as null — negative values are data errors |
-| Bond amount `0` | Valid — represents a PR bond or zero-dollar bond; must not be treated as null |
+| Case                                        | Handling                                                                           |
+| ------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Multiple charges with separate bond amounts | Sum all numeric amounts; if any is unknown use total or null as appropriate        |
+| Bond amount changes after rebooking         | Pipeline re-run updates `simple_*`; sync script propagates to `inmates` via `$set` |
+| Negative bond amount in source              | Treat as null — negative values are data errors                                    |
+| Bond amount `0`                             | Valid — represents a PR bond or zero-dollar bond; must not be treated as null      |

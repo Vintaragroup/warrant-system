@@ -44,33 +44,33 @@ warrantdb-pipeline
 
 ## Databases
 
-| Service | Database | Collections |
-|---------|----------|-------------|
-| inmate-enrichment | `inmate_enrichment` (configurable) | subjects, raw_payloads, related_parties |
-| warrantdb-pipeline | `warrantdb` | simple_harris, simple_brazoria, simple_fortbend, simple_galveston, warrants_* |
-| dashboard | `warrantdb` (shared with pipeline) | users, cases, case_enrichment, check_ins, messages, payments, simple_* |
+| Service            | Database                           | Collections                                                                    |
+| ------------------ | ---------------------------------- | ------------------------------------------------------------------------------ |
+| inmate-enrichment  | `inmate_enrichment` (configurable) | subjects, raw_payloads, related_parties                                        |
+| warrantdb-pipeline | `warrantdb`                        | simple*harris, simple_brazoria, simple_fortbend, simple_galveston, warrants*\* |
+| dashboard          | `warrantdb` (shared with pipeline) | users, cases, case*enrichment, check_ins, messages, payments, simple*\*        |
 
 Note: dashboard and warrantdb-pipeline share the same MongoDB database (`warrantdb`).
 
 ## Port Map
 
-| Service | Dev Host Port | Notes |
-|---------|--------------|-------|
-| inmate-enrichment API | 4000 | |
-| dashboard API (server/) | 8080 | |
-| warrantdb-pipeline API | 8081 | remapped in consolidated compose (was 8080) |
-| dashboard Mongo | 27018 | mapped from internal 27017 |
-| pipeline Mongo | 27019 | mapped from internal 27017 |
-| dashboard Redis | 6381 | mapped from internal 6379 |
-| dashboard MailHog SMTP | 1025 | dev only (hotreload profile) |
-| dashboard MailHog Web | 8025 | dev only (hotreload profile) |
+| Service                 | Dev Host Port | Notes                                       |
+| ----------------------- | ------------- | ------------------------------------------- |
+| inmate-enrichment API   | 4000          |                                             |
+| dashboard API (server/) | 8080          |                                             |
+| warrantdb-pipeline API  | 8081          | remapped in consolidated compose (was 8080) |
+| dashboard Mongo         | 27018         | mapped from internal 27017                  |
+| pipeline Mongo          | 27019         | mapped from internal 27017                  |
+| dashboard Redis         | 6381          | mapped from internal 6379                   |
+| dashboard MailHog SMTP  | 1025          | dev only (hotreload profile)                |
+| dashboard MailHog Web   | 8025          | dev only (hotreload profile)                |
 
 ## Render Deployments
 
-| File | Services |
-|------|---------|
-| `infra/render/dashboard.render.yaml` | `warrantdb-api` (Docker), `warrantdb-web` (static) |
-| `infra/render/pipeline.render.yaml` | `warrant-api` (Python web), `warrant-pipeline` (worker) |
+| File                                 | Services                                                |
+| ------------------------------------ | ------------------------------------------------------- |
+| `infra/render/dashboard.render.yaml` | `warrantdb-api` (Docker), `warrantdb-web` (static)      |
+| `infra/render/pipeline.render.yaml`  | `warrant-api` (Python web), `warrant-pipeline` (worker) |
 
 ## Audit Documents
 

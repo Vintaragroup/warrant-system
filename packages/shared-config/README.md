@@ -4,15 +4,15 @@ Documents environment variables that appear across multiple services.
 
 ## Variables Used by All Three Services
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `MONGO_URI` | (none) | MongoDB connection string |
-| `MONGO_DB` | `warrantdb` | Target database name |
+| Variable    | Default     | Description               |
+| ----------- | ----------- | ------------------------- |
+| `MONGO_URI` | (none)      | MongoDB connection string |
+| `MONGO_DB`  | `warrantdb` | Target database name      |
 
 ## Variables Used by inmate-enrichment + dashboard
 
-| Variable | Description |
-|----------|-------------|
+| Variable    | Description             |
+| ----------- | ----------------------- |
 | `REDIS_URL` | Redis connection string |
 
 ## Variables Unique to inmate-enrichment

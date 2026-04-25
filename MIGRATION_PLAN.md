@@ -4,14 +4,14 @@ Generated: 2026-04-24
 
 ## Source → Target Mapping
 
-| Source | Target | Notes |
-|--------|--------|-------|
-| `Inmate_enrichment/` | `services/inmate-enrichment/` | Moved intact, internal npm workspace preserved |
-| `Bail-Bonds-Dashboard/` | `apps/dashboard/` | Moved intact, server/ sub-package preserved |
-| `warrantdb-pipeline/` | `services/warrantdb-pipeline/` | Moved intact, Python venv excluded |
-| `*/docs/*_AUDIT.md` | `docs/audits/<service>/` | Copied per-service to avoid name collisions |
-| `Bail-Bonds-Dashboard/render.yaml` | `infra/render/dashboard.render.yaml` | Reference copy |
-| `warrantdb-pipeline/render.yaml` | `infra/render/pipeline.render.yaml` | Reference copy |
+| Source                             | Target                               | Notes                                          |
+| ---------------------------------- | ------------------------------------ | ---------------------------------------------- |
+| `Inmate_enrichment/`               | `services/inmate-enrichment/`        | Moved intact, internal npm workspace preserved |
+| `Bail-Bonds-Dashboard/`            | `apps/dashboard/`                    | Moved intact, server/ sub-package preserved    |
+| `warrantdb-pipeline/`              | `services/warrantdb-pipeline/`       | Moved intact, Python venv excluded             |
+| `*/docs/*_AUDIT.md`                | `docs/audits/<service>/`             | Copied per-service to avoid name collisions    |
+| `Bail-Bonds-Dashboard/render.yaml` | `infra/render/dashboard.render.yaml` | Reference copy                                 |
+| `warrantdb-pipeline/render.yaml`   | `infra/render/pipeline.render.yaml`  | Reference copy                                 |
 
 ## New Files Created
 
@@ -23,16 +23,16 @@ Generated: 2026-04-24
 
 ## Port Assignments (consolidated compose)
 
-| Service | Internal | Host |
-|---------|----------|------|
-| inmate-enrichment API | 4000 | 4000 |
-| inmate-enrichment Mongo (rs0) | 27017 | not exposed |
-| inmate-enrichment Redis | 6379 | not exposed |
-| dashboard API | 8080 | 8080 |
-| dashboard Mongo | 27017 | 27018 |
-| dashboard Redis | 6379 | 6381 |
-| pipeline Mongo | 27017 | 27019 |
-| pipeline API | 8080 | 8081 (build disabled — stub) |
+| Service                       | Internal | Host                         |
+| ----------------------------- | -------- | ---------------------------- |
+| inmate-enrichment API         | 4000     | 4000                         |
+| inmate-enrichment Mongo (rs0) | 27017    | not exposed                  |
+| inmate-enrichment Redis       | 6379     | not exposed                  |
+| dashboard API                 | 8080     | 8080                         |
+| dashboard Mongo               | 27017    | 27018                        |
+| dashboard Redis               | 6379     | 6381                         |
+| pipeline Mongo                | 27017    | 27019                        |
+| pipeline API                  | 8080     | 8081 (build disabled — stub) |
 
 ## What Was NOT Changed
 

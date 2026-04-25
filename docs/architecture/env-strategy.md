@@ -23,6 +23,7 @@ Three independent services each evolved their own environment variable naming co
 Variables that differ per service must use a **service prefix** in the root `.env.example`. Each service's compose env block translates the prefixed var to the unprefixed var the service expects.
 
 Prefixes:
+
 - `IE_` — inmate-enrichment
 - `DASHBOARD_` — bail-bonds-dashboard
 - `PIPELINE_` — warrantdb-pipeline
@@ -133,9 +134,9 @@ Add before all route mounts:
 const proxySecret = process.env.ENRICHMENT_PROXY_SECRET;
 if (proxySecret) {
   app.use((req, res, next) => {
-    if (req.path === '/health') return next();
-    if (req.headers['x-enrichment-secret'] !== proxySecret) {
-      return res.status(401).json({ error: 'Unauthorized' });
+    if (req.path === "/health") return next();
+    if (req.headers["x-enrichment-secret"] !== proxySecret) {
+      return res.status(401).json({ error: "Unauthorized" });
     }
     next();
   });
@@ -149,19 +150,19 @@ Add to the proxy request handler:
 ```javascript
 const secret = process.env.ENRICHMENT_PROXY_SECRET;
 if (secret) {
-  proxyReq.setHeader('x-enrichment-secret', secret);
+  proxyReq.setHeader("x-enrichment-secret", secret);
 }
 ```
 
 ### Affected files
 
-| File | Change |
-|---|---|
-| `services/inmate-enrichment/api/src/server.ts` | Add conditional secret middleware |
+| File                                                  | Change                                |
+| ----------------------------------------------------- | ------------------------------------- |
+| `services/inmate-enrichment/api/src/server.ts`        | Add conditional secret middleware     |
 | `apps/dashboard/server/src/routes/enrichmentProxy.js` | Add outgoing header on proxy requests |
-| `services/inmate-enrichment/.env.sample` | Add `ENRICHMENT_PROXY_SECRET=` |
-| `apps/dashboard/server/.env.example` | Add `ENRICHMENT_PROXY_SECRET=` |
-| Root `.env.example` | Already included above |
+| `services/inmate-enrichment/.env.sample`              | Add `ENRICHMENT_PROXY_SECRET=`        |
+| `apps/dashboard/server/.env.example`                  | Add `ENRICHMENT_PROXY_SECRET=`        |
+| Root `.env.example`                                   | Already included above                |
 
 ---
 
@@ -187,10 +188,10 @@ startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
 
 ### Affected files
 
-| File | Change |
-|---|---|
+| File                                      | Change                         |
+| ----------------------------------------- | ------------------------------ |
 | `services/warrantdb-pipeline/render.yaml` | `api.app:app` → `api.main:app` |
-| `infra/render/pipeline.render.yaml` | `api.app:app` → `api.main:app` |
+| `infra/render/pipeline.render.yaml`       | `api.app:app` → `api.main:app` |
 
 Both files must be updated together. If only one is changed, the monorepo copy and the source diverge, which creates confusion about which one Render reads.
 
@@ -218,10 +219,10 @@ Both the enrichment service and dashboard use BullMQ. If a shared Redis URL is e
 
 ## Risks If Deferred
 
-| Risk | Severity |
-|---|---|
-| `ENRICHMENT_PROXY_SECRET` not set before Render deploy — enrichment API accepts unauthenticated job requests | High — direct financial risk via unbounded provider API calls |
-| Root `.env.example` absent — developers set `PORT` globally, breaking two services | Medium |
-| `REDIS_URL` collision — enrichment worker processes dashboard BullMQ jobs | Medium (blocked in Docker; risk appears in non-Docker local dev) |
-| Pipeline Render API permanently fails on start | High — Render API is non-functional until this is fixed |
-| Dashboard Mongo URI aliases undocumented — `ATLAS_URI` silently overrides `MONGO_URI` | Low (dev-time confusion, not a production failure) |
+| Risk                                                                                                         | Severity                                                         |
+| ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------- |
+| `ENRICHMENT_PROXY_SECRET` not set before Render deploy — enrichment API accepts unauthenticated job requests | High — direct financial risk via unbounded provider API calls    |
+| Root `.env.example` absent — developers set `PORT` globally, breaking two services                           | Medium                                                           |
+| `REDIS_URL` collision — enrichment worker processes dashboard BullMQ jobs                                    | Medium (blocked in Docker; risk appears in non-Docker local dev) |
+| Pipeline Render API permanently fails on start                                                               | High — Render API is non-functional until this is fixed          |
+| Dashboard Mongo URI aliases undocumented — `ATLAS_URI` silently overrides `MONGO_URI`                        | Low (dev-time confusion, not a production failure)               |

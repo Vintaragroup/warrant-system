@@ -9,10 +9,10 @@
 Two fields represent booking time. Both are required by contract. They carry
 different formats because different consumers need different granularities.
 
-| Field | Format | Required | Owner |
-|---|---|---|---|
+| Field              | Format                                   | Required                           | Owner    |
+| ------------------ | ---------------------------------------- | ---------------------------------- | -------- |
 | `booking_datetime` | ISO 8601 string (`YYYY-MM-DDTHH:mm:ssZ`) | Required when source provides time | pipeline |
-| `booking_date` | Date string (`YYYY-MM-DD`) | Always required | pipeline |
+| `booking_date`     | Date string (`YYYY-MM-DD`)               | Always required                    | pipeline |
 
 ### Rule: `booking_date` is always present
 
@@ -40,6 +40,7 @@ if (!doc.booking_date && doc.booking_datetime) {
 ### Rule: `booking_datetime` is preferred when available
 
 `booking_datetime` is the full precision timestamp. It is used for:
+
 - `_ingested_at` initialization in the `inmates` collection
 - Sorting and deduplication within a single day's records
 - Audit and provenance
@@ -54,13 +55,13 @@ be null. The pipeline must not fabricate a time component.
 These fields are set by each service's own write path and must not be
 sourced from another service:
 
-| Field | Format | Set by | Rule |
-|---|---|---|---|
-| `_normalized_at` | ISO 8601 | pipeline normalizer | Set on every write (insert or update) |
-| `_ingested_at` | ISO 8601 | enrichment sync script | Set once on first insert via `$setOnInsert`; never overwritten |
-| `_sync_updated_at` | ISO 8601 | enrichment sync script | Updated on every sync upsert |
-| `_enriched_at` | ISO 8601 \| null | enrichment worker | Set when a provider enrichment run completes successfully |
-| `_enrichment_attempted_at` | ISO 8601 \| null | enrichment worker | Set on every enrichment attempt (success or failure) |
+| Field                      | Format           | Set by                 | Rule                                                           |
+| -------------------------- | ---------------- | ---------------------- | -------------------------------------------------------------- |
+| `_normalized_at`           | ISO 8601         | pipeline normalizer    | Set on every write (insert or update)                          |
+| `_ingested_at`             | ISO 8601         | enrichment sync script | Set once on first insert via `$setOnInsert`; never overwritten |
+| `_sync_updated_at`         | ISO 8601         | enrichment sync script | Updated on every sync upsert                                   |
+| `_enriched_at`             | ISO 8601 \| null | enrichment worker      | Set when a provider enrichment run completes successfully      |
+| `_enrichment_attempted_at` | ISO 8601 \| null | enrichment worker      | Set on every enrichment attempt (success or failure)           |
 
 ---
 
@@ -93,11 +94,11 @@ the enrichment service first saw the record.
 
 ## Temporarily Tolerated Aliases
 
-| Alias | Canonical field | Where it appears | Action |
-|---|---|---|---|
-| `booking_ts` | `booking_datetime` | Older enrichment tool scripts | Read both; write canonical only |
-| `created_at` | `_normalized_at` | Some Brazoria raw records | Present on raw record; normalizer maps to `_normalized_at` |
-| `intake_date` | `booking_date` | Some Fort Bend raw records | Present on raw record; normalizer maps to `booking_date` |
+| Alias         | Canonical field    | Where it appears              | Action                                                     |
+| ------------- | ------------------ | ----------------------------- | ---------------------------------------------------------- |
+| `booking_ts`  | `booking_datetime` | Older enrichment tool scripts | Read both; write canonical only                            |
+| `created_at`  | `_normalized_at`   | Some Brazoria raw records     | Present on raw record; normalizer maps to `_normalized_at` |
+| `intake_date` | `booking_date`     | Some Fort Bend raw records    | Present on raw record; normalizer maps to `booking_date`   |
 
 ---
 

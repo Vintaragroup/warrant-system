@@ -33,6 +33,7 @@ The enrichment service's `watcher.ts` uses a MongoDB change stream (`collection.
 ### Why not three separate clusters
 
 Three clusters require three sync paths:
+
 - pipeline → dashboard (for display)
 - pipeline → enrichment (for input data)
 - enrichment → dashboard (for enrichment status display)
@@ -43,15 +44,16 @@ Each sync path introduces lag, failure modes, and an additional process to opera
 
 ## Per-Service Database Names
 
-| Service | `MONGO_DB` value | Rationale |
-|---|---|---|
-| `inmate-enrichment` | `inmate_enrichment` | Distinct from dashboard; matches service name |
-| `bail-bonds-dashboard` | `warrantdb` | Preserved from existing production configuration; changing it requires a data migration |
-| `warrantdb-pipeline` | `warrantdb_pipeline` | Distinct from dashboard; matches service name |
+| Service                | `MONGO_DB` value     | Rationale                                                                               |
+| ---------------------- | -------------------- | --------------------------------------------------------------------------------------- |
+| `inmate-enrichment`    | `inmate_enrichment`  | Distinct from dashboard; matches service name                                           |
+| `bail-bonds-dashboard` | `warrantdb`          | Preserved from existing production configuration; changing it requires a data migration |
+| `warrantdb-pipeline`   | `warrantdb_pipeline` | Distinct from dashboard; matches service name                                           |
 
 ### Why not all three in `warrantdb`
 
 All three services defaulted to `MONGO_DB=warrantdb` in their original templates. On a shared cluster, this would place all collections in the same database. Collections are distinct enough (`inmates`, `simple_harris`, `users`) that data corruption is unlikely, but:
+
 - Atlas/Mongo-level access control cannot be scoped per service
 - Backup and restore cannot target one service's data independently
 - Cost attribution, monitoring, and index management become entangled
@@ -61,12 +63,12 @@ All three services defaulted to `MONGO_DB=warrantdb` in their original templates
 
 ## Affected Services
 
-| Service | Change required |
-|---|---|
-| `services/inmate-enrichment` | `MONGO_DB` default → `inmate_enrichment`; Mongo image → `mongo:7`; compose Mongo service renamed |
-| `apps/dashboard` | `MONGO_URI` must point to shared cluster in all environments |
-| `services/warrantdb-pipeline` | `MONGO_DB` default → `warrantdb_pipeline`; `MONGO_URI` must point to shared cluster |
-| `infra/docker/docker-compose.yml` | Remove `dashboard-mongo` and `pipeline-mongo`; single `warrant-mongo` service with replica set |
+| Service                           | Change required                                                                                  |
+| --------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `services/inmate-enrichment`      | `MONGO_DB` default → `inmate_enrichment`; Mongo image → `mongo:7`; compose Mongo service renamed |
+| `apps/dashboard`                  | `MONGO_URI` must point to shared cluster in all environments                                     |
+| `services/warrantdb-pipeline`     | `MONGO_DB` default → `warrantdb_pipeline`; `MONGO_URI` must point to shared cluster              |
+| `infra/docker/docker-compose.yml` | Remove `dashboard-mongo` and `pipeline-mongo`; single `warrant-mongo` service with replica set   |
 
 ---
 
@@ -99,19 +101,20 @@ All three services defaulted to `MONGO_DB=warrantdb` in their original templates
 
 ## Risks If Deferred
 
-| Risk | Severity |
-|---|---|
-| Dashboard shows zero county case records in all environments | Critical — the dashboard's primary value is inaccessible |
-| Enrichment queue is permanently empty (no input records) | Critical — the enrichment pipeline never runs |
-| Three-cluster topology makes integration testing impossible without manual data seeding | High |
-| Mongo 6 → 7 version gap widens over time, increasing migration effort | Medium |
-| Atlas billing for three separate clusters vs. one | Low (depends on deployment target) |
+| Risk                                                                                    | Severity                                                 |
+| --------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| Dashboard shows zero county case records in all environments                            | Critical — the dashboard's primary value is inaccessible |
+| Enrichment queue is permanently empty (no input records)                                | Critical — the enrichment pipeline never runs            |
+| Three-cluster topology makes integration testing impossible without manual data seeding | High                                                     |
+| Mongo 6 → 7 version gap widens over time, increasing migration effort                   | Medium                                                   |
+| Atlas billing for three separate clusters vs. one                                       | Low (depends on deployment target)                       |
 
 ---
 
 ## Standalone Mode Compatibility
 
 Each service can still be run in isolation from its own directory using its own compose file. When run standalone:
+
 - `services/inmate-enrichment/docker-compose.yml` starts its own `ie-mongo` with replica set
 - `apps/dashboard/docker-compose.dev.yml` starts its own `dashboard-mongo`
 - `services/warrantdb-pipeline/docker-compose.yml` is currently broken (no active Dockerfile)

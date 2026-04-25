@@ -9,13 +9,13 @@
 The `county` field on every `simple_*` and `inmates` document must be one of
 the following lowercase slugs. No other value is valid.
 
-| Slug | Full name | State | Active |
-|---|---|---|---|
-| `harris` | Harris County | TX | Yes |
-| `brazoria` | Brazoria County | TX | Yes |
-| `galveston` | Galveston County | TX | Yes |
-| `fortbend` | Fort Bend County | TX | Yes |
-| `jefferson` | Jefferson County | TX | Yes |
+| Slug        | Full name        | State | Active |
+| ----------- | ---------------- | ----- | ------ |
+| `harris`    | Harris County    | TX    | Yes    |
+| `brazoria`  | Brazoria County  | TX    | Yes    |
+| `galveston` | Galveston County | TX    | Yes    |
+| `fortbend`  | Fort Bend County | TX    | Yes    |
+| `jefferson` | Jefferson County | TX    | Yes    |
 
 **Adding a new county:** Add a row to this table, create the corresponding
 `configs/<slug>.json` in the pipeline, and ensure the normalizer sets `county`
@@ -75,14 +75,14 @@ saving CRM overlay fields.
 Some older pipeline versions or raw scrapers produced non-canonical county values.
 The normalizer must map these to the canonical slug before writing to `simple_*`.
 
-| Non-canonical value | Canonical slug | Notes |
-|---|---|---|
-| `Harris` | `harris` | Capitalized variant |
-| `fort bend` | `fortbend` | Space variant |
-| `Fort Bend` | `fortbend` | Space + title case variant |
-| `fort_bend` | `fortbend` | Underscore variant |
-| `harris_county` | `harris` | County-suffix variant |
-| `galveston county` | `galveston` | County-suffix space variant |
+| Non-canonical value | Canonical slug | Notes                       |
+| ------------------- | -------------- | --------------------------- |
+| `Harris`            | `harris`       | Capitalized variant         |
+| `fort bend`         | `fortbend`     | Space variant               |
+| `Fort Bend`         | `fortbend`     | Space + title case variant  |
+| `fort_bend`         | `fortbend`     | Underscore variant          |
+| `harris_county`     | `harris`       | County-suffix variant       |
+| `galveston county`  | `galveston`    | County-suffix space variant |
 
 Once a document is written to `simple_*` with a canonical slug, no alias should
 persist in the stored document. The alias list above is for the normalizer's

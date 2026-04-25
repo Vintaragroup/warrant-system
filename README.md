@@ -4,11 +4,11 @@ Monorepo consolidating three services for the Harris County warrant intelligence
 
 ## Services
 
-| Path | Description | Language |
-|------|-------------|----------|
-| `apps/dashboard/` | Bail Bonds Dashboard — React/Vite + Express backend | TypeScript / JavaScript |
-| `services/inmate-enrichment/` | Inmate enrichment pipeline — BullMQ + PDL/Pipl | TypeScript |
-| `services/warrantdb-pipeline/` | Warrant scraper pipeline — FastAPI + county scrapers | Python |
+| Path                           | Description                                          | Language                |
+| ------------------------------ | ---------------------------------------------------- | ----------------------- |
+| `apps/dashboard/`              | Bail Bonds Dashboard — React/Vite + Express backend  | TypeScript / JavaScript |
+| `services/inmate-enrichment/`  | Inmate enrichment pipeline — BullMQ + PDL/Pipl       | TypeScript              |
+| `services/warrantdb-pipeline/` | Warrant scraper pipeline — FastAPI + county scrapers | Python                  |
 
 ## Quick Start
 

@@ -11,6 +11,7 @@
 This document defines the binding field contract for `simple_<county>` collections — the normalized output of the pipeline that both the dashboard and the enrichment sync script consume. It also specifies bond amount coercion rules that apply in the pipeline normalizer.
 
 This contract exists because:
+
 - The pipeline's `SCHEMA_CONTRACT.md` documents fields from the producer's perspective
 - The dashboard's `DATA_SCHEMA_AUDIT.md` documents expected fields from the consumer's perspective
 - These were written independently with no shared authority
@@ -50,8 +51,8 @@ if not doc.get("booking_date") and doc.get("booking_datetime"):
 
 ### Affected files
 
-| File | Change |
-|---|---|
+| File                                                 | Change                                                                    |
+| ---------------------------------------------------- | ------------------------------------------------------------------------- |
 | `services/warrantdb-pipeline/normalize_to_simple.py` | Add `booking_date` backfill from `booking_datetime` in post-process block |
 
 ---
@@ -61,6 +62,7 @@ if not doc.get("booking_date") and doc.get("booking_datetime"):
 ### Decision
 
 The pipeline normalizer is the **sole owner of bond amount coercion**. `bond_amount` in `simple_<county>` must be:
+
 - A `float` ≥ 0, or
 - `None` / absent (meaning bond data is unknown or not applicable)
 
@@ -102,9 +104,8 @@ In the enrichment service bond threshold check (in `shared/src/config.ts`, `watc
 
 ```typescript
 const rawBond = subject.bond_amount ?? subject.bond;
-const bondNum = typeof rawBond === 'number'
-  ? rawBond
-  : parseFloat(String(rawBond ?? ''));
+const bondNum =
+  typeof rawBond === "number" ? rawBond : parseFloat(String(rawBond ?? ""));
 const bondKnown = !isNaN(bondNum);
 
 if (bondKnown && bondNum < BOND_THRESHOLD) {
@@ -117,10 +118,10 @@ This means records with no bond data are **allowed through** the gate. Records w
 
 ### Affected files
 
-| File | Change |
-|---|---|
+| File                                                 | Change                                                             |
+| ---------------------------------------------------- | ------------------------------------------------------------------ |
 | `services/warrantdb-pipeline/normalize_to_simple.py` | Add `_coerce_bond_amount` function and apply in post-process block |
-| `services/inmate-enrichment/shared/src/config.ts` | Add null-safe bond comparison logic |
+| `services/inmate-enrichment/shared/src/config.ts`    | Add null-safe bond comparison logic                                |
 
 ---
 
@@ -128,17 +129,17 @@ This means records with no bond data are **allowed through** the gate. Records w
 
 The following fields are **required** in every `simple_<county>` document emitted by the normalizer. Absent values must be `None`/null — not missing keys. This allows consumers to rely on key presence.
 
-| Field | Type | Required by |
-|---|---|---|
-| `spn` | `string \| null` | Enrichment sync key; dashboard display |
-| `full_name` | `string` | Dashboard display; enrichment sync |
-| `county` | `string` | Dashboard collection routing; enrichment `county` field |
-| `booking_date` | `string (YYYY-MM-DD) \| null` | Dashboard time-bucket; enrichment window gate |
-| `bond_amount` | `float \| null` | Enrichment eligibility gate; dashboard display |
-| `status` | `string \| null` | Dashboard display |
-| `charge` | `string \| null` | Dashboard display |
-| `_upsert_key.county` | `string` | Canonical identity; dashboard union queries |
-| `_upsert_key.anchor` | `string` | Canonical identity |
+| Field                | Type                          | Required by                                             |
+| -------------------- | ----------------------------- | ------------------------------------------------------- |
+| `spn`                | `string \| null`              | Enrichment sync key; dashboard display                  |
+| `full_name`          | `string`                      | Dashboard display; enrichment sync                      |
+| `county`             | `string`                      | Dashboard collection routing; enrichment `county` field |
+| `booking_date`       | `string (YYYY-MM-DD) \| null` | Dashboard time-bucket; enrichment window gate           |
+| `bond_amount`        | `float \| null`               | Enrichment eligibility gate; dashboard display          |
+| `status`             | `string \| null`              | Dashboard display                                       |
+| `charge`             | `string \| null`              | Dashboard display                                       |
+| `_upsert_key.county` | `string`                      | Canonical identity; dashboard union queries             |
+| `_upsert_key.anchor` | `string`                      | Canonical identity                                      |
 
 Fields not in this list are permitted but not guaranteed. Consumers must not assume their presence.
 
@@ -148,13 +149,13 @@ Fields not in this list are permitted but not guaranteed. Consumers must not ass
 
 `county` values in `simple_<county>` output must use the lowercase slug format:
 
-| County | Correct slug |
-|---|---|
-| Harris | `harris` |
-| Brazoria | `brazoria` |
-| Galveston | `galveston` |
-| Fort Bend | `fortbend` |
-| Jefferson | `jefferson` |
+| County    | Correct slug |
+| --------- | ------------ |
+| Harris    | `harris`     |
+| Brazoria  | `brazoria`   |
+| Galveston | `galveston`  |
+| Fort Bend | `fortbend`   |
+| Jefferson | `jefferson`  |
 
 The enrichment service does not validate county format. If a record arrives with `county = "Harris County"` or `county = "HARRIS"`, county-scoped routing will silently fail in any consumer that depends on slug matching (including the dashboard's `COUNTY_COLLECTIONS` list and the enrichment service's county-based logic).
 
@@ -175,8 +176,8 @@ Parts 1 and 2 are independent and can be implemented simultaneously in the same 
 
 ## Risks If Deferred
 
-| Risk | Severity |
-|---|---|
-| Dashboard assigns every new record to the wrong time bucket (falls to `normalized_at`) | High — core dashboard view is wrong for all new records |
-| Enrichment gate makes non-deterministic eligibility decisions for string-format bond values | High — provider API billing is unpredictable |
-| Records with `county = "Harris County"` are invisible to the dashboard and enrichment | Medium — silent data loss for malformed upstream records |
+| Risk                                                                                        | Severity                                                 |
+| ------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| Dashboard assigns every new record to the wrong time bucket (falls to `normalized_at`)      | High — core dashboard view is wrong for all new records  |
+| Enrichment gate makes non-deterministic eligibility decisions for string-format bond values | High — provider API billing is unpredictable             |
+| Records with `county = "Harris County"` are invisible to the dashboard and enrichment       | Medium — silent data loss for malformed upstream records |
