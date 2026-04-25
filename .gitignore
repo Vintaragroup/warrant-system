@@ -1,0 +1,50 @@
+node_modules/
+dist/
+build/
+
+# ─── Environment files ────────────────────────────────────────────────────────
+.env
+**/.env
+.env.*
+!.env.example
+*.env.local
+*.env.production
+*.env.development
+*.env.staging
+
+# ─── Secrets and credentials ─────────────────────────────────────────────────
+.secrets/
+**/.secrets/
+**/firebase.json
+*.pem
+*.key
+*.p8
+*.p12
+
+# ─── Python ──────────────────────────────────────────────────────────────────
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# ─── OS / editor ─────────────────────────────────────────────────────────────
+.DS_Store
+*.log
+logs/
+cookiejar
+
+# ─── Archives and uploads ─────────────────────────────────────────────────────
+*.tar.gz
+*.zip
+uploads/
+
+# ─── Pipeline / scraper data directories ────────────────────────────────────
+dump_local/
+rosters/
+debug_dumps/
+storage/
+
+# ─── Test / build output ─────────────────────────────────────────────────────
+*.jsonl
+coverage/

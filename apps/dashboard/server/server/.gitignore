@@ -1,0 +1,10 @@
+\n# Backfill run logs and sample data\nserver/scripts/backfill_runs/\nscripts/backfill_runs/\nserver/server/scripts/backfill_runs/\nserver/scripts/backfill_summary.json\nscripts/backfill_summary.json\nwarrantdb_samples_20250916_200937/\n*.jsonl.gz\n
+# Backfill run logs and sample data
+server/scripts/backfill_runs/
+scripts/backfill_runs/
+server/server/scripts/backfill_runs/
+server/scripts/backfill_summary.json
+scripts/backfill_summary.json
+warrantdb_samples_20250916_200937/
+*.jsonl.gz
+\ndata/

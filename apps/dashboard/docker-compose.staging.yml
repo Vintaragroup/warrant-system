@@ -1,0 +1,35 @@
+version: '3.9'
+services:
+  api:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    environment:
+      - PORT=8080
+      - NODE_ENV=production
+      - MONGO_URI=${MONGO_URI}
+      - MONGO_DB=${MONGO_DB:-warrantdb}
+      - WEB_ORIGIN=${WEB_ORIGIN}
+      - GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/firebase
+    secrets:
+      - firebase
+    ports:
+      - "8080:8080"
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      args:
+        VITE_API_URL: ${VITE_API_URL}
+        VITE_FIREBASE_API_KEY: ${VITE_FIREBASE_API_KEY}
+        VITE_FIREBASE_AUTH_DOMAIN: ${VITE_FIREBASE_AUTH_DOMAIN}
+        VITE_FIREBASE_PROJECT_ID: ${VITE_FIREBASE_PROJECT_ID}
+        VITE_FIREBASE_APP_ID: ${VITE_FIREBASE_APP_ID}
+        VITE_FIREBASE_MEASUREMENT_ID: ${VITE_FIREBASE_MEASUREMENT_ID}
+    ports:
+      - "5173:80"
+    volumes:
+      - ./public/env.js:/usr/share/nginx/html/env.js:ro
+secrets:
+  firebase:
+    file: ./.secrets/asap-bail-books-firebase-adminsdk-fbsvc-71506047b4.json

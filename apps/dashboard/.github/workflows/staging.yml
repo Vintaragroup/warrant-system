@@ -1,0 +1,193 @@
+name: Staging CI/CD
+
+on:
+  # Run automatically only on the staging branch; use workflow_dispatch to run on other branches manually
+  push:
+    branches: ["staging"]
+  workflow_dispatch:
+    inputs:
+      renderDeploy:
+        description: "Trigger Render deploy after build/push"
+        required: false
+        default: "false"
+
+env:
+  COMPOSE_FILE: docker-compose.staging.yml
+  API_BASE: http://localhost:8080
+  DASH_BASE: http://localhost:8080/api/dashboard
+
+jobs:
+  compose-smokes:
+    name: Build and smoke test (docker-compose)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create Firebase admin secret file
+        if: ${{ secrets.FIREBASE_ADMIN_JSON != '' }}
+        run: |
+          mkdir -p ./.secrets
+          echo "${FIREBASE_ADMIN_JSON}" > ./.secrets/asap-bail-books-firebase-adminsdk-fbsvc-71506047b4.json
+        shell: bash
+        env:
+          FIREBASE_ADMIN_JSON: ${{ secrets.FIREBASE_ADMIN_JSON }}
+
+      - name: Build and start services
+        env:
+          # API env
+          MONGO_URI: ${{ secrets.MONGO_URI_ATLAS }}
+          MONGO_DB: warrantdb
+          WEB_ORIGIN: http://localhost:5173
+          # Web build args
+          VITE_API_URL: /api
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
+          VITE_FIREBASE_MEASUREMENT_ID: ${{ secrets.VITE_FIREBASE_MEASUREMENT_ID }}
+        run: |
+          docker compose -f ${COMPOSE_FILE} up -d --build
+
+      - name: Wait for API health
+        run: |
+          n=0
+          until curl -sf "${API_BASE}/api/health" > /dev/null; do
+            n=$((n+1))
+            if [ "$n" -gt 60 ]; then
+              echo "API did not become healthy in time" >&2
+              exit 1
+            fi
+            sleep 2
+          done
+
+      - name: Run API health smoke
+        run: |
+          cd server && npm i --omit=dev && node scripts/smoke-health.mjs --base ${API_BASE}
+
+      - name: Run Dashboard smoke
+        env:
+          AUTH_SIGNIN: ${{ (secrets.FIREBASE_TEST_EMAIL != '' && secrets.FIREBASE_TEST_PASSWORD != '') && 'true' || 'false' }}
+          AUTH_EMAIL: ${{ secrets.FIREBASE_TEST_EMAIL }}
+          AUTH_PASSWORD: ${{ secrets.FIREBASE_TEST_PASSWORD }}
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+        run: |
+          cd server && npm i --omit=dev && node scripts/smoke-dashboard.mjs --base ${DASH_BASE}
+
+      - name: Dump logs on failure
+        if: ${{ failure() }}
+        run: |
+          docker compose -f ${COMPOSE_FILE} ps
+          docker compose -f ${COMPOSE_FILE} logs --no-color > compose-logs.txt || true
+        continue-on-error: true
+
+      - name: Upload compose logs
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: compose-logs
+          path: compose-logs.txt
+
+      - name: Teardown
+        if: always()
+        run: docker compose -f ${COMPOSE_FILE} down -v --remove-orphans
+
+  build-push-images:
+    name: Build and push images (GHCR)
+    runs-on: ubuntu-latest
+    needs: compose-smokes
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (server)
+        id: meta_server
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}/server
+          tags: |
+            type=sha
+            type=ref,event=branch
+
+      - name: Build and push server image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./server
+          file: ./server/Dockerfile
+          push: true
+          tags: ${{ steps.meta_server.outputs.tags }}
+          labels: ${{ steps.meta_server.outputs.labels }}
+
+      - name: Extract metadata (web)
+        id: meta_web
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}/web
+          tags: |
+            type=sha
+            type=ref,event=branch
+
+      - name: Build and push web image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.web
+          push: true
+          tags: ${{ steps.meta_web.outputs.tags }}
+          labels: ${{ steps.meta_web.outputs.labels }}
+          build-args: |
+            VITE_API_URL=/api
+            VITE_FIREBASE_API_KEY=${{ secrets.VITE_FIREBASE_API_KEY }}
+            VITE_FIREBASE_AUTH_DOMAIN=${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+            VITE_FIREBASE_PROJECT_ID=${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+            VITE_FIREBASE_APP_ID=${{ secrets.VITE_FIREBASE_APP_ID }}
+            VITE_FIREBASE_MEASUREMENT_ID=${{ secrets.VITE_FIREBASE_MEASUREMENT_ID }}
+
+  render-deploy:
+    name: Trigger Render deploy (optional)
+    runs-on: ubuntu-latest
+    needs: build-push-images
+    if: ${{ secrets.RENDER_API_KEY != '' && (github.ref == 'refs/heads/staging' || inputs.renderDeploy == 'true') }}
+    steps:
+      - name: Trigger API service deploy
+        if: ${{ secrets.RENDER_API_SERVICE_API_ID != '' }}
+        run: |
+          curl -fsS -X POST \
+            -H "Authorization: Bearer ${RENDER_API_KEY}" \
+            -H "Content-Type: application/json" \
+            https://api.render.com/v1/services/${RENDER_API_SERVICE_API_ID}/deploys \
+            -d '{}'
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_API_SERVICE_API_ID: ${{ secrets.RENDER_API_SERVICE_API_ID }}
+
+      - name: Trigger Web service deploy
+        if: ${{ secrets.RENDER_API_STATIC_WEB_ID != '' }}
+        run: |
+          curl -fsS -X POST \
+            -H "Authorization: Bearer ${RENDER_API_KEY}" \
+            -H "Content-Type: application/json" \
+            https://api.render.com/v1/services/${RENDER_API_STATIC_WEB_ID}/deploys \
+            -d '{}'
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_API_STATIC_WEB_ID: ${{ secrets.RENDER_API_STATIC_WEB_ID }}

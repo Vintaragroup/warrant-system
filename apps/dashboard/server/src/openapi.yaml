@@ -1,0 +1,2355 @@
+openapi: 3.0.3
+info:
+  title: WarrantDB API
+  version: 1.0.0
+tags:
+  - name: Checkins
+    description: Manage scheduled check-ins, attendance, and GPS pings.
+  - name: Users
+    description: Administrative user management.
+  - name: Payments
+    description: Billing dashboards, transactions, methods, and refunds.
+  - name: Messages
+    description: Outbound and inbound messaging.
+servers:
+  - url: http://localhost:8080/api
+paths:
+  /cases:
+    get:
+      summary: List cases
+      tags: [Cases]
+      parameters:
+        - in: query
+          name: query
+          schema: { type: string }
+        - in: query
+          name: county
+          schema: { type: string, description: "harris|galveston|brazoria|fortbend|jefferson" }
+        - in: query
+          name: status
+          schema: { type: string }
+        - in: query
+          name: startDate
+          schema: { type: string, format: date }
+        - in: query
+          name: endDate
+          schema: { type: string, format: date }
+        - in: query
+          name: window
+          schema: { type: string, enum: [24h,48h,72h] }
+        - in: query
+          name: sortBy
+          schema: { type: string, enum: [booking_date,bond_amount] }
+        - in: query
+          name: order
+          schema: { type: string, enum: [asc,desc], default: desc }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 200, default: 25 }
+      responses:
+        '200':
+          description: Case list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Case' }
+                  count:
+                    type: integer
+                  total:
+                    type: integer
+  /cases/{id}:
+    get:
+      summary: Get a case by id
+      tags: [Cases]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Case detail
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Case' }
+        '404': { description: Not found }
+  /cases/{id}/crm:
+    patch:
+      summary: Update CRM contact and metadata
+      tags: [Cases]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                address: { $ref: '#/components/schemas/CrmAddress' }
+                phone: { type: string }
+                assignedTo: { type: string }
+                followUpAt: { type: string, format: date-time }
+                documents:
+                  type: array
+                  items: { $ref: '#/components/schemas/ChecklistItem' }
+      responses:
+        '200':
+          description: Updated case
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Case' }
+        '400': { description: Invalid payload }
+        '404': { description: Not found }
+  /cases/enrichment/providers:
+    get:
+      summary: List enrichment providers
+      tags: [Cases]
+      responses:
+        '200':
+          description: Available providers
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  providers:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        label: { type: string }
+                        description: { type: string, nullable: true }
+                        supportsForce: { type: boolean }
+                        default: { type: boolean }
+  /cases/{id}/enrichment/{providerId}:
+    get:
+      summary: Get latest enrichment attempt for a case
+      tags: [Cases]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+        - in: path
+          name: providerId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Latest enrichment state
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enrichment:
+                    $ref: '#/components/schemas/Enrichment'
+                    nullable: true
+                  cached: { type: boolean }
+                  nextRefreshAt: { type: string, format: date-time, nullable: true }
+        '404': { description: Not found }
+    post:
+      summary: Run enrichment for a case
+      tags: [Cases]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+        - in: path
+          name: providerId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/EnrichmentParams'
+                - type: object
+                  properties:
+                    force: { type: boolean, description: "Bypass cache (requires elevated permission)" }
+      responses:
+        '200':
+          description: Enrichment result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enrichment: { $ref: '#/components/schemas/Enrichment' }
+                  cached: { type: boolean }
+                  nextRefreshAt: { type: string, format: date-time, nullable: true }
+        '400': { description: Invalid payload }
+        '404': { description: Not found }
+  /cases/{id}/enrichment/{providerId}/select:
+    post:
+      summary: Attach a selected enrichment result to a case
+      tags: [Cases]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+        - in: path
+          name: providerId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [recordId]
+              properties:
+                recordId: { type: string }
+      responses:
+        '200':
+          description: Updated enrichment state
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enrichment: { $ref: '#/components/schemas/Enrichment' }
+                  cached: { type: boolean }
+                  nextRefreshAt: { type: string, format: date-time, nullable: true }
+        '400': { description: Invalid payload }
+        '404': { description: Not found }
+  /health:
+    get:
+      summary: Liveness / readiness
+      responses:
+        '200':
+          description: OK
+  /health/kpis:
+    get:
+      summary: Dashboard KPIs (normalized)
+      description: Returns headline metrics computed over booking_date (YYYY-MM-DD) and bond_amount (Number).
+      responses:
+        '200':
+          description: KPI payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KpiResponse'
+  /health/trends:
+    get:
+      summary: Daily trends (normalized)
+      description: Returns daily counts and bond sums for the last N days.
+      parameters:
+        - in: query
+          name: days
+          schema: { type: integer, default: 14, minimum: 1, maximum: 60 }
+      responses:
+        '200':
+          description: Trend series
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrendResponse'
+  /dashboard/top:
+    get:
+      summary: Top bookings by value
+      parameters:
+        - in: query
+          name: window
+          schema: { type: string, enum: [24h,48h,72h,rolling72,7d,30d], default: 24h }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 10, minimum: 1, maximum: 100 }
+      responses:
+        '200':
+          description: Top items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TopItem'
+  /dashboard/new:
+    get:
+      summary: New bookings “today”
+      parameters:
+        - in: query
+          name: county
+          required: false
+          schema: { type: string, description: "harris|galveston|brazoria|fortbend|jefferson" }
+      responses:
+        '200':
+          description: New items
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CaseListItem'
+  /dashboard/recent:
+    get:
+      summary: Bookings in the last 48–72h
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, default: 10, minimum: 1, maximum: 200 }
+      responses:
+        '200':
+          description: Recent items
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CaseListItem'
+                  summary:
+                    type: object
+                    additionalProperties: true
+  /dashboard/per-county:
+    get:
+      summary: Per-county snapshot
+      parameters:
+        - in: query
+          name: window
+          schema: { type: string, enum: [24h,48h,72h,rolling72,7d,30d], default: rolling72 }
+      responses:
+        '200':
+          description: Snapshot
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CountySnapshotItem'
+  /auth/session:
+    post:
+      summary: Exchange Firebase ID token for server session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [idToken]
+              properties:
+                idToken:
+                  type: string
+                  description: Firebase ID token obtained on the client
+      responses:
+        '200':
+          description: Session cookie set
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSessionResponse'
+        '401':
+          description: Invalid token
+        '400':
+          description: Missing idToken
+  /auth/me:
+    get:
+      summary: Current authenticated user profile
+      responses:
+        '200':
+          description: Authenticated user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthProfileResponse'
+        '401':
+          description: Not authenticated
+  /auth/logout:
+    post:
+      summary: Clear session cookie and sign out
+      responses:
+        '200':
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+        '401':
+          description: Not authenticated
+  /auth/session/revoke:
+    post:
+      summary: Revoke Firebase refresh tokens for current user
+      responses:
+        '200':
+          description: Sessions revoked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+  /auth/access-request:
+    post:
+      summary: Submit an access request
+      description: Allows prospective users to notify administrators that they need an account. No authentication required.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+                displayName:
+                  type: string
+                message:
+                  type: string
+      responses:
+        '202':
+          description: Request accepted for review
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  request:
+                    $ref: '#/components/schemas/AccessRequest'
+        '400':
+          description: Validation error
+        '409':
+          description: Account already exists
+
+  /users:
+    get:
+      summary: List users
+      tags: [Users]
+      parameters:
+        - in: query
+          name: role
+          schema: { type: string }
+        - in: query
+          name: status
+          schema: { type: string, enum: ['active','suspended','invited','pending_mfa','deleted'] }
+        - in: query
+          name: search
+          schema: { type: string, description: 'Match email or displayName (case-insensitive)' }
+      responses:
+        '200':
+          description: User list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  users:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/UserAccount'
+        '403':
+          description: Forbidden
+    post:
+      summary: Create or invite a user
+      tags: [Users]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserCreateRequest'
+      responses:
+        '201':
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserCreateResponse'
+        '200':
+          description: User already existed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserCreateResponse'
+        '400':
+          description: Validation error
+        '403':
+          description: Forbidden
+
+  /users/{uid}:
+    patch:
+      summary: Update an existing user
+      tags: [Users]
+      parameters:
+        - in: path
+          name: uid
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserUpdateRequest'
+      responses:
+        '200':
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/UserAccount'
+        '400':
+          description: Validation error
+        '403':
+          description: Forbidden
+        '404':
+          description: User not found
+
+  /users/{uid}/revoke:
+    post:
+      summary: Revoke refresh tokens for a user
+      tags: [Users]
+      parameters:
+        - in: path
+          name: uid
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Revoked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+        '403':
+          description: Forbidden
+        '404':
+          description: User not found
+  /payments:
+    get:
+      summary: List payment transactions
+      tags: [Payments]
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            description: Filter by payment status
+        - in: query
+          name: method
+          schema:
+            type: string
+            description: Filter by payment method (card, ach_debit, wire, check)
+        - in: query
+          name: search
+          schema:
+            type: string
+            description: Match transaction ID, client name, or bond number (case-insensitive)
+      responses:
+        '200':
+          description: Payments list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentListResponse'
+        '403':
+          description: Forbidden
+    post:
+      summary: Create a payment (placeholder until gateway integration)
+      tags: [Payments]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentCreateRequest'
+      responses:
+        '202':
+          description: Payment accepted for processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentCreateResponse'
+        '400':
+          description: Validation error
+        '403':
+          description: Forbidden
+
+  /payments/metrics:
+    get:
+      summary: Payment dashboard metrics
+      tags: [Payments]
+      responses:
+        '200':
+          description: Metrics payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentMetricsResponse'
+        '403':
+          description: Forbidden
+
+  /payments/{id}:
+    get:
+      summary: Retrieve a payment detail record
+      tags: [Payments]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Payment detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentDetailResponse'
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+
+  /payments/{id}/refund:
+    post:
+      summary: Submit a refund request for a payment
+      tags: [Payments]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentRefundRequest'
+      responses:
+        '202':
+          description: Refund accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentRefundResponse'
+        '400':
+          description: Validation error
+        '403':
+          description: Forbidden
+        '404':
+          description: Payment not found
+
+  /payments/methods:
+    get:
+      summary: List stored payment methods
+      tags: [Payments]
+      responses:
+        '200':
+          description: Payment methods
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentMethodsResponse'
+        '403':
+          description: Forbidden
+    post:
+      summary: Add a payment method (placeholder)
+      tags: [Payments]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentMethodCreateRequest'
+      responses:
+        '201':
+          description: Payment method created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentMethodCreateResponse'
+        '400':
+          description: Validation error
+        '403':
+          description: Forbidden
+
+  /payments/settings:
+    get:
+      summary: Retrieve payment configuration settings
+      tags: [Payments]
+      responses:
+        '200':
+          description: Settings payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentSettingsResponse'
+        '403':
+          description: Forbidden
+    put:
+      summary: Update payment configuration settings
+      tags: [Payments]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentSettings'
+      responses:
+        '200':
+          description: Updated settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentSettingsResponse'
+        '400':
+          description: Validation error
+        '403':
+          description: Forbidden
+
+  /payments/refunds/eligible:
+    get:
+      summary: List transactions eligible for refunds
+      tags: [Payments]
+      responses:
+        '200':
+          description: Eligible transactions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentRefundEligibleResponse'
+        '403':
+          description: Forbidden
+
+  /payments/refunds/requests:
+    get:
+      summary: List refund requests and their statuses
+      tags: [Payments]
+      responses:
+        '200':
+          description: Refund requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentRefundRequestListResponse'
+        '403':
+          description: Forbidden
+
+  /payments/disputes:
+    get:
+      summary: List active payment disputes
+      tags: [Payments]
+      responses:
+        '200':
+          description: Disputes list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentDisputesResponse'
+        '403':
+          description: Forbidden
+
+  /payments/disputes/{id}/resolve:
+    post:
+      summary: Submit supporting information for a dispute
+      tags: [Payments]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentDisputeResolveRequest'
+      responses:
+        '200':
+          description: Dispute updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentDisputeResponse'
+        '403':
+          description: Forbidden
+        '404':
+          description: Dispute not found
+  /payments/stripe/webhook:
+    post:
+      summary: Stripe webhook callback (raw payload)
+      tags: [Payments]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Event payload delivered by Stripe
+      responses:
+        '200':
+          description: Acknowledged
+        '400':
+          description: Signature verification failed
+        '500':
+          description: Internal processing error
+  /access-requests:
+    get:
+      summary: List pending access requests
+      tags: [Users]
+      parameters:
+        - in: query
+          name: status
+          schema: { type: string, enum: ['pending','reviewed','completed','rejected'] }
+      responses:
+        '200':
+          description: Access requests
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  requests:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AccessRequest'
+        '403':
+          description: Forbidden
+  /access-requests/{id}:
+    patch:
+      summary: Update access request status
+      tags: [Users]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: ['pending','reviewed','completed','rejected']
+      responses:
+        '200':
+          description: Updated request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  request:
+                    $ref: '#/components/schemas/AccessRequest'
+        '400':
+          description: Validation error
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '401':
+          description: Not authenticated
+  /checkins:
+    get:
+      summary: List check-ins
+      tags: [Checkins]
+      operationId: listCheckIns
+      parameters:
+        - in: query
+          name: scope
+          schema:
+            type: string
+            enum: [today, upcoming, overdue, all]
+            default: today
+        - in: query
+          name: officer
+          schema:
+            type: string
+            description: Officer id or name fragment
+        - in: query
+          name: search
+          schema:
+            type: string
+            description: Client name search string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: Paginated check-in list with summary stats
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckInCollectionResponse'
+              examples:
+                sample:
+                  value:
+                    scope: today
+                    limit: 50
+                    items:
+                      - id: "65f1c2ab9e7f3a0012ab34cd"
+                        person: "John Doe"
+                        clientName: "John Doe"
+                        county: "harris"
+                        dueAt: "2025-09-28T09:00:00.000Z"
+                        timezone: "America/Chicago"
+                        method: "sms"
+                        status: "upcoming"
+                        contactCount: 1
+                        lastContactAt: null
+                        remindersEnabled: true
+                        gpsEnabled: false
+                        pingsPerDay: 0
+                        createdAt: "2025-09-27T18:00:00.000Z"
+                        updatedAt: "2025-09-27T18:00:00.000Z"
+                        attendance: null
+                    stats:
+                      totalToday: 8
+                      overdue: 2
+                      completed: 5
+                      gpsEnabled: 3
+    post:
+      summary: Create a check-in
+      tags: [Checkins]
+      operationId: createCheckIn
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckInCreateRequest'
+            examples:
+              sample:
+                value:
+                  person: "John Doe"
+                  county: "harris"
+                  dueAt: "2025-09-28T09:00:00.000Z"
+                  timezone: "America/Chicago"
+                  officerId: "65f1c2ab9e7f3a0012ab34aa"
+                  method: "sms"
+                  remindersEnabled: true
+                  gpsEnabled: false
+                  pingsPerDay: 3
+      responses:
+        '201':
+          description: Newly created check-in
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  checkIn:
+                    $ref: '#/components/schemas/CheckIn'
+              examples:
+                created:
+                  value:
+                    checkIn:
+                      id: "65f1c2ab9e7f3a0012ab34cd"
+                      person: "John Doe"
+                      county: "harris"
+                      dueAt: "2025-09-28T09:00:00.000Z"
+                      timezone: "America/Chicago"
+                      method: "sms"
+                      status: "pending"
+                      remindersEnabled: true
+                      gpsEnabled: false
+                      pingsPerDay: 3
+  /checkins/options:
+    get:
+      summary: Retrieve check-in form options
+      tags: [Checkins]
+      operationId: getCheckInOptions
+      responses:
+        '200':
+          description: Available clients, officers, and defaults
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckInOptionsResponse'
+              examples:
+                sample:
+                  value:
+                    clients:
+                      - id: "65f1c2ab9e7f3a0012ab34aa"
+                        name: "Jane Smith"
+                        county: "galveston"
+                        caseNumber: "G-12345"
+                    officers:
+                      - id: "ab12cd34ef56"
+                        name: "Officer Perez"
+                        email: "operez@example.com"
+                        roles: ["Employee"]
+                    defaults:
+                      timezone: "America/Chicago"
+                      pingsPerDay: 3
+  /checkins/{id}:
+    get:
+      summary: Retrieve check-in detail
+      tags: [Checkins]
+      operationId: getCheckIn
+      parameters:
+        - $ref: '#/components/parameters/CheckInId'
+      responses:
+        '200':
+          description: Check-in detail with recent ping logs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckInDetailResponse'
+              examples:
+                sample:
+                  value:
+                    checkIn:
+                      id: "65f1c2ab9e7f3a0012ab34cd"
+                      person: "John Doe"
+                      county: "harris"
+                      dueAt: "2025-09-28T09:00:00.000Z"
+                      timezone: "America/Chicago"
+                      method: "sms"
+                      status: "upcoming"
+                      contactCount: 1
+                    pings:
+                      - id: "ping_01"
+                        scheduledFor: "2025-09-27T19:00:00.000Z"
+                        status: "queued"
+                        channel: "manual"
+        '404':
+          description: Not found
+    put:
+      summary: Update a check-in
+      tags: [Checkins]
+      operationId: updateCheckIn
+      parameters:
+        - $ref: '#/components/parameters/CheckInId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckInUpdateRequest'
+            examples:
+              sample:
+                value:
+                  dueAt: "2025-09-28T10:00:00.000Z"
+                  timezone: "America/Chicago"
+                  method: "call"
+                  notes: "Rescheduled by client"
+      responses:
+        '200':
+          description: Updated check-in
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  checkIn:
+                    $ref: '#/components/schemas/CheckIn'
+              examples:
+                updated:
+                  value:
+                    checkIn:
+                      id: "65f1c2ab9e7f3a0012ab34cd"
+                      person: "John Doe"
+                      method: "call"
+                      dueAt: "2025-09-28T10:00:00.000Z"
+        '404':
+          description: Not found
+  /checkins/{id}/timeline:
+    get:
+      summary: Retrieve check-in timeline
+      tags: [Checkins]
+      operationId: getCheckInTimeline
+      parameters:
+        - $ref: '#/components/parameters/CheckInId'
+      responses:
+        '200':
+          description: Timeline entries for the check-in
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckInTimelineResponse'
+              examples:
+                sample:
+                  value:
+                    timeline:
+                      - label: "Scheduled"
+                        timestamp: "2025-09-27T18:00:00.000Z"
+                      - label: "Due"
+                        timestamp: "2025-09-28T09:00:00.000Z"
+                      - label: "Ping queued"
+                        timestamp: "2025-09-28T08:30:00.000Z"
+        '404':
+          description: Not found
+  /checkins/{id}/pings/manual:
+    post:
+      summary: Trigger a manual GPS ping
+      tags: [Checkins]
+      operationId: createManualCheckInPing
+      parameters:
+        - $ref: '#/components/parameters/CheckInId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+            examples:
+              sample:
+                value:
+                  reason: "verification-before-appointment"
+      responses:
+        '202':
+          description: Ping queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckInManualPingResponse'
+              examples:
+                queued:
+                  value:
+                    ping:
+                      id: "ping_01"
+                      status: "queued"
+                      scheduledFor: "2025-09-28T08:30:00.000Z"
+        '404':
+          description: Not found
+  /checkins/{id}/attendance:
+    post:
+      summary: Record check-in attendance
+      tags: [Checkins]
+      operationId: recordCheckInAttendance
+      parameters:
+        - $ref: '#/components/parameters/CheckInId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckInAttendanceRequest'
+            examples:
+              attended:
+                value:
+                  status: "attended"
+                  recordedAt: "2025-09-28T09:05:00.000Z"
+                  note: "Arrived on time"
+                  location:
+                    lat: 29.7604
+                    lng: -95.3698
+      responses:
+        '200':
+          description: Updated check-in with attendance details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  checkIn:
+                    $ref: '#/components/schemas/CheckIn'
+              examples:
+                updated:
+                  value:
+                    checkIn:
+                      id: "65f1c2ab9e7f3a0012ab34cd"
+                      status: "done"
+                      attendance:
+                        status: "attended"
+                        recordedAt: "2025-09-28T09:05:00.000Z"
+        '400':
+          description: Invalid payload
+        '404':
+          description: Not found
+  /checkins/{id}/status:
+    patch:
+      summary: Update check-in status
+      tags: [Checkins]
+      operationId: updateCheckInStatus
+      parameters:
+        - $ref: '#/components/parameters/CheckInId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [pending, overdue, done]
+                note:
+                  type: string
+                  nullable: true
+            examples:
+              sample:
+                value:
+                  status: "done"
+                  note: "Completed after officer call"
+      responses:
+        '200':
+          description: Updated check-in
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckIn'
+              examples:
+                updated:
+                  value:
+                    id: "65f1c2ab9e7f3a0012ab34cd"
+                    status: "done"
+        '400':
+          description: Invalid payload
+        '404':
+          description: Not found
+  /checkins/{id}/contact:
+    patch:
+      summary: Increment contact attempts and timestamp
+      tags: [Checkins]
+      operationId: updateCheckInContact
+      parameters:
+        - $ref: '#/components/parameters/CheckInId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                increment:
+                  type: integer
+                  minimum: 1
+                  default: 1
+            examples:
+              sample:
+                value:
+                  increment: 1
+      responses:
+        '200':
+          description: Updated check-in
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckIn'
+              examples:
+                updated:
+                  value:
+                    id: "65f1c2ab9e7f3a0012ab34cd"
+                    contactCount: 2
+                    lastContactAt: "2025-09-28T08:00:00.000Z"
+        '404':
+          description: Not found
+  /messages:
+    get:
+      summary: List messages
+      description: Returns recent inbound and outbound messages with optional case filter.
+      tags: [Messages]
+      parameters:
+        - in: query
+          name: caseId
+          schema:
+            type: string
+            description: Filter messages by case identifier.
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: Message list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Message'
+  /messages/send:
+    post:
+      summary: Queue outbound SMS message
+      tags: [Messages]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [caseId, to, body]
+              properties:
+                caseId:
+                  type: string
+                  description: Case identifier the message belongs to.
+                to:
+                  type: string
+                  description: Recipient phone number in E.164 format.
+                body:
+                  type: string
+                  maxLength: 1600
+                  description: Message body to send.
+      responses:
+        '202':
+          description: Message queued for delivery
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: object
+                    properties:
+                      id: { type: string }
+                      status: { type: string }
+        '400':
+          description: Invalid payload
+  /messages/twilio/status:
+    post:
+      summary: Twilio delivery status callback
+      tags: [Messages]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                MessageSid: { type: string }
+                MessageStatus: { type: string }
+                To: { type: string }
+                From: { type: string }
+                ErrorCode: { type: string, nullable: true }
+                ErrorMessage: { type: string, nullable: true }
+      responses:
+        '200': { description: Acknowledged }
+        '403': { description: Invalid signature }
+  /messages/twilio/inbound:
+    post:
+      summary: Twilio inbound message webhook
+      tags: [Messages]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                MessageSid: { type: string }
+                From: { type: string }
+                To: { type: string }
+                Body: { type: string }
+      responses:
+        '200': { description: Acknowledged }
+        '403': { description: Invalid signature }
+components:
+  schemas:
+    CrmAddress:
+      type: object
+      properties:
+        streetLine1: { type: string }
+        streetLine2: { type: string }
+        city: { type: string }
+        stateCode: { type: string }
+        postalCode: { type: string }
+        countryCode: { type: string }
+    ChecklistItem:
+      type: object
+      properties:
+        key: { type: string }
+        label: { type: string }
+        required: { type: boolean }
+        status: { type: string, enum: [pending, completed] }
+        completedAt: { type: string, format: date-time }
+        note: { type: string }
+    Case:
+      type: object
+      properties:
+        id: { type: string }
+        full_name: { type: string }
+        county: { type: string }
+        booking_date: { type: string }
+        bond_amount: { type: number, nullable: true }
+        bond_label: { type: string }
+        case_number: { type: string }
+        spn: { type: string }
+        phone: { type: string }
+        address: { $ref: '#/components/schemas/CaseSourceAddress' }
+        crm_stage: { type: string, enum: [new, contacted, qualifying, accepted, denied] }
+        crm_details:
+          type: object
+          properties:
+            assignedTo: { type: string }
+            followUpAt: { type: string, format: date-time }
+            phone: { type: string }
+            address: { $ref: '#/components/schemas/CrmAddress' }
+            documents:
+              type: array
+              items: { $ref: '#/components/schemas/ChecklistItem' }
+            attachments:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+    Message:
+      type: object
+      properties:
+        id: { type: string }
+        caseId: { type: string, nullable: true }
+        direction: { type: string, enum: [out, in] }
+        channel: { type: string, enum: [sms, voice] }
+        status: { type: string, enum: [queued, sending, sent, delivered, failed] }
+        to: { type: string, nullable: true }
+        from: { type: string, nullable: true }
+        body: { type: string, nullable: true }
+        provider: { type: string, nullable: true }
+        providerMessageId: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time, nullable: true }
+        sentAt: { type: string, format: date-time, nullable: true }
+        deliveredAt: { type: string, format: date-time, nullable: true }
+        errorCode: { type: string, nullable: true }
+        errorMessage: { type: string, nullable: true }
+        meta:
+          type: object
+          additionalProperties: true
+    CaseSourceAddress:
+      type: object
+      properties:
+        line1: { type: string }
+        line2: { type: string }
+        city: { type: string }
+        state: { type: string }
+        zip: { type: string }
+        postalCode: { type: string }
+    EnrichmentParams:
+      type: object
+      properties:
+        fullName: { type: string }
+        firstName: { type: string }
+        lastName: { type: string }
+        city: { type: string }
+        stateCode: { type: string }
+        postalCode: { type: string }
+        addressLine1: { type: string }
+        addressLine2: { type: string }
+        phone: { type: string }
+    EnrichmentContact:
+      type: object
+      properties:
+        type: { type: string, nullable: true }
+        value: { type: string }
+        lineType: { type: string, nullable: true }
+        carrier: { type: string, nullable: true }
+    EnrichmentAddress:
+      type: object
+      properties:
+        streetLine1: { type: string, nullable: true }
+        streetLine2: { type: string, nullable: true }
+        city: { type: string, nullable: true }
+        stateCode: { type: string, nullable: true }
+        postalCode: { type: string, nullable: true }
+        countryCode: { type: string, nullable: true }
+        type: { type: string, nullable: true }
+    EnrichmentRelation:
+      type: object
+      properties:
+        name: { type: string, nullable: true }
+        relation: { type: string, nullable: true }
+    EnrichmentCandidate:
+      type: object
+      properties:
+        recordId: { type: string, nullable: true }
+        fullName: { type: string, nullable: true }
+        firstName: { type: string, nullable: true }
+        lastName: { type: string, nullable: true }
+        ageRange: { type: string, nullable: true }
+        gender: { type: string, nullable: true }
+        score: { type: number, nullable: true }
+        contacts:
+          type: array
+          items: { $ref: '#/components/schemas/EnrichmentContact' }
+        addresses:
+          type: array
+          items: { $ref: '#/components/schemas/EnrichmentAddress' }
+        relations:
+          type: array
+          items: { $ref: '#/components/schemas/EnrichmentRelation' }
+        additional:
+          type: object
+          additionalProperties: true
+    Enrichment:
+      type: object
+      properties:
+        id: { type: string }
+        provider: { type: string }
+        providerLabel: { type: string, nullable: true }
+        status: { type: string, enum: [success, empty, error] }
+        params: { $ref: '#/components/schemas/EnrichmentParams' }
+        requestedAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time, nullable: true }
+        requestedBy:
+          type: object
+          properties:
+            uid: { type: string, nullable: true }
+            email: { type: string, nullable: true }
+            name: { type: string, nullable: true }
+        candidates:
+          type: array
+          items: { $ref: '#/components/schemas/EnrichmentCandidate' }
+        error:
+          type: object
+          nullable: true
+          properties:
+            code: { type: string, nullable: true }
+            message: { type: string, nullable: true }
+        meta:
+          type: object
+          additionalProperties: true
+          nullable: true
+        selectedRecords:
+          type: array
+          items: { $ref: '#/components/schemas/EnrichmentSelection' }
+    EnrichmentSelection:
+      type: object
+      properties:
+        recordId: { type: string }
+        selectedAt: { type: string, format: date-time }
+        selectedBy:
+          type: object
+          properties:
+            uid: { type: string, nullable: true }
+            email: { type: string, nullable: true }
+            name: { type: string, nullable: true }
+        payload: { $ref: '#/components/schemas/EnrichmentCandidate' }
+    Money:
+      type: number
+      format: double
+      example: 15000
+    DateYMD:
+      type: string
+      description: ISO date string in YYYY-MM-DD (UTC) format
+      example: '2025-09-16'
+    KpiResponse:
+      type: object
+      properties:
+        ok: { type: boolean }
+        today:
+          type: object
+          properties:
+            count: { type: integer }
+            bond_sum: { $ref: '#/components/schemas/Money' }
+        yesterday:
+          type: object
+          properties:
+            count: { type: integer }
+            bond_sum: { $ref: '#/components/schemas/Money' }
+        last72h:
+          type: object
+          properties:
+            count: { type: integer }
+            bond_sum: { $ref: '#/components/schemas/Money' }
+        last7d:
+          type: object
+          properties:
+            count: { type: integer }
+            bond_sum: { $ref: '#/components/schemas/Money' }
+        topCounties24h:
+          type: array
+          items:
+            type: object
+            properties:
+              county: { type: string }
+              count: { type: integer }
+              bond_sum: { $ref: '#/components/schemas/Money' }
+        ts:
+          type: string
+          format: date-time
+    TrendPoint:
+      type: object
+      properties:
+        date: { $ref: '#/components/schemas/DateYMD' }
+        count: { type: integer }
+        bond_sum: { $ref: '#/components/schemas/Money' }
+    TrendResponse:
+      type: object
+      properties:
+        ok: { type: boolean }
+        start: { $ref: '#/components/schemas/DateYMD' }
+        end: { $ref: '#/components/schemas/DateYMD' }
+        series:
+          type: array
+          items: { $ref: '#/components/schemas/TrendPoint' }
+        ts:
+          type: string
+          format: date-time
+    TopItem:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        county: { type: string }
+        booking_date: { $ref: '#/components/schemas/DateYMD' }
+        bond_amount: { $ref: '#/components/schemas/Money' }
+        value: { $ref: '#/components/schemas/Money' }
+    CaseListItem:
+      type: object
+      properties:
+        id: { type: string }
+        person: { type: string }
+        county: { type: string }
+        booking_date: { $ref: '#/components/schemas/DateYMD' }
+        bond_amount: { $ref: '#/components/schemas/Money' }
+        contacted: { type: boolean }
+    AuthUser:
+      type: object
+      properties:
+        uid: { type: string }
+        email: { type: string, nullable: true }
+        emailVerified: { type: boolean }
+        displayName: { type: string, nullable: true }
+        roles:
+          type: array
+          items: { type: string }
+        departments:
+          type: array
+          items: { type: string }
+        counties:
+          type: array
+          items: { type: string }
+        status:
+          type: string
+        mfaEnforced:
+          type: boolean
+        lastLoginAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    AuthSessionResponse:
+      type: object
+      properties:
+        ok: { type: boolean }
+        user: { $ref: '#/components/schemas/AuthUser' }
+        sessionExpiresAt:
+          type: string
+          format: date-time
+    AuthProfileResponse:
+      type: object
+      properties:
+        ok: { type: boolean }
+        user: { $ref: '#/components/schemas/AuthUser' }
+        offense: { type: string }
+        case_number: { type: string }
+    UserAccount:
+      type: object
+      properties:
+        uid: { type: string }
+        email: { type: string, format: email }
+        displayName: { type: string, nullable: true }
+        roles:
+          type: array
+          items: { type: string }
+        departments:
+          type: array
+          items: { type: string }
+        counties:
+          type: array
+          items: { type: string }
+        status:
+          type: string
+          enum: ['active','suspended','invited','pending_mfa','deleted']
+        mfaEnforced: { type: boolean }
+        lastLoginAt: { type: string, format: date-time, nullable: true }
+        invitedAt: { type: string, format: date-time, nullable: true }
+        invitedBy: { type: string, nullable: true }
+        lastRoleChangeAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    UserCreateRequest:
+      type: object
+      required: [email]
+      properties:
+        email: { type: string, format: email }
+        displayName: { type: string }
+        roles:
+          type: array
+          items: { type: string }
+        departments:
+          type: array
+          items: { type: string }
+        counties:
+          type: array
+          items: { type: string }
+        status:
+          type: string
+          enum: ['active','suspended','invited','pending_mfa','deleted']
+    UserCreateResponse:
+      type: object
+      properties:
+        user: { $ref: '#/components/schemas/UserAccount' }
+        inviteLink:
+          type: string
+          nullable: true
+          description: Password setup link that can be shared securely
+    UserUpdateRequest:
+      type: object
+      properties:
+        email: { type: string, format: email }
+        displayName: { type: string }
+        roles:
+          type: array
+          items: { type: string }
+        departments:
+          type: array
+          items: { type: string }
+        counties:
+          type: array
+          items: { type: string }
+        status:
+          type: string
+          enum: ['active','suspended','invited','pending_mfa','deleted']
+        mfaEnforced: { type: boolean }
+    Payment:
+      type: object
+      properties:
+        id: { type: string }
+        transactionId: { type: string }
+        amount: { $ref: '#/components/schemas/Money' }
+        fees: { $ref: '#/components/schemas/Money', nullable: true }
+        netAmount: { $ref: '#/components/schemas/Money', nullable: true }
+        currency: { type: string, example: 'usd' }
+        method: { type: string, example: 'card' }
+        status: { type: string, example: 'completed' }
+        bondNumber: { type: string, nullable: true }
+        clientName: { type: string, nullable: true }
+        clientEmail: { type: string, format: email, nullable: true }
+        processedAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time, nullable: true }
+        updatedAt: { type: string, format: date-time, nullable: true }
+        flags:
+          type: array
+          items: { type: string }
+        failureReason: { type: string, nullable: true }
+        processor:
+          type: object
+          additionalProperties: true
+        stripePaymentIntentId: { type: string, nullable: true }
+        stripeChargeId: { type: string, nullable: true }
+        createdByUid: { type: string, nullable: true }
+    PaymentListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Payment' }
+        total: { type: integer }
+    PaymentCreateRequest:
+      type: object
+      required: [amount]
+      properties:
+        amount: { $ref: '#/components/schemas/Money' }
+        currency: { type: string, default: 'usd' }
+        method: { type: string, default: 'card' }
+        clientName: { type: string }
+        clientEmail: { type: string, format: email }
+        bondNumber: { type: string }
+        metadata:
+          type: object
+          additionalProperties: true
+    PaymentCreateResponse:
+      type: object
+      properties:
+        payment:
+          $ref: '#/components/schemas/Payment'
+        clientSecret:
+          type: string
+          description: Stripe payment intent client secret (use with Stripe.js)
+    PaymentDetailResponse:
+      type: object
+      properties:
+        payment:
+          $ref: '#/components/schemas/Payment'
+    PaymentRefundRequest:
+      type: object
+      required: [amount]
+      properties:
+        amount: { $ref: '#/components/schemas/Money' }
+        reason: { type: string }
+    PaymentRefund:
+      type: object
+      properties:
+        id: { type: string }
+        transactionId: { type: string }
+        amount: { $ref: '#/components/schemas/Money' }
+        currency: { type: string }
+        status: { type: string }
+        requestedAt: { type: string, format: date-time }
+        resolvedAt: { type: string, format: date-time, nullable: true }
+    PaymentRefundResponse:
+      type: object
+      properties:
+        refund:
+          $ref: '#/components/schemas/PaymentRefund'
+    PaymentMethod:
+      type: object
+      properties:
+        id: { type: string }
+        type: { type: string, example: 'card' }
+        brand: { type: string, nullable: true }
+        last4: { type: string, nullable: true }
+        expiryMonth: { type: integer, nullable: true }
+        expiryYear: { type: integer, nullable: true }
+        bankName: { type: string, nullable: true }
+        accountType: { type: string, nullable: true }
+        label: { type: string, nullable: true }
+        isDefault: { type: boolean }
+        status: { type: string }
+    PaymentMethodsResponse:
+      type: object
+      properties:
+        methods:
+          type: array
+          items: { $ref: '#/components/schemas/PaymentMethod' }
+    PaymentMethodCreateRequest:
+      type: object
+      properties:
+        type: { type: string, default: 'card' }
+        brand: { type: string }
+        last4: { type: string }
+        expiryMonth: { type: integer }
+        expiryYear: { type: integer }
+        label: { type: string }
+        isDefault: { type: boolean }
+    PaymentMethodCreateResponse:
+      type: object
+      properties:
+        method:
+          $ref: '#/components/schemas/PaymentMethod'
+    PaymentSettings:
+      type: object
+      properties:
+        defaultMethodId: { type: string }
+        acceptedMethods:
+          type: array
+          items: { type: string }
+        autoCapture: { type: boolean }
+        autoCaptureDelayMinutes: { type: integer, nullable: true }
+        receiptEmailEnabled: { type: boolean }
+        approvalThreshold: { type: integer, nullable: true }
+        twoPersonApproval: { type: boolean }
+        notifyOnLargePayment: { type: boolean }
+        notifyRecipients:
+          type: array
+          items: { type: string, format: email }
+        automationRules:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              title: { type: string }
+              enabled: { type: boolean }
+    PaymentSettingsResponse:
+      type: object
+      properties:
+        settings:
+          $ref: '#/components/schemas/PaymentSettings'
+    PaymentRefundEligibleItem:
+      type: object
+      properties:
+        id: { type: string }
+        caseNumber: { type: string }
+        client: { type: string }
+        originalAmount: { $ref: '#/components/schemas/Money' }
+        refundableAmount: { $ref: '#/components/schemas/Money' }
+        status: { type: string }
+        daysAgo: { type: integer }
+    PaymentRefundEligibleResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/PaymentRefundEligibleItem' }
+    PaymentRefundRequestItem:
+      type: object
+      properties:
+        id: { type: string }
+        transactionId: { type: string }
+        client: { type: string }
+        requestedAt: { type: string, format: date-time }
+        amount: { $ref: '#/components/schemas/Money' }
+        status: { type: string }
+        reason: { type: string }
+        requestedBy: { type: string, nullable: true }
+    PaymentRefundRequestListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/PaymentRefundRequestItem' }
+    PaymentDispute:
+      type: object
+      properties:
+        id: { type: string }
+        transactionId: { type: string }
+        amount: { $ref: '#/components/schemas/Money' }
+        openedAt: { type: string, format: date-time }
+        client: { type: string }
+        reason: { type: string }
+        status: { type: string }
+        responseDeadline: { type: string, format: date-time, nullable: true }
+        resolvedAt: { type: string, format: date-time, nullable: true }
+        notes: { type: string, nullable: true }
+    PaymentDisputesResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/PaymentDispute' }
+    PaymentDisputeResolveRequest:
+      type: object
+      properties:
+        notes: { type: string }
+        documents:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              url: { type: string, format: uri }
+    PaymentDisputeResponse:
+      type: object
+      properties:
+        dispute:
+          $ref: '#/components/schemas/PaymentDispute'
+    PaymentMetricsResponse:
+      type: object
+      properties:
+        summary:
+          type: object
+          properties:
+            totalRevenue:
+              type: object
+              properties:
+                value: { $ref: '#/components/schemas/Money' }
+                currency: { type: string }
+                changeRatio: { type: number }
+                label: { type: string }
+            activeBonds:
+              type: object
+              properties:
+                value: { type: integer }
+                change: { type: integer }
+                label: { type: string }
+            successRate:
+              type: object
+              properties:
+                value: { type: number }
+                change: { type: number }
+                label: { type: string }
+            pendingPayments:
+              type: object
+              properties:
+                value: { type: integer }
+                change: { type: integer }
+                label: { type: string }
+        methodBreakdown:
+          type: array
+          items:
+            type: object
+            properties:
+              method: { type: string }
+              percentage: { type: number }
+        revenueTrend:
+          type: array
+          items:
+            type: object
+            properties:
+              month: { type: string }
+              amount: { $ref: '#/components/schemas/Money' }
+        alerts:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              severity: { type: string }
+              title: { type: string }
+              description: { type: string }
+        upcomingPayouts:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              arrivalDate: { type: string, format: date-time }
+              amount: { $ref: '#/components/schemas/Money' }
+              status: { type: string }
+              method: { type: string }
+    AccessRequest:
+      type: object
+      properties:
+        id: { type: string }
+        email: { type: string, format: email }
+        displayName: { type: string, nullable: true }
+        message: { type: string, nullable: true }
+        status: { type: string, enum: ['pending','reviewed','completed','rejected'] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    CountySnapshotItem:
+      type: object
+      properties:
+        county: { type: string }
+        count: { type: integer }
+        bond_sum: { $ref: '#/components/schemas/Money' }
+        latest_booking_date: { $ref: '#/components/schemas/DateYMD' }
+    CheckIn:
+      type: object
+      properties:
+        id:
+          type: string
+        clientId:
+          type: string
+          nullable: true
+        caseId:
+          type: string
+          nullable: true
+        clientName:
+          type: string
+        person:
+          type: string
+        caseNumber:
+          type: string
+          nullable: true
+        county:
+          type: string
+          nullable: true
+        dueAt:
+          type: string
+          format: date-time
+        timezone:
+          type: string
+        officerId:
+          type: string
+          nullable: true
+        method:
+          type: string
+          enum: [sms, phone, call, in-person, app]
+        status:
+          type: string
+          enum: [pending, upcoming, overdue, done]
+        note:
+          type: string
+          nullable: true
+        contactCount:
+          type: integer
+        lastContactAt:
+          type: string
+          format: date-time
+          nullable: true
+        location:
+          $ref: '#/components/schemas/CheckInLocation'
+        remindersEnabled:
+          type: boolean
+        gpsEnabled:
+          type: boolean
+        pingsPerDay:
+          type: integer
+        lastPingAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        attendance:
+          $ref: '#/components/schemas/CheckInAttendance'
+    CheckInLocation:
+      type: object
+      nullable: true
+      properties:
+        lat:
+          type: number
+        lng:
+          type: number
+        accuracy:
+          type: number
+    CheckInAttendance:
+      type: object
+      nullable: true
+      properties:
+        status:
+          type: string
+          enum: [attended, missed]
+        recordedAt:
+          type: string
+          format: date-time
+          nullable: true
+        recordedBy:
+          type: string
+          nullable: true
+        note:
+          type: string
+          nullable: true
+        location:
+          $ref: '#/components/schemas/CheckInLocation'
+    CheckInStats:
+      type: object
+      properties:
+        totalToday:
+          type: integer
+        overdue:
+          type: integer
+        completed:
+          type: integer
+        gpsEnabled:
+          type: integer
+    CheckInCollectionResponse:
+      type: object
+      properties:
+        scope:
+          type: string
+        limit:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CheckIn'
+        stats:
+          $ref: '#/components/schemas/CheckInStats'
+    CheckInPing:
+      type: object
+      properties:
+        id:
+          type: string
+        scheduledFor:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [queued, sent, acknowledged, missed, failed]
+        channel:
+          type: string
+        responseAt:
+          type: string
+          format: date-time
+          nullable: true
+        location:
+          $ref: '#/components/schemas/CheckInLocation'
+    CheckInDetailResponse:
+      type: object
+      properties:
+        checkIn:
+          $ref: '#/components/schemas/CheckIn'
+        pings:
+          type: array
+          items:
+            $ref: '#/components/schemas/CheckInPing'
+    CheckInTimelineEntry:
+      type: object
+      properties:
+        label:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        meta:
+          type: string
+          nullable: true
+    CheckInTimelineResponse:
+      type: object
+      properties:
+        timeline:
+          type: array
+          items:
+            $ref: '#/components/schemas/CheckInTimelineEntry'
+    CheckInClientOption:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        county:
+          type: string
+          nullable: true
+        caseNumber:
+          type: string
+          nullable: true
+    CheckInOfficerOption:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+          nullable: true
+        roles:
+          type: array
+          items:
+            type: string
+    CheckInOptionsResponse:
+      type: object
+      properties:
+        clients:
+          type: array
+          items:
+            $ref: '#/components/schemas/CheckInClientOption'
+        officers:
+          type: array
+          items:
+            $ref: '#/components/schemas/CheckInOfficerOption'
+        defaults:
+          type: object
+          properties:
+            timezone:
+              type: string
+            pingsPerDay:
+              type: integer
+    CheckInCreateRequest:
+      type: object
+      required: [dueAt, person]
+      properties:
+        clientId:
+          type: string
+        caseId:
+          type: string
+        person:
+          type: string
+        county:
+          type: string
+        dueAt:
+          type: string
+          format: date-time
+        timezone:
+          type: string
+        officerId:
+          type: string
+        method:
+          type: string
+          enum: [sms, phone, call, in-person, app]
+        notes:
+          type: string
+        remindersEnabled:
+          type: boolean
+        gpsEnabled:
+          type: boolean
+        pingsPerDay:
+          type: integer
+          minimum: 1
+          maximum: 12
+        locationText:
+          type: string
+        caseNumber:
+          type: string
+          description: Optional reference case number for downstream reporting
+        personName:
+          type: string
+          description: Alias for person when supplied by the client selector
+    CheckInUpdateRequest:
+      type: object
+      properties:
+        dueAt:
+          type: string
+          format: date-time
+        timezone:
+          type: string
+        officerId:
+          type: string
+        method:
+          type: string
+        notes:
+          type: string
+        remindersEnabled:
+          type: boolean
+        gpsEnabled:
+          type: boolean
+        pingsPerDay:
+          type: integer
+          minimum: 1
+          maximum: 12
+        caseNumber:
+          type: string
+        locationText:
+          type: string
+    CheckInAttendanceRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [attended, missed]
+        note:
+          type: string
+        recordedAt:
+          type: string
+          format: date-time
+        location:
+          $ref: '#/components/schemas/CheckInLocation'
+    CheckInManualPingResponse:
+      type: object
+      properties:
+        ping:
+          type: object
+          properties:
+            id:
+              type: string
+            status:
+              type: string
+            scheduledFor:
+              type: string
+              format: date-time
+  parameters:
+    CheckInId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string

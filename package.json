@@ -1,0 +1,29 @@
+{
+  "name": "warrant-system",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Monorepo: bail bonds dashboard, inmate enrichment service, and warrant pipeline",
+  "scripts": {
+    "stack:up": "docker compose -f infra/docker/docker-compose.yml up -d",
+    "stack:down": "docker compose -f infra/docker/docker-compose.yml down",
+    "stack:rebuild": "docker compose -f infra/docker/docker-compose.yml up -d --build",
+    "stack:status": "docker compose -f infra/docker/docker-compose.yml ps",
+    "stack:logs": "docker compose -f infra/docker/docker-compose.yml logs --no-color --tail=200",
+
+    "ie:up": "npm run stack:up --workspace=services/inmate-enrichment",
+    "ie:dev": "npm run dev --workspace=services/inmate-enrichment",
+    "ie:build": "npm run build --workspace=services/inmate-enrichment",
+
+    "dashboard:dev": "npm run dev --prefix apps/dashboard",
+    "dashboard:build": "npm run build --prefix apps/dashboard",
+    "dashboard:server:dev": "npm run server:dev --prefix apps/dashboard"
+  },
+  "workspaces": [
+    "apps/*",
+    "services/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=18.17"
+  }
+}

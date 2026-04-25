@@ -1,0 +1,26 @@
+{
+  "name": "@inmate/worker",
+  "version": "0.1.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "test": "jest",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@inmate/shared": "*",
+    "axios": "^1.7.7",
+    "bullmq": "^5.12.6",
+    "dotenv": "^16.4.5",
+    "ioredis": "^5.4.1",
+    "mongoose": "^8.6.0",
+    "openai": "^4.57.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.5.4"
+  }
+}

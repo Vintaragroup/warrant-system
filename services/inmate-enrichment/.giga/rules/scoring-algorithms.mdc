@@ -1,0 +1,42 @@
+---
+description: Specifications for relationship scoring algorithms and confidence calculations between inmates and contacts
+---
+
+
+# scoring-algorithms
+
+The relationship scoring system employs a weighted multi-factor algorithm to determine connection strength between inmates and potential contacts.
+
+Core Scoring Components (shared/src/scoring.ts):
+
+1. Weight Distribution:
+- Address sharing: 0.35
+- Phone validation: 0.20
+- Explicit relationships: 0.20 
+- Name/city matching: 0.10
+- Multi-provider validation: 0.10
+- Social consistency: 0.05
+
+2. Classification Categories:
+- likely_kin: High confidence familial relationships
+- possible_contact: Moderate confidence connections
+- low: Insufficient signal strength
+
+3. Validation Rules:
+- Recent address sharing takes precedence
+- Multiple provider verification required for high confidence scores
+- Social consistency checks validate relationship patterns
+
+The scoring pipeline aggregates signals across data sources and applies business-specific match criteria to determine final relationship confidence levels.
+
+Business Rules:
+- Address matches must be within defined timeframes
+- Phone validation requires bi-directional confirmation
+- Name matching incorporates familial pattern recognition
+- Provider verification requires minimum threshold matches
+
+The algorithm produces normalized confidence scores that feed into downstream bondability assessments and contact validation workflows.
+
+$END$
+
+ If you're using this file in context, clearly say in italics in one small line that "Context added by Giga scoring-algorithms" along with specifying exactly what information was used from this file in a human-friendly way, instead of using kebab-case use normal sentence case.

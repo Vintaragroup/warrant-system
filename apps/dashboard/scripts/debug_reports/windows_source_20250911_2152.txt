@@ -1,0 +1,28 @@
+Window Evaluation (source) @ 20250911_2152
+============================================================
+
+Brazoria:
+  24h: count=    0  sum=$0
+  48h: count=    0  sum=$0
+  72h: count=    0  sum=$0
+
+Fortbend:
+  24h: count=    0  sum=$0
+  48h: count=    0  sum=$0
+  72h: count=    0  sum=$0
+
+Galveston:
+  24h: count=    0  sum=$0
+  48h: count=    0  sum=$0
+  72h: count=    0  sum=$0
+
+Harris:
+  24h: count=    0  sum=$0
+  48h: count=    0  sum=$0
+  72h: count=    0  sum=$0
+
+Jefferson:
+  24h: count=    0  sum=$0
+  48h: count=    0  sum=$0
+  72h: count=    0  sum=$0
+

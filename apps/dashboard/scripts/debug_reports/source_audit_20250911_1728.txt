@@ -1,0 +1,684 @@
+# Source Collections Audit
+Generated: 2025-09-11T17:28:29Z
+DB: warrantdb
+URI: (hidden)
+
+Collection: brazoria_inmates
+Total docs (est.): 3,140
+Sample analyzed: 1,000
+
+Top counties: (no data)
+Top agencies: (no data)
+Top facilities: (no data)
+Top sources:
+  - "brazoria_inquiry": 1000
+
+Top offenses/charges: (no data)
+Field-by-field detail (sample-based):
+- _id: present=100.0% types={'ObjectId': 1000}
+    examples: "68bf07184d93cf335f8790f3"; "68bf064f4d93cf335f878f90"; "68bf053b4d93cf335f878d7e"
+- arresting_agency: present=100.0% types={'str': 1000}
+    examples: "Angleton Police Department EVADING ARREST DET W/VEH RESIST ARREST SEARCH OR TRANSPORT"; "Alvin Police Department DRIVING WHILE INTOXICATED 2ND"; "Lake Jackson Police Department MAN DEL CS PG 1 >=1G<4G MAN DEL CS PG 1 >=4G<200G MAN DEL CS PG 2 >=4G<400G MAN DEL C...
+- bond_total: present=0.0% types={}
+- booking_age_category: present=94.4% types={'str': 944}
+    top_counts: "365_days_or_older"(733), "180_to_365_days"(107), "60_to_180_days"(61), "0_to_30_days"(19), "30_to_60_days"(17)
+    examples: "365_days_or_older"; "60_to_180_days"; "365_days_or_older"
+- booking_date: present=100.0% types={'str': 1000}
+    examples: "10/10/2023"; "06/01/2025"; "09/09/2023"
+- booking_date_iso: present=100.0% types={'str': 1000}
+    examples: "2023-10-10"; "2025-06-01"; "2023-09-09"
+- booking_number: present=100.0% types={'str': 1000}
+    examples: "415781"; "429784"; "415117"
+- booking_priority: present=94.4% types={'int': 944}
+    numeric: count=944, min=1.00, p25=6.00, median=6.00, p75=6.00, max=6.00, mean=5.59
+    top_counts: 6(733), 5(107), 4(61), 2(19), 3(17)
+    examples: 6; 4; 6
+- charges: present=100.0% types={'list': 1000}
+    examples: [{"warrant #": "", "charge": null, "issuing auth": null, "offense date": null, "bond/type": null, "fine/crt costs": n...; [{"warrant #": "", "charge": null, "issuing auth": null, "offense date": null, "bond/type": null, "fine/crt costs": n...; [{"warrant #": "", "charge": null, "issuing auth": null, "offense date": null, "bond/type": null, "fine/crt costs": n...
+- charges_summary: present=74.2% types={'str': 742}
+    top_counts: "Brazoria County Sheriff's Office"(300), "Pearland Police Department"(125), "Alvin Police Department"(55), "Angleton Police Department"(42), "Department of Public Safety"(35)
+    examples: "Angleton Police Department"; "Alvin Police Department"; "Lake Jackson Police Department"
+- detail_fetched_at: present=100.0% types={'str': 993, 'datetime': 7}
+    dates: 2025-09-09T13:57:32.294000+00:00 → 2025-09-09T14:09:03.089000+00:00
+    examples: "2025-09-08T16:40:49.672819+00:00"; "2025-09-08T16:37:33.198697+00:00"; "2025-09-08T16:32:49.188739+00:00"
+- detail_url: present=100.0% types={'str': 1000}
+    top_counts: "https://pubweb.brazoriacountytx.gov/PublicAccess/JailingDetail.aspx?JailingI...(1000)
+    examples: "https://pubweb.brazoriacountytx.gov/PublicAccess/JailingDetail.aspx?JailingID=385043"; "https://pubweb.brazoriacountytx.gov/PublicAccess/JailingDetail.aspx?JailingID=399078"; "https://pubweb.brazoriacountytx.gov/PublicAccess/JailingDetail.aspx?JailingID=384379"
+- fetched_at: present=100.0% types={'str': 993, 'datetime': 7}
+    dates: 2025-09-09T13:57:32.240000+00:00 → 2025-09-09T14:09:02.953000+00:00
+    examples: "2025-09-08T16:40:49.607203+00:00"; "2025-09-08T16:37:33.134402+00:00"; "2025-09-08T16:32:49.120218+00:00"
+- first_seen_at: present=100.0% types={'str': 993, 'datetime': 7}
+    dates: 2025-09-09T13:56:45.275000+00:00 → 2025-09-09T14:09:02.953000+00:00
+    examples: "2025-09-08T16:40:49.607203+00:00"; "2025-09-08T16:37:33.134402+00:00"; "2025-09-08T16:32:49.120218+00:00"
+- is_recent_addition_24h: present=100.0% types={'bool': 1000}
+    numeric: count=1000, min=0.00, p25=1.00, median=1.00, p75=1.00, max=1.00, mean=0.99
+    top_counts: true(993), false(7)
+    examples: true; true; true
+- last_seen_at: present=1.9% types={'str': 19}
+    top_counts: "2025-08-22T01:46:58.840150+00:00"(3), "2025-08-22T01:47:14.377809+00:00"(2), "2025-08-22T01:40:07.733342+00:00"(2), "2025-08-22T01:47:47.481109+00:00"(2), "2025-08-22T01:45:57.021648+00:00"(2)
+    examples: "2025-08-22T01:47:14.377809+00:00"; "2025-08-22T01:48:27.814946+00:00"; "2025-08-22T01:46:58.840150+00:00"
+- name: present=100.0% types={'str': 1000}
+    examples: "Macchiavelo-Scamarone, Ornella"; "Martinez, Hector Mario"; "Moreno, Arthur, Jr."
+- new_since_last_scan: present=1.9% types={'bool': 19}
+    numeric: count=19, min=1.00, p25=1.00, median=1.00, p75=1.00, max=1.00, mean=1.00
+    top_counts: true(19)
+    examples: true; true; true
+- recency_bucket: present=1.9% types={'str': 19}
+    top_counts: "181-365d"(9), "61-180d"(7), "31-60d"(2), "0-30d"(1)
+    examples: "31-60d"; "181-365d"; "61-180d"
+- recency_tag: present=100.0% types={'str': 1000}
+    top_counts: ">365d"(733), "<=365d"(107), "<=180d"(61), "≤60d"(32), "≤30d"(22)
+    examples: ">365d"; "<=180d"; ">365d"
+- release_date: present=96.1% types={'str': 961}
+    examples: "10/10/2023"; "06/01/2025"; "10/12/2023"
+- release_date_iso: present=96.1% types={'str': 961}
+    examples: "2023-10-10"; "2025-06-01"; "2023-10-12"
+- scraped_at: present=94.4% types={'str': 937, 'datetime': 7}
+    dates: 2025-09-09T13:57:32.240000+00:00 → 2025-09-09T14:09:02.953000+00:00
+    examples: "2025-09-08T16:40:49.607220+00:00"; "2025-09-08T16:37:33.134421+00:00"; "2025-09-08T16:32:49.120246+00:00"
+- source: present=100.0% types={'str': 1000}
+    top_counts: "brazoria_inquiry"(1000)
+    examples: "brazoria_inquiry"; "brazoria_inquiry"; "brazoria_inquiry"
+
+================================================================================
+
+Collection: fortbend_inmates
+Total docs (est.): 855
+Sample analyzed: 855
+
+Top counties: (no data)
+Top agencies: (no data)
+Top facilities: (no data)
+Top sources:
+  - "fortbend_inquiry": 855
+
+Top offenses/charges: (no data)
+Field-by-field detail (sample-based):
+- _id: present=100.0% types={'ObjectId': 855}
+    examples: "68a79014e040b45d40e61aba"; "68a79014e040b45d40e61ac4"; "68a790c6e040b45d40e61bea"
+- bond_total: present=82.2% types={'int': 703}
+    numeric: count=703, min=331.00, p25=10,000.00, median=30,000.00, p75=106,750.00, max=2,042,500.00, mean=119,877.34
+    examples: 20000; 30000; 6000
+- booking_age_category: present=7.6% types={'str': 65}
+    top_counts: "unknown"(65)
+    examples: "unknown"; "unknown"; "unknown"
+- booking_date: present=100.0% types={'str': 855}
+    top_counts: "WHITE"(433), "BLACK"(386), "ASIAN"(36)
+    examples: "BLACK"; "WHITE"; "WHITE"
+- booking_date_iso: present=0.0% types={}
+- booking_number: present=100.0% types={'str': 855}
+    examples: "2506076"; "2506528"; "2506350"
+- booking_priority: present=7.6% types={'int': 65}
+    numeric: count=65, min=7.00, p25=7.00, median=7.00, p75=7.00, max=7.00, mean=7.00
+    top_counts: 7(65)
+    examples: 7; 7; 7
+- charges: present=100.0% types={'list': 855}
+    examples: [{"agency": "FB ROSENBERG PD", "authority": "ONVW", "warrant number": "25-DCR-112302", "jus": "DIST", "charge descrip...; [{"agency": "HC KATY PD", "authority": "WARR", "warrant number": "25-DCR-111712", "jus": "DIST", "charge description"...; [{"agency": "FT. BEND COUNTY SHERIFF'S OFFICE", "authority": "HOLDF", "warrant number": "A216747541", "jus": "FED", "...
+- detail_fetched_at: present=100.0% types={'str': 855}
+    examples: "2025-08-21T22:24:18.186401+00:00"; "2025-08-21T22:24:24.581496+00:00"; "2025-08-21T22:27:39.080765+00:00"
+- detail_url: present=100.0% types={'str': 855}
+    examples: "https://jailinq.fortbendcountytx.gov/Inmate/View_Inmate?VarJailID=P00262114"; "https://jailinq.fortbendcountytx.gov/Inmate/View_Inmate?VarJailID=P00262322"; "https://jailinq.fortbendcountytx.gov/Inmate/View_Inmate?VarJailID=P00251345"
+- dob: present=0.0% types={}
+- fetched_at: present=100.0% types={'str': 797, 'datetime': 58}
+    dates: 2025-09-09T14:11:55.343000+00:00 → 2025-09-10T19:09:01.693000+00:00
+    examples: "2025-08-21T22:24:18.076909+00:00"; "2025-08-21T22:24:24.465009+00:00"; "2025-08-21T22:27:38.955415+00:00"
+- first_seen_at: present=100.0% types={'str': 853, 'datetime': 2}
+    dates: 2025-09-09T14:12:06.021000+00:00 → 2025-09-10T19:08:32.273000+00:00
+    examples: "2025-08-21T21:30:32.028475+00:00"; "2025-08-21T21:30:38.098792+00:00"; "2025-08-21T21:33:49.471100+00:00"
+- id: present=100.0% types={'str': 855}
+    examples: "P00262114"; "P00262322"; "P00251345"
+- inserted_at: present=98.7% types={'str': 844}
+    examples: "2025-08-21T21:30:59.819243+00:00"; "2025-08-21T21:30:59.819335+00:00"; "2025-08-21T21:33:57.996010+00:00"
+- is_recent_addition_24h: present=7.6% types={'bool': 65}
+    numeric: count=65, min=0.00, p25=0.00, median=0.00, p75=0.00, max=1.00, mean=0.11
+    top_counts: false(58), true(7)
+    examples: false; false; false
+- jail_id: present=98.7% types={'str': 844}
+    examples: "P00262114"; "P00262322"; "P00251345"
+- name: present=100.0% types={'str': 855}
+    examples: "MAYES,TANEISHA YVETTE"; "MELENDEZ,LUVIN EDWARD"; "VALENCIA-PENA,JOSE CARLOS"
+- scraped_at: present=7.6% types={'datetime': 58, 'str': 7}
+    dates: 2025-09-09T14:11:55.343000+00:00 → 2025-09-10T19:09:01.693000+00:00
+    examples: "2025-09-10 19:08:25.519000+00:00"; "2025-09-10 19:08:51.425000+00:00"; "2025-09-09 14:11:55.343000+00:00"
+- source: present=100.0% types={'str': 855}
+    top_counts: "fortbend_inquiry"(855)
+    examples: "fortbend_inquiry"; "fortbend_inquiry"; "fortbend_inquiry"
+
+================================================================================
+
+Collection: galveston_events
+Total docs (est.): 3,475
+Sample analyzed: 1,000
+
+Top counties:
+  - "Galveston": 1000
+
+Top agencies:
+  - "": 1000
+
+Top facilities:
+  - "Galveston County Jail (P2C)": 1000
+
+Top sources: (no data)
+Top offenses/charges: (no data)
+Field-by-field detail (sample-based):
+- _id: present=100.0% types={'ObjectId': 1000}
+    examples: "68c1d522f3e459a5c075cd9f"; "68c1d4f7f3e459a5c075cb30"; "68c1d51ff3e459a5c075cd57"
+- age: present=100.0% types={'str': 1000}
+    examples: "35 YEARS OLD"; "39 YEARS OLD"; "22 YEARS OLD"
+- agency: present=100.0% types={'str': 1000}
+    top_counts: ""(1000)
+    examples: ""; ""; ""
+- arrest_date: present=100.0% types={'str': 1000}
+    examples: "2025-04-24"; "2025-07-01"; "2025-09-02"
+- bonds: present=100.0% types={'list': 1000}
+    examples: []; []; []
+- booked_at: present=100.0% types={'str': 1000}
+    examples: "2025-04-24"; "2025-07-01"; "2025-09-02"
+- booking_age_category: present=100.0% types={'str': 1000}
+    top_counts: "60_to_180_days"(354), "0_to_30_days"(282), "30_to_60_days"(153), "180_to_365_days"(142), "365_days_or_older"(50)
+    examples: "60_to_180_days"; "60_to_180_days"; "0_to_30_days"
+- booking_number: present=0.0% types={}
+- booking_priority: present=100.0% types={'int': 1000}
+    numeric: count=1000, min=1.00, p25=2.00, median=4.00, p75=4.00, max=6.00, mean=3.47
+    top_counts: 4(354), 2(282), 3(153), 5(142), 6(50)
+    examples: 4; 4; 2
+- charges: present=100.0% types={'list': 1000}
+    examples: [{"charge": "FRAUD POSS/USE CREDIT OR DEBIT CARD =>5<10", "status": "AWAITING TRIAL", "docket": "25CR1541", "bond": "...; [{"charge": "UNAUTH USE OF VEHICLE", "status": "AWAITING TRIAL", "docket": "25CR2649", "bond": "CASH OR SURETY $75,00...; [{"charge": "AGG ROBBERY", "status": "AWAITING TRIAL", "docket": "25CR3600", "bond": "CASH OR SURETY $50,000.00"}, {"...
+- county: present=100.0% types={'str': 1000}
+    top_counts: "Galveston"(1000)
+    examples: "Galveston"; "Galveston"; "Galveston"
+- facility: present=100.0% types={'str': 1000}
+    top_counts: "Galveston County Jail (P2C)"(1000)
+    examples: "Galveston County Jail (P2C)"; "Galveston County Jail (P2C)"; "Galveston County Jail (P2C)"
+- migrated_at: present=32.5% types={'str': 325}
+    examples: "2025-08-25T18:31:13.553031Z"; "2025-08-25T18:31:44.600183Z"; "2025-08-25T18:31:19.444584Z"
+- person_id: present=31.7% types={'str': 317}
+    examples: "68a88e24e040b45d40e6263a"; "68a88e41e040b45d40e6297e"; "68a88e2be040b45d40e626b0"
+- race: present=100.0% types={'str': 1000}
+    top_counts: "WHITE"(614), "BLACK"(382), "ASIAN OR PACIFIC ISLANDER"(4)
+    examples: "BLACK"; "WHITE"; "BLACK"
+- released_at: present=0.0% types={}
+- scraped_at: present=100.0% types={'str': 1000}
+    examples: "2025-09-10T19:43:37.068541Z"; "2025-09-10T19:43:32.617836Z"; "2025-09-10T19:43:36.547517Z"
+- sex: present=100.0% types={'str': 1000}
+    top_counts: "MALE"(822), "FEMALE"(178)
+    examples: "MALE"; "MALE"; "MALE"
+- source_url: present=100.0% types={'str': 1000}
+    examples: "https://p2c.galvestoncountytx.gov/InmateDetail.aspx?navid=638931114603282257"; "https://p2c.galvestoncountytx.gov/InmateDetail.aspx?navid=638931103572732979"; "https://p2c.galvestoncountytx.gov/InmateDetail.aspx?navid=638931113118933143"
+- status: present=100.0% types={'str': 1000}
+    top_counts: "In Custody"(1000)
+    examples: "In Custody"; "In Custody"; "In Custody"
+- total_bond: present=100.0% types={'str': 1000}
+    examples: "$30,000.00"; "$300,000.00"; "$59,000.00"
+
+================================================================================
+
+Collection: persons
+Total docs (est.): 1,707
+Sample analyzed: 1,000
+
+Top counties: (no data)
+Top agencies: (no data)
+Top facilities: (no data)
+Top sources: (no data)
+Top offenses/charges: (no data)
+Field-by-field detail (sample-based):
+- _ext_id: present=100.0% types={'str': 1000}
+    examples: "p2c:rid:385"; "p2c:rid:418"; "p2c:rid:928"
+- _id: present=100.0% types={'ObjectId': 1000}
+    examples: "68a88e32e040b45d40e62750"; "68a88e32e040b45d40e62771"; "68a88e41e040b45d40e6296f"
+- aka: present=100.0% types={'list': 1000}
+    examples: []; []; []
+- dob: present=0.0% types={}
+- full_name: present=100.0% types={'str': 1000}
+    examples: "GRIFFIN, GARRETT FRANKLIN"; "HARGROVE, JERAMIE LEE"; "SMITH, ERICA LETTICIA"
+- identifiers.booking: present=69.8% types={'list': 698}
+    examples: []; []; []
+- identifiers.inmate_id: present=30.2% types={'list': 302}
+    examples: ["764432"]; ["764819"]; ["761533"]
+- links: present=100.0% types={'list': 1000}
+    top_counts: {"rel": "p2c_detail", "url": "https://p2c.galvestoncountytx.gov/InmateDetail....(697), {"rel": "jefferson_detail", "url": "https://jeffersoncountytx.gov/InmateSearc...(302), {"rel": "jefferson_detail", "url": "https://jeffersoncountytx.gov/"}(1)
+    examples: [{"rel": "p2c_detail", "url": "https://p2c.galvestoncountytx.gov/InmateDetail.aspx?navid=638931107403255951"}]; [{"rel": "p2c_detail", "url": "https://p2c.galvestoncountytx.gov/InmateDetail.aspx?navid=638931107911116028"}]; [{"rel": "p2c_detail", "url": "https://p2c.galvestoncountytx.gov/InmateDetail.aspx?navid=638931118025168717"}]
+- media: present=100.0% types={'list': 1000}
+    top_counts: {"rel": "mugshot", "url": "https://p2c.galvestoncountytx.gov/Mug.aspx"}(697)
+    examples: [{"rel": "mugshot", "url": "https://p2c.galvestoncountytx.gov/Mug.aspx"}]; [{"rel": "mugshot", "url": "https://p2c.galvestoncountytx.gov/Mug.aspx"}]; [{"rel": "mugshot", "url": "https://p2c.galvestoncountytx.gov/Mug.aspx"}]
+- updated_at: present=100.0% types={'datetime': 1000}
+    dates: 2025-08-22T15:34:53.044000+00:00 → 2025-09-10T20:46:51.238000+00:00
+    examples: "2025-09-10 19:44:14.265000+00:00"; "2025-09-10 19:44:15.290000+00:00"; "2025-09-10 19:44:39.092000+00:00"
+
+================================================================================
+
+Collection: jefferson_events
+Total docs (est.): 1,227
+Sample analyzed: 1,000
+
+Top counties:
+  - "Jefferson": 1000
+
+Top agencies:
+  - "Jefferson County Sheriff's Office": 695
+  - "BEAUMONT PD": 187
+  - "PORT ARTHUR POLICE DEPT": 60
+  - "Out of County": 23
+  - "NEDERLAND PD": 8
+  - "Local PD": 7
+  - "GROVES POLICE DEPT": 6
+  - "DPS JEFFERSON COUNTY ARREST REPORTING": 3
+  - "PORT NECHES PD": 3
+  - "U.S. Marshall": 2
+
+Top facilities:
+  - "Jefferson County Jail": 1000
+
+Top sources: (no data)
+Top offenses/charges: (no data)
+Field-by-field detail (sample-based):
+- _id: present=100.0% types={'ObjectId': 1000}
+    examples: "68ac9fa3cdfd95f7e9d54e49"; "68c1e08fcf5fcbae3bf1a98e"; "68c04736c61c13acb9df29e7"
+- age: present=100.0% types={'str': 1000}
+    examples: "24"; "33"; "55"
+- agency: present=100.0% types={'str': 1000}
+    top_counts: "Jefferson County Sheriff's Office"(695), "BEAUMONT PD"(187), "PORT ARTHUR POLICE DEPT"(60), "Out of County"(23), "NEDERLAND PD"(8)
+    examples: "BEAUMONT PD"; "Jefferson County Sheriff's Office"; "PORT ARTHUR POLICE DEPT"
+- arrest_date: present=99.6% types={'str': 996}
+    examples: "2025-08-21"; "2025-07-19"; "2025-07-18"
+- bonds: present=100.0% types={'list': 1000}
+    examples: []; []; []
+- booked_at: present=99.6% types={'str': 996}
+    examples: "2025-08-21"; "2025-07-19"; "2025-07-18"
+- booking_age_category: present=100.0% types={'str': 1000}
+    top_counts: "60_to_180_days"(283), "0_to_30_days"(255), "365_days_or_older"(181), "30_to_60_days"(146), "180_to_365_days"(103)
+    examples: "0_to_30_days"; "30_to_60_days"; "30_to_60_days"
+- booking_number: present=0.0% types={}
+- booking_priority: present=100.0% types={'int': 1000}
+    numeric: count=1000, min=1.00, p25=2.00, median=4.00, p75=5.00, max=7.00, mean=3.74
+    top_counts: 4(283), 2(255), 6(181), 3(146), 5(103)
+    examples: 2; 3; 3
+- charges: present=100.0% types={'list': 1000}
+    examples: [{"charge": "Parole Violation", "status": "UNK", "docket": "", "bond": "", "condition": ""}]; [{"charge": "FORGERY FINANCIAL INSTRUMENT >=$100<$750 IAT", "status": "MB", "docket": "24CCCR0791 - 2", "bond": "$2,0...; [{"charge": "Parole Violation", "status": "UNK", "docket": "", "bond": "", "condition": ""}]
+- county: present=100.0% types={'str': 1000}
+    top_counts: "Jefferson"(1000)
+    examples: "Jefferson"; "Jefferson"; "Jefferson"
+- facility: present=100.0% types={'str': 1000}
+    top_counts: "Jefferson County Jail"(1000)
+    examples: "Jefferson County Jail"; "Jefferson County Jail"; "Jefferson County Jail"
+- first_name: present=100.0% types={'str': 1000}
+    examples: "KEVIN"; "Thai Vinh"; "ERIC SCOTT"
+- full_name: present=100.0% types={'str': 1000}
+    examples: "KEVIN BELL"; "THAI VINH PHAM"; "ERIC SCOTT HALL"
+- last_name: present=100.0% types={'str': 1000}
+    examples: "BELL"; "Pham"; "HALL"
+- person_id: present=26.8% types={'str': 268}
+    examples: "68c049654d93cf335f87b6f7"; "68c049204d93cf335f87b6eb"; "68c0486f4d93cf335f87b6c7"
+- race: present=100.0% types={'str': 1000}
+    top_counts: "Black"(699), "White"(264), "Hispanic"(31), "Asian"(6)
+    examples: "Black"; "Asian"; "Black"
+- released_at: present=0.0% types={}
+- scraped_at: present=100.0% types={'str': 1000}
+    examples: "2025-08-25T17:38:42.994731Z"; "2025-09-10T20:33:19.756933Z"; "2025-09-09T15:26:46.585857Z"
+- sex: present=100.0% types={'str': 1000}
+    top_counts: "Male"(839), "Female"(161)
+    examples: "Male"; "Male"; "Male"
+- source_url: present=100.0% types={'str': 1000}
+    examples: "https://jeffersoncountytx.gov/InmateSearch/Search/Detail/769061"; "https://jeffersoncountytx.gov/InmateSearch/Search/Detail/767931"; "https://jeffersoncountytx.gov/InmateSearch/Search/Detail/767913"
+- status: present=100.0% types={'str': 1000}
+    top_counts: "In Custody"(1000)
+    examples: "In Custody"; "In Custody"; "In Custody"
+- total_bond: present=65.2% types={'float': 652}
+    numeric: count=652, min=100.00, p25=13,500.00, median=50,000.00, p75=250,000.00, max=10,100,000.00, mean=257,857.65
+    examples: 353000.0; 77500.0; 300.0
+
+================================================================================
+
+Collection: harris_bond
+Total docs (est.): 2,275
+Sample analyzed: 1,000
+
+Top counties: (no data)
+Top agencies: (no data)
+Top facilities: (no data)
+Top sources:
+  - "harris_criminal_bond": 631
+  - "harris_civil_bond": 369
+
+Top offenses/charges:
+  - "DRIVING WHILE INTOXICATE": 98
+  - "CRIMINAL TRESPASS": 54
+  - "ASSAULT-FAMILY MEMBER": 53
+  - "POSS CS PG 1/1-B <1G": 52
+  - "EVADING ARREST/DETENTION": 37
+  - "THEFT >=$100<$750": 34
+  - "DWI 1ST OFFENDER BAC>=0.": 32
+  - "AGG ASSAULT W/DEADLY WEA": 27
+  - "UNL CARRYING WEAPON - GU": 27
+  - "THEFT <$2": 22
+
+Bond Amount (numeric) stats:
+   count: 742
+     min: 100
+     p25: 100.00
+  median: 100.00
+     p75: 5,000.00
+     max: 250000
+    mean: 7,444.74
+
+Field-by-field detail (sample-based):
+- _id: present=100.0% types={'ObjectId': 1000}
+    examples: "68ace033b1faad83ff456101"; "68a7613de040b45d40e61728"; "68ace033b1faad83ff456016"
+- address.city: present=100.0% types={'str': 1000}
+    examples: "HOUSTON"; ""; "HOUSTON"
+- address.line1: present=94.8% types={'str': 948}
+    examples: "3726 DARLINGHURST DR"; "8751 BROADWAY ST 3223"; "000000 HOMELESS"
+- address.zip: present=100.0% types={'str': 1000}
+    examples: "77045;"; ""; "77061;"
+- bond_amount: present=74.2% types={'int': 742}
+    numeric: count=742, min=100.00, p25=100.00, median=100.00, p75=5,000.00, max=250,000.00, mean=7,444.74
+    top_counts: 100(425), 5000(48), 1000(39), 10000(37), 30000(20)
+    examples: 100; 100; 100
+- bond_note: present=100.0% types={'str': 1000}
+    top_counts: "UNSECURED GOB ELIGIBLE"(405), ""(367), "REFER TO MAGISTRATE"(199), "00000100"(5), "00005000"(4)
+    examples: "REFER TO MAGISTRATE"; "00005000"; "UNSECURED GOB ELIGIBLE"
+- booking_age_category: present=69.9% types={'str': 699}
+    top_counts: "24_hours_or_less"(699)
+    examples: "24_hours_or_less"; "24_hours_or_less"; "24_hours_or_less"
+- booking_priority: present=69.9% types={'int': 699}
+    numeric: count=699, min=1.00, p25=1.00, median=1.00, p75=1.00, max=1.00, mean=1.00
+    top_counts: 1(699)
+    examples: 1; 1; 1
+- case_number: present=100.0% types={'str': 1000}
+    examples: "257978601010"; "192935701010"; "257966101010"
+- court_group: present=100.0% types={'str': 1000}
+    top_counts: "002"(586), "003"(414)
+    examples: "002"; "003"; "002"
+- court_no: present=100.0% types={'str': 1000}
+    top_counts: "005"(63), "003"(42), "004"(41), "002"(37), "007"(37)
+    examples: "002"; "500 2/MORE PRE"; "011"
+- file_date: present=100.0% types={'str': 1000}
+    top_counts: "2025-08-25"(249), "2025-09-10"(216), "2025-08-22"(209), "2025-09-08"(130), "2025-09-09"(104)
+    examples: "2025-08-25"; "2025-08-21"; "2025-08-25"
+- first_middle: present=100.0% types={'str': 1000}
+    examples: "JOHNATHAN LEE"; "OBREGON"; "JULIETA"
+- first_seen_at: present=100.0% types={'str': 1000}
+    top_counts: "2025-08-25T22:14:08.867318+00:00"(249), "2025-09-08T18:32:36.302464+00:00"(246), "2025-08-21T18:11:06.508090"(197), "2025-09-09T14:56:24.849441+00:00"(104), "2025-08-22T18:27:00.281014+00:00"(104)
+    examples: "2025-08-25T22:14:08.867318+00:00"; "2025-08-21T18:11:06.508090"; "2025-08-25T22:14:08.867318+00:00"
+- first_seen_file_date: present=100.0% types={'str': 1000}
+    top_counts: "2025-08-25"(249), "2025-09-08"(246), "2025-08-21"(197), "2025-09-09"(104), "2025-08-22"(104)
+    examples: "2025-08-25"; "2025-08-21"; "2025-08-25"
+- group: present=100.0% types={'str': 1000}
+    top_counts: "Criminal"(631), "Civil"(369)
+    examples: "Criminal"; "Criminal"; "Civil"
+- history: present=100.0% types={'list': 1000}
+    examples: [{"ts": "2025-08-25T22:14:08.867318+00:00", "bond_amount": null, "bond_note": "REFER TO MAGISTRATE", "file_date": "20...; [{"ts": "2025-08-21T18:11:06.508090", "bond_amount": null, "bond_note": "00005000", "file_date": "2025-08-21", "sourc...; [{"ts": "2025-08-25T22:14:08.867318+00:00", "bond_amount": 100, "bond_note": "UNSECURED GOB ELIGIBLE", "file_date": "...
+- last_name: present=100.0% types={'str': 1000}
+    examples: "WALKER"; "232"; "LOPEZ"
+- last_seen_file_date: present=100.0% types={'str': 1000}
+    top_counts: "2025-08-25"(249), "2025-09-10"(216), "2025-08-22"(209), "2025-09-08"(130), "2025-09-09"(104)
+    examples: "2025-08-25"; "2025-08-21"; "2025-08-25"
+- name: present=100.0% types={'str': 1000}
+    examples: "WALKER, JOHNATHAN LEE"; "232, OBREGON"; "LOPEZ, JULIETA"
+- needs_bond_help: present=100.0% types={'bool': 1000}
+    numeric: count=1000, min=0.00, p25=0.00, median=0.00, p75=1.00, max=1.00, mean=0.34
+    top_counts: false(663), true(337)
+    examples: false; false; false
+- offense: present=100.0% types={'str': 1000}
+    examples: "CRIMINAL TRESPASS"; "THEFT <$2"; "DRIVING WHILE INTOXICATE"
+- race_code: present=100.0% types={'str': 1000}
+    top_counts: "A"(949), "D"(3), "I"(3), "C"(2), "02465663"(2)
+    examples: "A"; "03300816"; "A"
+- scraped_at: present=69.9% types={'str': 249, 'datetime': 450}
+    dates: 2025-09-08T18:32:35.882000+00:00 → 2025-09-10T19:08:15.079000+00:00
+    examples: "2025-08-25T22:14:08.011133+00:00Z"; "2025-08-25T22:14:08.005631+00:00Z"; "2025-09-09 14:56:24.442000+00:00"
+- sex_code: present=100.0% types={'str': 1000}
+    top_counts: "B"(514), "J"(402), "A"(37), "C"(22), "X"(9)
+    examples: "J"; "A"; "B"
+- source: present=100.0% types={'str': 1000}
+    top_counts: "harris_criminal_bond"(631), "harris_civil_bond"(369)
+    examples: "harris_criminal_bond"; "harris_criminal_bond"; "harris_civil_bond"
+- source_filename_date: present=100.0% types={'str': 1000}
+    top_counts: "08-24-25"(148), "09-08-25"(130), "09-07-25"(116), "08-17-25"(105), "09-09-25"(104)
+    examples: "08-25-25"; "08-21-25"; "08-24-25"
+- source_url: present=100.0% types={'str': 1000}
+    top_counts: "Civil/08-24-25-bond.txt"(148), "Criminal/09-08-25-bond.txt"(130), "Civil/09-07-25-bond.txt"(116), "Civil/08-17-25-bond.txt"(105), "Criminal/09-09-25-bond.txt"(104)
+    examples: "Criminal/08-25-25-bond.txt"; "Criminal/08-21-25-bond.txt"; "Civil/08-24-25-bond.txt"
+- spn: present=100.0% types={'str': 1000}
+    examples: "02895641"; "ESTUARDO"; "03301396"
+- updated_at: present=100.0% types={'str': 1000}
+    top_counts: "2025-08-25T22:14:08.867318+00:00"(249), "2025-09-10T19:08:15.585600+00:00"(216), "2025-08-22T18:27:00.281014+00:00"(209), "2025-09-08T18:32:36.302464+00:00"(130), "2025-09-09T14:56:24.849441+00:00"(104)
+    examples: "2025-08-25T22:14:08.867318+00:00"; "2025-08-21T18:20:42.037928+00:00"; "2025-08-25T22:14:08.867318+00:00"
+
+================================================================================
+
+Collection: harris_misfel
+Total docs (est.): 843
+Sample analyzed: 843
+
+Top counties: (no data)
+Top agencies: (no data)
+Top facilities: (no data)
+Top sources:
+  - "harris_criminal_misfel": 523
+  - "harris_civil_misfel": 320
+
+Top offenses/charges:
+  - "257698001010": 2
+  - "193164301010": 1
+  - "191874901010": 1
+  - "251650501010": 1
+  - "193093501010": 1
+  - "248881501010": 1
+  - "253065901010": 1
+  - "257346401010": 1
+  - "191150501010": 1
+  - "192940801010": 1
+
+Bond Amount (numeric) stats:
+   count: 843
+     min: 57127
+     p25: 2,438,566.00
+  median: 3002144
+     p75: 3,284,796.50
+     max: 74485000
+    mean: 2,831,291.45
+
+Field-by-field detail (sample-based):
+- _id: present=100.0% types={'ObjectId': 843}
+    examples: "68c1cca34d93cf335f87cd91"; "68a7613ee040b45d40e617a9"; "68a8b67ae040b45d40e62be6"
+- address.city: present=100.0% types={'str': 843}
+    examples: "6286"; ""; "704"
+- address.line1: present=100.0% types={'str': 843}
+    examples: "THEFT >=2 500 <30 000"; "ASSLT FAM/HOUSEHOLD MEM W/PREV 6002 IRONSIDE TURN DR"; "POSS MARIJUANA 2-4 0Z 407 GREENS RD"
+- address.phone: present=100.0% types={'str': 843}
+    examples: "LITHONIA"; "77053"; "77060"
+- address.state: present=100.0% types={'str': 843}
+    examples: "SAYLER PARK"; "HOUSTON"; "HOUSTON"
+- address.zip: present=100.0% types={'str': 843}
+    top_counts: "TX"(602), ""(175), "HOUSTON"(30), "FL"(4), "PEARLAND"(3)
+    examples: ""; "TX"; "TX"
+- bond_amount: present=100.0% types={'int': 843}
+    numeric: count=843, min=57,127.00, p25=2,438,566.00, median=3,002,144.00, p75=3,284,796.50, max=74,485,000.00, mean=2,831,291.45
+    examples: 3303006; 2700628; 2400547
+- bond_note: present=100.0% types={'str': 843}
+    examples: ""; ""; ""
+- booking_age_category: present=77.0% types={'str': 649}
+    top_counts: "24_hours_or_less"(649)
+    examples: "24_hours_or_less"; "24_hours_or_less"; "24_hours_or_less"
+- booking_priority: present=77.0% types={'int': 649}
+    numeric: count=649, min=1.00, p25=1.00, median=1.00, p75=1.00, max=1.00, mean=1.00
+    top_counts: 1(649)
+    examples: 1; 1; 1
+- case_date: present=0.0% types={}
+- case_number: present=100.0% types={'str': 843}
+    top_counts: "002"(474), "003"(369)
+    examples: "003"; "003"; "002"
+- court_group: present=100.0% types={'str': 843}
+    top_counts: "090425"(136), "090525"(135), "090325"(133), "082125"(108), "082025"(105)
+    examples: "090625"; "081325"; "081825"
+- dob: present=0.0% types={}
+- file_date: present=100.0% types={'str': 843}
+    top_counts: "2025-08-25"(213), "2025-08-22"(184), "2025-09-10"(165), "2025-09-08"(136), "2025-09-09"(135)
+    examples: "2025-09-10"; "2025-08-22"; "2025-08-22"
+- first_seen_at: present=100.0% types={'str': 843}
+    top_counts: "2025-09-08T18:32:37.456679+00:00"(266), "2025-08-25T22:14:11.574070+00:00"(217), "2025-09-09T14:56:27.169512+00:00"(132), "2025-08-22T18:27:03.374126+00:00"(105), "2025-08-21T18:11:09.421365"(92)
+    examples: "2025-09-10T19:08:16.713436+00:00"; "2025-08-21T18:11:09.421365"; "2025-08-22T18:27:03.374126+00:00"
+- first_seen_file_date: present=100.0% types={'str': 843}
+    top_counts: "2025-09-08"(266), "2025-08-25"(217), "2025-09-09"(132), "2025-08-22"(105), "2025-08-21"(92)
+    examples: "2025-09-10"; "2025-08-21"; "2025-08-22"
+- group: present=100.0% types={'str': 843}
+    top_counts: "Criminal"(523), "Civil"(320)
+    examples: "Criminal"; "Civil"; "Criminal"
+- history: present=100.0% types={'list': 843}
+    examples: [{"ts": "2025-09-10T19:08:16.713436+00:00", "bond_amount": 3303006, "bond_note": "", "file_date": "2025-09-10", "sour...; [{"ts": "2025-08-21T18:11:09.421365", "bond_amount": 2700628, "bond_note": "", "file_date": "2025-08-21", "source": "...; [{"ts": "2025-08-22T18:27:03.374126+00:00", "bond_amount": 2400547, "bond_note": "", "file_date": "2025-08-22", "sour...
+- last_seen_file_date: present=100.0% types={'str': 843}
+    top_counts: "2025-08-25"(213), "2025-08-22"(184), "2025-09-10"(165), "2025-09-08"(136), "2025-09-09"(135)
+    examples: "2025-09-10"; "2025-08-22"; "2025-08-22"
+- name: present=100.0% types={'str': 843}
+    examples: "TETEH"; "KING"; "DOUGLAS"
+- needs_bond_help: present=100.0% types={'bool': 843}
+    numeric: count=843, min=1.00, p25=1.00, median=1.00, p75=1.00, max=1.00, mean=1.00
+    top_counts: true(843)
+    examples: true; true; true
+- offense: present=100.0% types={'str': 843}
+    examples: "193164301010"; "191874901010"; "251650501010"
+- scraped_at: present=77.0% types={'datetime': 436, 'str': 213}
+    dates: 2025-09-08T18:32:35.884000+00:00 → 2025-09-10T19:08:15.079000+00:00
+    examples: "2025-09-10 19:08:15.079000+00:00"; "2025-09-10 19:08:15.077000+00:00"; "2025-09-09 14:56:24.444000+00:00"
+- source: present=100.0% types={'str': 843}
+    top_counts: "harris_criminal_misfel"(523), "harris_civil_misfel"(320)
+    examples: "harris_criminal_misfel"; "harris_civil_misfel"; "harris_criminal_misfel"
+- source_filename_date: present=100.0% types={'str': 843}
+    top_counts: "09-08-25"(136), "09-09-25"(135), "09-07-25"(133), "08-25-25"(108), "08-24-25"(105)
+    examples: "09-10-25"; "08-17-25"; "08-22-25"
+- source_url: present=100.0% types={'str': 843}
+    top_counts: "Criminal/09-08-25-misfel.txt"(136), "Criminal/09-09-25-misfel.txt"(135), "Civil/09-07-25-misfel.txt"(133), "Criminal/08-25-25-misfel.txt"(108), "Civil/08-24-25-misfel.txt"(105)
+    examples: "Criminal/09-10-25-misfel.txt"; "Civil/08-17-25-misfel.txt"; "Criminal/08-22-25-misfel.txt"
+- spn: present=100.0% types={'str': 843}
+    examples: "032495"; "103193"; "092491"
+- updated_at: present=100.0% types={'str': 843}
+    top_counts: "2025-08-25T22:14:11.574070+00:00"(213), "2025-08-22T18:27:03.374126+00:00"(184), "2025-09-10T19:08:16.713436+00:00"(165), "2025-09-08T18:32:37.456679+00:00"(136), "2025-09-09T14:56:27.169512+00:00"(135)
+    examples: "2025-09-10T19:08:16.713436+00:00"; "2025-08-22T18:27:03.374126+00:00"; "2025-08-22T18:27:03.374126+00:00"
+
+================================================================================
+
+Collection: harris_nafiling
+Total docs (est.): 211
+Sample analyzed: 211
+
+Top counties: (no data)
+Top agencies: (no data)
+Top facilities: (no data)
+Top sources:
+  - "harris_criminal_nafiling": 132
+  - "harris_civil_nafiling": 79
+
+Top offenses/charges:
+  - "ASSAULT-FAMILY MEMBER": 43
+  - "THEFT >=$100<$750": 24
+  - "CRIM MISCH >=100 <$750": 11
+  - "HARASSMENT": 9
+  - "ILL DUMP >5LB<500LB OR >": 8
+  - "ASSAULT-BODILY INJURY": 8
+  - "TERRORISTIC THREAT FAMIL": 7
+  - "TERRORISTIC THREAT FEAR": 6
+  - "DWI 1ST OFFENDER BAC>=0.": 6
+  - "CRIMINAL MISCHIEF >=$750": 6
+
+Bond Amount (numeric) stats:
+   count: 93
+     min: 100
+     p25: 100.00
+  median: 100
+     p75: 100.00
+     max: 100
+    mean: 100.00
+
+Field-by-field detail (sample-based):
+- _id: present=100.0% types={'ObjectId': 211}
+    examples: "68bf21484d93cf335f879bbd"; "68a8b67ae040b45d40e62c5e"; "68bf21484d93cf335f879bdf"
+- address.city: present=100.0% types={'str': 211}
+    examples: "77449;"; "77039;"; "77044;"
+- address.line1: present=82.5% types={'str': 174}
+    examples: "20807 WESTFIELD GROVEPL KATY"; "11910 SHADY MEADOWS LANE HOUSTON"; "11907 ISLAMORADA DR HOUSTON"
+- address.zip: present=2.4% types={'str': 5}
+    top_counts: ";"(1), "77040;"(1), "30324;"(1), "77055;"(1), "77545;"(1)
+    examples: ";"; "77040;"; "30324;"
+- aux_flag: present=100.0% types={'str': 211}
+    top_counts: "N"(206), "I"(5)
+    examples: "N"; "N"; "N"
+- bond_amount: present=44.1% types={'int': 93}
+    numeric: count=93, min=100.00, p25=100.00, median=100.00, p75=100.00, max=100.00, mean=100.00
+    top_counts: 100(93)
+    examples: 100; 100; 100
+- bond_note: present=100.0% types={'str': 211}
+    top_counts: "REFER TO MAGISTRATE"(113), "UNSECURED GOB ELIGIBLE"(90), ""(5), "00000100"(3)
+    examples: "UNSECURED GOB ELIGIBLE"; "REFER TO MAGISTRATE"; "UNSECURED GOB ELIGIBLE"
+- booking_age_category: present=62.6% types={'str': 132}
+    top_counts: "24_hours_or_less"(132)
+    examples: "24_hours_or_less"; "24_hours_or_less"; "24_hours_or_less"
+- booking_priority: present=62.6% types={'int': 132}
+    numeric: count=132, min=1.00, p25=1.00, median=1.00, p75=1.00, max=1.00, mean=1.00
+    top_counts: 1(132)
+    examples: 1; 1; 1
+- case_number: present=100.0% types={'str': 211}
+    examples: "257965701010"; "257891401010"; "258131401010"
+- court_group: present=100.0% types={'str': 211}
+    top_counts: "002"(211)
+    examples: "002"; "002"; "002"
+- court_no: present=100.0% types={'str': 211}
+    top_counts: "009"(21), "007"(20), "004"(20), "005"(18), "008"(16)
+    examples: "007"; "008"; "007"
+- file_date: present=100.0% types={'str': 211}
+    top_counts: "2025-09-10"(51), "2025-08-22"(42), "2025-08-25"(39), "2025-08-21"(37), "2025-09-08"(36)
+    examples: "2025-09-10"; "2025-08-22"; "2025-09-10"
+- filing_flag: present=100.0% types={'str': 211}
+    top_counts: "I"(200), "A"(6), "02445745"(1), "03303002"(1), "03302883"(1)
+    examples: "I"; "I"; "I"
+- first_middle: present=100.0% types={'str': 211}
+    examples: "JUL KIFLI"; "NICOLAS"; "ARVAL LOUIS"
+- first_seen_at: present=100.0% types={'str': 211}
+    top_counts: "2025-09-08T18:32:40.201209+00:00"(80), "2025-08-21T18:11:11.051602"(53), "2025-08-25T22:14:13.349903+00:00"(39), "2025-08-22T18:27:06.207180+00:00"(26), "2025-09-10T19:08:19.259069+00:00"(7)
+    examples: "2025-09-08T18:32:40.201209+00:00"; "2025-08-22T18:27:06.207180+00:00"; "2025-09-08T18:32:40.201209+00:00"
+- first_seen_file_date: present=100.0% types={'str': 211}
+    top_counts: "2025-09-08"(80), "2025-08-21"(53), "2025-08-25"(39), "2025-08-22"(26), "2025-09-10"(7)
+    examples: "2025-09-08"; "2025-08-22"; "2025-09-08"
+- group: present=100.0% types={'str': 211}
+    top_counts: "Criminal"(132), "Civil"(79)
+    examples: "Civil"; "Criminal"; "Civil"
+- history: present=100.0% types={'list': 211}
+    top_counts: {"ts": "2025-09-08T18:32:40.201209+00:00", "bond_amount": null, "bond_note": ...(41), {"ts": "2025-09-08T18:32:40.201209+00:00", "bond_amount": 100, "bond_note": "...(39), {"ts": "2025-09-09T14:56:27.773020+00:00", "bond_amount": null, "bond_note": ...(28), {"ts": "2025-08-21T18:11:11.051602", "bond_amount": null, "bond_note": "REFER...(28), {"ts": "2025-08-21T18:20:47.683647+00:00", "bond_amount": null, "bond_note": ...(28)
+    examples: [{"ts": "2025-09-08T18:32:40.201209+00:00", "bond_amount": 100, "bond_note": "UNSECURED GOB ELIGIBLE", "file_date": "...; [{"ts": "2025-08-22T18:27:06.207180+00:00", "bond_amount": null, "bond_note": "REFER TO MAGISTRATE", "file_date": "20...; [{"ts": "2025-09-08T18:32:40.201209+00:00", "bond_amount": 100, "bond_note": "UNSECURED GOB ELIGIBLE", "file_date": "...
+- last_name: present=100.0% types={'str': 211}
+    examples: "ZACCA RYA"; "AGUIRRE"; "JEFFERY"
+- last_seen_file_date: present=100.0% types={'str': 211}
+    top_counts: "2025-09-10"(51), "2025-08-22"(42), "2025-08-25"(39), "2025-08-21"(37), "2025-09-08"(36)
+    examples: "2025-09-10"; "2025-08-22"; "2025-09-10"
+- name: present=100.0% types={'str': 211}
+    examples: "ZACCA RYA, JUL KIFLI"; "AGUIRRE, NICOLAS"; "JEFFERY, ARVAL LOUIS"
+- needs_bond_help: present=100.0% types={'bool': 211}
+    numeric: count=211, min=0.00, p25=0.00, median=0.00, p75=0.00, max=1.00, mean=0.01
+    top_counts: false(208), true(3)
+    examples: false; false; false
+- offense: present=100.0% types={'str': 211}
+    top_counts: "ASSAULT-FAMILY MEMBER"(43), "THEFT >=$100<$750"(24), "CRIM MISCH >=100 <$750"(11), "HARASSMENT"(9), "ILL DUMP >5LB<500LB OR >"(8)
+    examples: "THEFT AGGREGATE =>$100<$"; "TERRORISTIC THREAT FEAR"; "DISP.FICT/CNTRFIT/INSP/C"
+- scraped_at: present=62.6% types={'datetime': 93, 'str': 39}
+    dates: 2025-09-08T18:32:35.885000+00:00 → 2025-09-10T19:08:15.079000+00:00
+    top_counts: "2025-09-10 19:08:15.077000+00:00"(44), "2025-09-08 18:32:35.885000+00:00"(36), "2025-09-10 19:08:15.079000+00:00"(7), "2025-09-09 14:56:24.444000+00:00"(6), "2025-08-25T22:14:08.014757+00:00Z"(1)
+    examples: "2025-09-10 19:08:15.077000+00:00"; "2025-09-10 19:08:15.077000+00:00"; "2025-09-10 19:08:15.077000+00:00"
+- source: present=100.0% types={'str': 211}
+    top_counts: "harris_criminal_nafiling"(132), "harris_civil_nafiling"(79)
+    examples: "harris_civil_nafiling"; "harris_criminal_nafiling"; "harris_civil_nafiling"
+- source_filename_date: present=100.0% types={'str': 211}
+    top_counts: "09-07-25"(44), "08-21-25"(37), "09-08-25"(36), "08-22-25"(26), "08-25-25"(20)
+    examples: "09-07-25"; "08-22-25"; "09-07-25"
+- source_url: present=100.0% types={'str': 211}
+    top_counts: "Civil/09-07-25-nafiling.txt"(44), "Criminal/08-21-25-nafiling.txt"(37), "Criminal/09-08-25-nafiling.txt"(36), "Criminal/08-22-25-nafiling.txt"(26), "Criminal/08-25-25-nafiling.txt"(20)
+    examples: "Civil/09-07-25-nafiling.txt"; "Criminal/08-22-25-nafiling.txt"; "Civil/09-07-25-nafiling.txt"
+- spn: present=100.0% types={'str': 211}
+    examples: "03301380"; "03129836"; "02654128"
+- updated_at: present=100.0% types={'str': 211}
+    top_counts: "2025-09-10T19:08:19.259069+00:00"(51), "2025-08-22T18:27:06.207180+00:00"(42), "2025-08-25T22:14:13.349903+00:00"(39), "2025-08-21T18:20:47.683647+00:00"(37), "2025-09-08T18:32:40.201209+00:00"(36)
+    examples: "2025-09-10T19:08:19.259069+00:00"; "2025-08-22T18:27:06.207180+00:00"; "2025-09-10T19:08:19.259069+00:00"
+
+================================================================================
+

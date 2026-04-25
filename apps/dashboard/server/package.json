@@ -1,0 +1,46 @@
+{
+  "name": "server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "nodemon --watch src src/index.js",
+    "start": "node src/index.js",
+    "smoke:health": "node scripts/smoke-health.mjs",
+    "smoke:dashboard": "node scripts/smoke-dashboard.mjs",
+    "smoke:trends": "node scripts/smoke-trends.mjs",
+    "test:windows": "node scripts/test-windows.mjs",
+    "validate:windows": "node scripts/validate-windows.mjs",
+    "lint:api": "node scripts/validate-openapi.js",
+    "lint:api:bundle": "node scripts/validate-openapi.js --out src/openapi.bundle.json",
+    "firebase:create-user": "node scripts/create-firebase-user.mjs"
+  },
+  "dependencies": {
+    "bullmq": "^5.9.1",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.4.0",
+    "firebase-admin": "^12.7.0",
+    "helmet": "^7.1.0",
+    "ioredis": "^5.4.1",
+    "mongoose": "^8.6.4",
+    "multer": "^2.0.2",
+    "nanoid": "^4.0.2",
+    "nodemailer": "^6.9.14",
+    "stripe": "^14.0.0",
+    "swagger-ui-express": "^5.0.1",
+    "twilio": "^4.22.0",
+    "yaml": "^2.8.1",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@apidevtools/swagger-parser": "^10.1.1",
+    "nodemon": "^3.1.0"
+  },
+  "engines": {
+    "node": ">=18.17"
+  }
+}

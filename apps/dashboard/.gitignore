@@ -1,0 +1,42 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Ephemeral dashboard artifacts
+tmp/*.har
+tmp/*.sanitized.har
+tmp/*HAR_v*.har
+/tmp/Bail Bonds Dashboard not connected.html
+
+# Secrets & Firebase keys
+.secrets/
+.env
+public/env.js
+docker-compose.override.yml
+docs/requested_creds.md
+public/env.js
+docker-compose.override.yml
+
+# Local secrets inside server (do not commit)
+server/.secrets/

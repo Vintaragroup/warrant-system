@@ -1,0 +1,75 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Start docker compose (api, worker, redis, mongo)",
+			"type": "shell",
+			"command": "docker compose up -d",
+			"args": [],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Docker compose up",
+			"type": "shell",
+			"command": "docker compose up -d",
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Docker compose up after fixes",
+			"type": "shell",
+			"command": "docker compose up -d",
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Docker compose up after clean rewrite",
+			"type": "shell",
+			"command": "docker compose up -d",
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "api: up (stack:up)",
+			"type": "shell",
+			"command": "npm run stack:up",
+			"options": {
+				"cwd": "/Users/ryanmorrow/Documents/Projects2025/warrant-system/services/inmate-enrichment"
+			},
+			"isBackground": false,
+			"group": "build",
+			"problemMatcher": []
+		},
+		{
+			"label": "api: rebuild (stack:rebuild)",
+			"type": "shell",
+			"command": "npm run stack:rebuild",
+			"options": {
+				"cwd": "/Users/ryanmorrow/Documents/Projects2025/warrant-system/services/inmate-enrichment"
+			},
+			"isBackground": false,
+			"group": "build",
+			"problemMatcher": []
+		},
+		{
+			"label": "dashboard: dev",
+			"type": "shell",
+			"command": "npm run dev",
+			"options": {
+				"cwd": "/Users/ryanmorrow/Documents/Projects2025/warrant-system/apps/dashboard"
+			},
+			"isBackground": true,
+			"group": "build",
+			"problemMatcher": []
+		},
+		{
+			"label": "dev: api+dashboard",
+			"dependsOrder": "sequence",
+			"dependsOn": [
+				"api: up (stack:up)",
+				"dashboard: dev"
+			]
+		}
+	]
+}

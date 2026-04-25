@@ -1,0 +1,107 @@
+{
+  "info": {
+    "name": "Inmate Enrichment",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_postman_id": "d2f7f2d1-0000-1111-2222-333344445555"
+  },
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/health", "host": ["{{baseUrl}}"], "path": ["health"] }
+      }
+    },
+    {
+      "name": "Run Enrichment",
+      "request": {
+        "method": "POST",
+        "header": [ { "key": "Content-Type", "value": "application/json" } ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"subjectIds\": [\"{{subjectId}}\"],\n  \"mode\": \"standard\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/enrichment/run", "host": ["{{baseUrl}}"], "path": ["api", "enrichment", "run"] }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "const data = pm.response.json();",
+              "if (data.jobIds && data.jobIds.length) { pm.environment.set('jobId', data.jobIds[0]); }"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Get Status",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/enrichment/status?jobId={{jobId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "enrichment", "status"],
+          "query": [ { "key": "jobId", "value": "{{jobId}}" } ]
+        }
+      }
+    },
+    {
+      "name": "Cancel Job",
+      "request": {
+        "method": "POST",
+        "header": [ { "key": "Content-Type", "value": "application/json" } ],
+        "body": { "mode": "raw", "raw": "{\n  \"jobId\": \"{{jobId}}\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/enrichment/cancel", "host": ["{{baseUrl}}"], "path": ["api", "enrichment", "cancel"] }
+      }
+    },
+    {
+      "name": "PDL Person Enrich (direct)",
+      "request": {
+        "method": "GET",
+        "header": [ { "key": "X-API-Key", "value": "{{PDL_API_KEY}}" } ],
+        "url": {
+          "raw": "https://api.peopledatalabs.com/v5/person/enrich?name={{pdl_name}}&location={{pdl_location}}",
+          "protocol": "https",
+          "host": ["api", "peopledatalabs", "com"],
+          "path": ["v5", "person", "enrich"],
+          "query": [
+            { "key": "name", "value": "{{pdl_name}}" },
+            { "key": "location", "value": "{{pdl_location}}" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Whitepages Phone Intelligence (direct)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "https://proapi.whitepages.com/3.5/phone?api_key={{WHITEPAGES_API_KEY}}&phone={{wp_phone}}",
+          "protocol": "https",
+          "host": ["proapi", "whitepages", "com"],
+          "path": ["3.5", "phone"],
+          "query": [
+            { "key": "api_key", "value": "{{WHITEPAGES_API_KEY}}" },
+            { "key": "phone", "value": "{{wp_phone}}" }
+          ]
+        }
+      }
+    }
+  ],
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:4000" },
+    { "key": "subjectId", "value": "A12345" },
+    { "key": "jobId", "value": "" },
+    { "key": "PDL_API_KEY", "value": "" },
+    { "key": "WHITEPAGES_API_KEY", "value": "" },
+    { "key": "pdl_name", "value": "John Doe" },
+    { "key": "pdl_location", "value": "Houston, TX" },
+    { "key": "wp_phone", "value": "+1 (281) 555-1234" }
+  ]
+}

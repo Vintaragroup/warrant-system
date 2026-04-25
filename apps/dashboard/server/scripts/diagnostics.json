@@ -1,0 +1,463 @@
+{
+  "meta": {
+    "ranAt": "2025-09-20T13:25:26.763Z",
+    "db": "warrantdb",
+    "cols": [
+      "simple_harris",
+      "simple_jefferson"
+    ]
+  },
+  "collections": {
+    "simple_harris": {
+      "bond_status_counts": [
+        {
+          "_id": "numeric",
+          "n": 2542
+        },
+        {
+          "_id": "refer_to_magistrate",
+          "n": 760
+        },
+        {
+          "_id": "no_bond",
+          "n": 54
+        },
+        {
+          "_id": "unknown_text",
+          "n": 45
+        },
+        {
+          "_id": "summons",
+          "n": 11
+        }
+      ],
+      "non_numeric_samples": [
+        {
+          "case_number": "257842001010",
+          "county": "harris",
+          "full_name": "BENNEFELD, WAYNE CHARLES",
+          "bond_raw": "SUMMONS ISSUED",
+          "bond_status": "summons",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "257850601010",
+          "county": "harris",
+          "full_name": "THOMAS, TARA MARIE",
+          "bond_raw": "SUMMONS ISSUED",
+          "bond_status": "summons",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "257850901010",
+          "county": "harris",
+          "full_name": "GLASS, CLAUDE WAYNE",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "bond_status": "refer_to_magistrate",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "257852801010",
+          "county": "harris",
+          "full_name": "TRAVIS, JIMMIYAH PATRICIA",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "bond_status": "refer_to_magistrate",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "257854701010",
+          "county": "harris",
+          "full_name": "ROSAS, JAVIER NAVA",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "bond_status": "refer_to_magistrate",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "257855201010",
+          "county": "harris",
+          "full_name": "SCOTT, BRANDI ALEXIS",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "bond_status": "refer_to_magistrate",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "257855401010",
+          "county": "harris",
+          "full_name": "SIFUENTES, CRISTINA",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "bond_status": "refer_to_magistrate",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "257855701010",
+          "county": "harris",
+          "full_name": "ODOM, CODY LEE",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "bond_status": "refer_to_magistrate",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "257857001010",
+          "county": "harris",
+          "full_name": "SULLIVAN, JAMES ASHTON",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "bond_status": "refer_to_magistrate",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "257857501010",
+          "county": "harris",
+          "full_name": "GOMEZ, LUIS",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "bond_status": "refer_to_magistrate",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "257857901010",
+          "county": "harris",
+          "full_name": "HEYWARD, TYRAN",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "bond_status": "refer_to_magistrate",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "257858101010",
+          "county": "harris",
+          "full_name": "BABASORO, RAYMOND DEL ROSARIO",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "bond_status": "refer_to_magistrate",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "257858301010",
+          "county": "harris",
+          "full_name": "YOUNGBLOOD, LAWRENCE DEVONTE",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "bond_status": "refer_to_magistrate",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "192882301010",
+          "county": "harris",
+          "full_name": "339, COLLIER",
+          "bond_raw": "",
+          "bond_status": "no_bond",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "192882501010",
+          "county": "harris",
+          "full_name": "177, IRVIN",
+          "bond_raw": "",
+          "bond_status": "no_bond",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "192882901010",
+          "county": "harris",
+          "full_name": "177, IRVIN",
+          "bond_raw": "",
+          "bond_status": "no_bond",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "192885201010",
+          "county": "harris",
+          "full_name": "HALE, ANTHONY",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "bond_status": "refer_to_magistrate",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "192885701010",
+          "county": "harris",
+          "full_name": "WYATT, DYMOND SYMONE",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "bond_status": "refer_to_magistrate",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "192886601010",
+          "county": "harris",
+          "full_name": "KETCHUM, RADA RINE",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "bond_status": "refer_to_magistrate",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "192886701010",
+          "county": "harris",
+          "full_name": "KETCHUM, RADA RINE",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "bond_status": "refer_to_magistrate",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "192886901010",
+          "county": "harris",
+          "full_name": "WILLIS, LINDSAY NATE",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "bond_status": "refer_to_magistrate",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "192887001010",
+          "county": "harris",
+          "full_name": "486, WILLIS",
+          "bond_raw": "",
+          "bond_status": "no_bond",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "192887401010",
+          "county": "harris",
+          "full_name": "GALLIEN, LAPORSHA JNAE",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "bond_status": "refer_to_magistrate",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "192887501010",
+          "county": "harris",
+          "full_name": "000, 179",
+          "bond_raw": "J",
+          "bond_status": "unknown_text",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "192887801010",
+          "county": "harris",
+          "full_name": "CARPENTER, JASON",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "bond_status": "refer_to_magistrate",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "192888101010",
+          "county": "harris",
+          "full_name": "MCKINNEY, DOMINIQUE DWAYNE",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "bond_status": "refer_to_magistrate",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "192888301010",
+          "county": "harris",
+          "full_name": "QUINTANILLA, JIM ANTHONY",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "bond_status": "refer_to_magistrate",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "192889001010",
+          "county": "harris",
+          "full_name": "EASON, ARTHUR RAY",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "bond_status": "refer_to_magistrate",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "192889501010",
+          "county": "harris",
+          "full_name": "CHANDLER, OSIRUS",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "bond_status": "refer_to_magistrate",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "192889601010",
+          "county": "harris",
+          "full_name": "FLORES, FRANCISCO",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "bond_status": "refer_to_magistrate",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "192890101010",
+          "county": "harris",
+          "full_name": "WAY, PATRICIA",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "bond_status": "refer_to_magistrate",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "192890201010",
+          "county": "harris",
+          "full_name": "BURRELL, DAVID",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "bond_status": "refer_to_magistrate",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "192890601010",
+          "county": "harris",
+          "full_name": "RODRIGUEZ CASTILLEJO, CARLOS",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "bond_status": "refer_to_magistrate",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "192890701010",
+          "county": "harris",
+          "full_name": "PINEDA, MIGUEL",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "bond_status": "refer_to_magistrate",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "192890801010",
+          "county": "harris",
+          "full_name": "PINEDA, MIGUEL",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "bond_status": "refer_to_magistrate",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "192891001010",
+          "county": "harris",
+          "full_name": "LOPEZ, NEVIL CECILIO",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "bond_status": "refer_to_magistrate",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "192891301010",
+          "county": "harris",
+          "full_name": "JOHNSON, ROBERT LEE",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "bond_status": "refer_to_magistrate",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "192891501010",
+          "county": "harris",
+          "full_name": "MCKINNEY, DOMINIQUE DWAYNE",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "bond_status": "refer_to_magistrate",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "192891601010",
+          "county": "harris",
+          "full_name": "00, 183",
+          "bond_raw": "J",
+          "bond_status": "unknown_text",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "192891801010",
+          "county": "harris",
+          "full_name": "PEREZ, DELFINO",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "bond_status": "refer_to_magistrate",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "192891901010",
+          "county": "harris",
+          "full_name": "SANCHEZ, MELODY M.",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "bond_status": "refer_to_magistrate",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "192892001010",
+          "county": "harris",
+          "full_name": "RODRIGUEZ, NORMAN FELIX",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "bond_status": "refer_to_magistrate",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "192892101010",
+          "county": "harris",
+          "full_name": "000, 482",
+          "bond_raw": "J",
+          "bond_status": "unknown_text",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "192892201010",
+          "county": "harris",
+          "full_name": "CANO, OSCAR",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "bond_status": "refer_to_magistrate",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "192893401010",
+          "county": "harris",
+          "full_name": "WARTEL, NAYA",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "bond_status": "refer_to_magistrate",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "192892701010",
+          "county": "harris",
+          "full_name": "HOWARD, JAMES DILLION",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "bond_status": "refer_to_magistrate",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "192892901010",
+          "county": "harris",
+          "full_name": "228, SALINAS",
+          "bond_raw": "",
+          "bond_status": "no_bond",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "192893501010",
+          "county": "harris",
+          "full_name": "SANCHEZ, ALEJANDRO",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "bond_status": "refer_to_magistrate",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "192893601010",
+          "county": "harris",
+          "full_name": "LUCAS, DUANE JOSHUA",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "bond_status": "refer_to_magistrate",
+          "bond_sort_value": 0
+        },
+        {
+          "case_number": "192892601010",
+          "county": "harris",
+          "full_name": "BERRY, KEVIN DEANDRE",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "bond_status": "refer_to_magistrate",
+          "bond_sort_value": 0
+        }
+      ],
+      "county_values": [
+        {
+          "_id": "harris",
+          "n": 3412
+        }
+      ],
+      "legacy_hasLetterCase": 3412,
+      "trailing_letter_hasLetterCase": 0
+    },
+    "simple_jefferson": {
+      "bond_status_counts": [
+        {
+          "_id": "numeric",
+          "n": 575
+        }
+      ],
+      "non_numeric_samples": [],
+      "county_values": [
+        {
+          "_id": "jefferson",
+          "n": 575
+        }
+      ],
+      "legacy_hasLetterCase": 416,
+      "trailing_letter_hasLetterCase": 0
+    }
+  }
+}

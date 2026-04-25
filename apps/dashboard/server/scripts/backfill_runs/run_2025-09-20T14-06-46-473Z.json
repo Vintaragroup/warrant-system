@@ -1,0 +1,29 @@
+{
+  "runId": "run_2025-09-20T14-06-46-473Z",
+  "ranAt": "2025-09-20T14:06:46.474Z",
+  "mode": "apply",
+  "collections": {
+    "simple_harris": {
+      "total": 3412,
+      "byStatus": {
+        "numeric": 5,
+        "summons": 1
+      },
+      "samples": [
+        {
+          "id": "68aa156ae040b45d40e63697",
+          "bond_raw": "SUMMONS ISSUED",
+          "status": "summons",
+          "canonical": "harris"
+        }
+      ],
+      "updatedIds": [
+        "68aa156ae040b45d40e6369b",
+        "68aa156ae040b45d40e636a0",
+        "68aa156ae040b45d40e636a9",
+        "68aa156ae040b45d40e63696",
+        "68aa156ae040b45d40e63697"
+      ]
+    }
+  }
+}

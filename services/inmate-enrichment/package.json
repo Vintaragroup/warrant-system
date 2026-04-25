@@ -1,0 +1,30 @@
+{
+  "name": "inmate-enrichment-monorepo",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "api",
+    "worker",
+    "shared",
+    "web"
+  ],
+  "scripts": {
+    "build": "npm run -w shared build && npm run -w api build && npm run -w worker build && npm run -w web build",
+    "dev": "npm -ws run dev",
+    "test": "jest",
+    "lint": "npm -ws run lint",
+    "stack:up": "node tools/ensure_stack.js",
+    "stack:rebuild": "node tools/ensure_stack.js --rebuild",
+    "stack:down": "docker compose down",
+    "stack:status": "docker compose ps",
+    "stack:logs": "docker compose logs --no-color --tail=200 api worker",
+    "stack:restart": "docker compose restart api worker",
+    "phones:validate": "node tools/validate_related_phones.js",
+    "smoke": "node tools/smoke.js"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.12",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.5"
+  }
+}

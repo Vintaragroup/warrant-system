@@ -1,0 +1,11 @@
+node_modules
+.git
+.gitignore
+.vscode
+Dockerfile.web
+server/uploads
+secrets
+**/.DS_Store
+**/dist
+**/build
+**/.env*

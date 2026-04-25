@@ -1,0 +1,1021 @@
+# Field Map Diff (Sources vs Simple)
+Generated: 2025-09-11T17:41:05Z
+DB: warrantdb
+
+Pair: brazoria_inmates  →  simple_brazoria
+  Source fields (sample-based, 24):
+    - _id
+    - arresting_agency
+    - bond_total
+    - booking_age_category
+    - booking_date
+    - booking_date_iso
+    - booking_number
+    - booking_priority
+    - charges
+    - charges_summary
+    - detail_fetched_at
+    - detail_url
+    - fetched_at
+    - first_seen_at
+    - is_recent_addition_24h
+    - last_seen_at
+    - name
+    - new_since_last_scan
+    - recency_bucket
+    - recency_tag
+    - release_date
+    - release_date_iso
+    - scraped_at
+    - source
+
+  Simple fields (sample-based, 46):
+    - _id
+    - _upsert_key.anchor
+    - _upsert_key.category
+    - _upsert_key.county
+    - bond
+    - bond_amount
+    - booking_date
+    - booking_number
+    - case_number
+    - category
+    - charge_bonds
+    - county
+    - created_at
+    - dob
+    - extra.arresting_agency
+    - extra.bond_total
+    - extra.booking_age_category
+    - extra.booking_date
+    - extra.booking_date_iso
+    - extra.booking_number
+    - extra.booking_priority
+    - extra.charges
+    - extra.charges_summary
+    - extra.detail_fetched_at
+    - extra.detail_url
+    - extra.fetched_at
+    - extra.first_seen_at
+    - extra.is_recent_addition_24h
+    - extra.last_seen_at
+    - extra.name
+    - extra.new_since_last_scan
+    - extra.recency_bucket
+    - extra.recency_tag
+    - extra.release_date
+    - extra.release_date_iso
+    - extra.scraped_at
+    - extra.source
+    - first_name
+    - full_name
+    - last_name
+    - normalized_at
+    - offense
+    - source
+    - source_id
+    - spn
+    - time_bucket
+
+  Fields present in source but MISSING in simple (candidate mappings needed):
+    - arresting_agency → map to simple.agency
+    - bond_total → map to simple.bond_amount (or simple.total_bond)
+    - booking_age_category
+    - booking_date_iso → map to simple.booking_date (ISO)
+    - booking_priority
+    - charges → map to simple.offense (primary) and simple.charges (list)
+    - charges_summary → map to simple.offense (primary) and simple.charges (list)
+    - detail_fetched_at
+    - detail_url
+    - fetched_at
+    - first_seen_at
+    - is_recent_addition_24h
+    - last_seen_at
+    - name
+    - new_since_last_scan
+    - recency_bucket
+    - recency_tag
+    - release_date
+    - release_date_iso
+    - scraped_at
+
+  Fields present in simple but NOT found in source (verify normalizer/input):
+    - _upsert_key.anchor
+    - _upsert_key.category
+    - _upsert_key.county
+    - bond
+    - bond_amount *EXPECTED*
+    - case_number
+    - category
+    - charge_bonds
+    - county *EXPECTED*
+    - created_at
+    - dob
+    - extra.arresting_agency
+    - extra.bond_total
+    - extra.booking_age_category
+    - extra.booking_date
+    - extra.booking_date_iso
+    - extra.booking_number
+    - extra.booking_priority
+    - extra.charges
+    - extra.charges_summary
+    - extra.detail_fetched_at
+    - extra.detail_url
+    - extra.fetched_at
+    - extra.first_seen_at
+    - extra.is_recent_addition_24h
+    - extra.last_seen_at
+    - extra.name
+    - extra.new_since_last_scan
+    - extra.recency_bucket
+    - extra.recency_tag
+    - extra.release_date
+    - extra.release_date_iso
+    - extra.scraped_at
+    - extra.source
+    - first_name *EXPECTED*
+    - full_name *EXPECTED*
+    - last_name *EXPECTED*
+    - normalized_at
+    - offense *EXPECTED*
+    - source_id
+    - spn
+    - time_bucket *EXPECTED*
+
+--------------------------------------------------------------------------------
+
+Pair: fortbend_inmates  →  simple_fortbend
+  Source fields (sample-based, 20):
+    - _id
+    - bond_total
+    - booking_age_category
+    - booking_date
+    - booking_date_iso
+    - booking_number
+    - booking_priority
+    - charges
+    - detail_fetched_at
+    - detail_url
+    - dob
+    - fetched_at
+    - first_seen_at
+    - id
+    - inserted_at
+    - is_recent_addition_24h
+    - jail_id
+    - name
+    - scraped_at
+    - source
+
+  Simple fields (sample-based, 42):
+    - _id
+    - _upsert_key.anchor
+    - _upsert_key.category
+    - _upsert_key.county
+    - bond
+    - bond_amount
+    - booking_date
+    - booking_number
+    - case_number
+    - category
+    - charge_bonds
+    - county
+    - created_at
+    - dob
+    - extra.bond_total
+    - extra.booking_age_category
+    - extra.booking_date
+    - extra.booking_date_iso
+    - extra.booking_number
+    - extra.booking_priority
+    - extra.charges
+    - extra.detail_fetched_at
+    - extra.detail_url
+    - extra.dob
+    - extra.fetched_at
+    - extra.first_seen_at
+    - extra.id
+    - extra.inserted_at
+    - extra.is_recent_addition_24h
+    - extra.jail_id
+    - extra.name
+    - extra.scraped_at
+    - extra.source
+    - first_name
+    - full_name
+    - last_name
+    - normalized_at
+    - offense
+    - source
+    - source_id
+    - spn
+    - time_bucket
+
+  Fields present in source but MISSING in simple (candidate mappings needed):
+    - bond_total → map to simple.bond_amount (or simple.total_bond)
+    - booking_age_category
+    - booking_date_iso → map to simple.booking_date (ISO)
+    - booking_priority
+    - charges → map to simple.offense (primary) and simple.charges (list)
+    - detail_fetched_at
+    - detail_url
+    - fetched_at
+    - first_seen_at
+    - id
+    - inserted_at
+    - is_recent_addition_24h
+    - jail_id
+    - name
+    - scraped_at
+
+  Fields present in simple but NOT found in source (verify normalizer/input):
+    - _upsert_key.anchor
+    - _upsert_key.category
+    - _upsert_key.county
+    - bond
+    - bond_amount *EXPECTED*
+    - case_number
+    - category
+    - charge_bonds
+    - county *EXPECTED*
+    - created_at
+    - extra.bond_total
+    - extra.booking_age_category
+    - extra.booking_date
+    - extra.booking_date_iso
+    - extra.booking_number
+    - extra.booking_priority
+    - extra.charges
+    - extra.detail_fetched_at
+    - extra.detail_url
+    - extra.dob
+    - extra.fetched_at
+    - extra.first_seen_at
+    - extra.id
+    - extra.inserted_at
+    - extra.is_recent_addition_24h
+    - extra.jail_id
+    - extra.name
+    - extra.scraped_at
+    - extra.source
+    - first_name *EXPECTED*
+    - full_name *EXPECTED*
+    - last_name *EXPECTED*
+    - normalized_at
+    - offense *EXPECTED*
+    - source_id
+    - spn
+    - time_bucket *EXPECTED*
+
+--------------------------------------------------------------------------------
+
+Pair: galveston_events  →  simple_galveston
+  Source fields (sample-based, 21):
+    - _id
+    - age
+    - agency
+    - arrest_date
+    - bonds
+    - booked_at
+    - booking_age_category
+    - booking_number
+    - booking_priority
+    - charges
+    - county
+    - facility
+    - migrated_at
+    - person_id
+    - race
+    - released_at
+    - scraped_at
+    - sex
+    - source_url
+    - status
+    - total_bond
+
+  Simple fields (sample-based, 25):
+    - _id
+    - _upsert_key.anchor
+    - _upsert_key.category
+    - _upsert_key.county
+    - bond
+    - bond_amount
+    - booking_date
+    - booking_number
+    - case_number
+    - category
+    - charge_bonds
+    - county
+    - created_at
+    - dob
+    - extra.person.dob
+    - extra.person.full_name
+    - first_name
+    - full_name
+    - last_name
+    - normalized_at
+    - offense
+    - source
+    - source_id
+    - spn
+    - time_bucket
+
+  Fields present in source but MISSING in simple (candidate mappings needed):
+    - age
+    - agency → map to simple.agency
+    - arrest_date → map to simple.booking_date (ISO)
+    - bonds
+    - booked_at → map to simple.booking_date (ISO)
+    - booking_age_category
+    - booking_priority
+    - charges → map to simple.offense (primary) and simple.charges (list)
+    - facility
+    - migrated_at
+    - person_id
+    - race → map to simple.sex / simple.race
+    - released_at
+    - scraped_at
+    - sex → map to simple.sex / simple.race
+    - source_url
+    - status
+    - total_bond → map to simple.bond_amount (or simple.total_bond)
+
+  Fields present in simple but NOT found in source (verify normalizer/input):
+    - _upsert_key.anchor
+    - _upsert_key.category
+    - _upsert_key.county
+    - bond
+    - bond_amount *EXPECTED*
+    - booking_date *EXPECTED*
+    - case_number
+    - category
+    - charge_bonds
+    - created_at
+    - dob
+    - extra.person.dob
+    - extra.person.full_name
+    - first_name *EXPECTED*
+    - full_name *EXPECTED*
+    - last_name *EXPECTED*
+    - normalized_at
+    - offense *EXPECTED*
+    - source *EXPECTED*
+    - source_id
+    - spn
+    - time_bucket *EXPECTED*
+
+--------------------------------------------------------------------------------
+
+Pair: jefferson_events  →  simple_jefferson
+  Source fields (sample-based, 23):
+    - _id
+    - age
+    - agency
+    - arrest_date
+    - bonds
+    - booked_at
+    - booking_age_category
+    - booking_number
+    - booking_priority
+    - charges
+    - county
+    - facility
+    - first_name
+    - full_name
+    - last_name
+    - person_id
+    - race
+    - released_at
+    - scraped_at
+    - sex
+    - source_url
+    - status
+    - total_bond
+
+  Simple fields (sample-based, 45):
+    - _id
+    - _upsert_key.anchor
+    - _upsert_key.category
+    - _upsert_key.county
+    - bond
+    - bond_amount
+    - booking_date
+    - booking_number
+    - case_number
+    - category
+    - charge_bonds
+    - county
+    - created_at
+    - dob
+    - extra.age
+    - extra.agency
+    - extra.arrest_date
+    - extra.bonds
+    - extra.booked_at
+    - extra.booking_age_category
+    - extra.booking_number
+    - extra.booking_priority
+    - extra.charges
+    - extra.county
+    - extra.facility
+    - extra.first_name
+    - extra.full_name
+    - extra.last_name
+    - extra.person_id
+    - extra.race
+    - extra.released_at
+    - extra.scraped_at
+    - extra.sex
+    - extra.source_url
+    - extra.status
+    - extra.total_bond
+    - first_name
+    - full_name
+    - last_name
+    - normalized_at
+    - offense
+    - source
+    - source_id
+    - spn
+    - time_bucket
+
+  Fields present in source but MISSING in simple (candidate mappings needed):
+    - age
+    - agency → map to simple.agency
+    - arrest_date → map to simple.booking_date (ISO)
+    - bonds
+    - booked_at → map to simple.booking_date (ISO)
+    - booking_age_category
+    - booking_priority
+    - charges → map to simple.offense (primary) and simple.charges (list)
+    - facility
+    - person_id
+    - race → map to simple.sex / simple.race
+    - released_at
+    - scraped_at
+    - sex → map to simple.sex / simple.race
+    - source_url
+    - status
+    - total_bond → map to simple.bond_amount (or simple.total_bond)
+
+  Fields present in simple but NOT found in source (verify normalizer/input):
+    - _upsert_key.anchor
+    - _upsert_key.category
+    - _upsert_key.county
+    - bond
+    - bond_amount *EXPECTED*
+    - booking_date *EXPECTED*
+    - case_number
+    - category
+    - charge_bonds
+    - created_at
+    - dob
+    - extra.age
+    - extra.agency
+    - extra.arrest_date
+    - extra.bonds
+    - extra.booked_at
+    - extra.booking_age_category
+    - extra.booking_number
+    - extra.booking_priority
+    - extra.charges
+    - extra.county
+    - extra.facility
+    - extra.first_name
+    - extra.full_name
+    - extra.last_name
+    - extra.person_id
+    - extra.race
+    - extra.released_at
+    - extra.scraped_at
+    - extra.sex
+    - extra.source_url
+    - extra.status
+    - extra.total_bond
+    - normalized_at
+    - offense *EXPECTED*
+    - source *EXPECTED*
+    - source_id
+    - spn
+    - time_bucket *EXPECTED*
+
+--------------------------------------------------------------------------------
+
+Pair: harris_bond  →  simple_harris
+  Source fields (sample-based, 30):
+    - _id
+    - address.city
+    - address.line1
+    - address.zip
+    - bond_amount
+    - bond_note
+    - booking_age_category
+    - booking_priority
+    - case_number
+    - court_group
+    - court_no
+    - file_date
+    - first_middle
+    - first_seen_at
+    - first_seen_file_date
+    - group
+    - history
+    - last_name
+    - last_seen_file_date
+    - name
+    - needs_bond_help
+    - offense
+    - race_code
+    - scraped_at
+    - sex_code
+    - source
+    - source_filename_date
+    - source_url
+    - spn
+    - updated_at
+
+  Simple fields (sample-based, 58):
+    - _id
+    - _upsert_key.anchor
+    - _upsert_key.category
+    - _upsert_key.county
+    - bond
+    - bond_amount
+    - booking_date
+    - booking_number
+    - case_number
+    - category
+    - charge_bonds
+    - county
+    - created_at
+    - dob
+    - extra.address.city
+    - extra.address.line1
+    - extra.address.phone
+    - extra.address.state
+    - extra.address.zip
+    - extra.aux_flag
+    - extra.bond_amount
+    - extra.bond_note
+    - extra.booking_age_category
+    - extra.booking_priority
+    - extra.case_date
+    - extra.case_number
+    - extra.court_group
+    - extra.court_no
+    - extra.dob
+    - extra.file_date
+    - extra.filing_flag
+    - extra.first_middle
+    - extra.first_seen_at
+    - extra.first_seen_file_date
+    - extra.group
+    - extra.history
+    - extra.last_name
+    - extra.last_seen_file_date
+    - extra.name
+    - extra.needs_bond_help
+    - extra.offense
+    - extra.race_code
+    - extra.scraped_at
+    - extra.sex_code
+    - extra.source
+    - extra.source_filename_date
+    - extra.source_url
+    - extra.spn
+    - extra.updated_at
+    - first_name
+    - full_name
+    - last_name
+    - normalized_at
+    - offense
+    - source
+    - source_id
+    - spn
+    - time_bucket
+
+  Fields present in source but MISSING in simple (candidate mappings needed):
+    - address.city
+    - address.line1
+    - address.zip
+    - bond_note
+    - booking_age_category
+    - booking_priority
+    - court_group
+    - court_no
+    - file_date
+    - first_middle
+    - first_seen_at
+    - first_seen_file_date
+    - group
+    - history
+    - last_seen_file_date
+    - name
+    - needs_bond_help
+    - race_code → map to simple.sex / simple.race
+    - scraped_at
+    - sex_code → map to simple.sex / simple.race
+    - source_filename_date
+    - source_url
+    - updated_at
+
+  Fields present in simple but NOT found in source (verify normalizer/input):
+    - _upsert_key.anchor
+    - _upsert_key.category
+    - _upsert_key.county
+    - bond
+    - booking_date *EXPECTED*
+    - booking_number
+    - category
+    - charge_bonds
+    - county *EXPECTED*
+    - created_at
+    - dob
+    - extra.address.city
+    - extra.address.line1
+    - extra.address.phone
+    - extra.address.state
+    - extra.address.zip
+    - extra.aux_flag
+    - extra.bond_amount
+    - extra.bond_note
+    - extra.booking_age_category
+    - extra.booking_priority
+    - extra.case_date
+    - extra.case_number
+    - extra.court_group
+    - extra.court_no
+    - extra.dob
+    - extra.file_date
+    - extra.filing_flag
+    - extra.first_middle
+    - extra.first_seen_at
+    - extra.first_seen_file_date
+    - extra.group
+    - extra.history
+    - extra.last_name
+    - extra.last_seen_file_date
+    - extra.name
+    - extra.needs_bond_help
+    - extra.offense
+    - extra.race_code
+    - extra.scraped_at
+    - extra.sex_code
+    - extra.source
+    - extra.source_filename_date
+    - extra.source_url
+    - extra.spn
+    - extra.updated_at
+    - first_name *EXPECTED*
+    - full_name *EXPECTED*
+    - normalized_at
+    - source_id
+    - time_bucket *EXPECTED*
+
+--------------------------------------------------------------------------------
+
+Pair: harris_misfel  →  simple_harris
+  Source fields (sample-based, 29):
+    - _id
+    - address.city
+    - address.line1
+    - address.phone
+    - address.state
+    - address.zip
+    - bond_amount
+    - bond_note
+    - booking_age_category
+    - booking_priority
+    - case_date
+    - case_number
+    - court_group
+    - dob
+    - file_date
+    - first_seen_at
+    - first_seen_file_date
+    - group
+    - history
+    - last_seen_file_date
+    - name
+    - needs_bond_help
+    - offense
+    - scraped_at
+    - source
+    - source_filename_date
+    - source_url
+    - spn
+    - updated_at
+
+  Simple fields (sample-based, 58):
+    - _id
+    - _upsert_key.anchor
+    - _upsert_key.category
+    - _upsert_key.county
+    - bond
+    - bond_amount
+    - booking_date
+    - booking_number
+    - case_number
+    - category
+    - charge_bonds
+    - county
+    - created_at
+    - dob
+    - extra.address.city
+    - extra.address.line1
+    - extra.address.phone
+    - extra.address.state
+    - extra.address.zip
+    - extra.aux_flag
+    - extra.bond_amount
+    - extra.bond_note
+    - extra.booking_age_category
+    - extra.booking_priority
+    - extra.case_date
+    - extra.case_number
+    - extra.court_group
+    - extra.court_no
+    - extra.dob
+    - extra.file_date
+    - extra.filing_flag
+    - extra.first_middle
+    - extra.first_seen_at
+    - extra.first_seen_file_date
+    - extra.group
+    - extra.history
+    - extra.last_name
+    - extra.last_seen_file_date
+    - extra.name
+    - extra.needs_bond_help
+    - extra.offense
+    - extra.race_code
+    - extra.scraped_at
+    - extra.sex_code
+    - extra.source
+    - extra.source_filename_date
+    - extra.source_url
+    - extra.spn
+    - extra.updated_at
+    - first_name
+    - full_name
+    - last_name
+    - normalized_at
+    - offense
+    - source
+    - source_id
+    - spn
+    - time_bucket
+
+  Fields present in source but MISSING in simple (candidate mappings needed):
+    - address.city
+    - address.line1
+    - address.phone
+    - address.state
+    - address.zip
+    - bond_note
+    - booking_age_category
+    - booking_priority
+    - case_date
+    - court_group
+    - file_date
+    - first_seen_at
+    - first_seen_file_date
+    - group
+    - history
+    - last_seen_file_date
+    - name
+    - needs_bond_help
+    - scraped_at
+    - source_filename_date
+    - source_url
+    - updated_at
+
+  Fields present in simple but NOT found in source (verify normalizer/input):
+    - _upsert_key.anchor
+    - _upsert_key.category
+    - _upsert_key.county
+    - bond
+    - booking_date *EXPECTED*
+    - booking_number
+    - category
+    - charge_bonds
+    - county *EXPECTED*
+    - created_at
+    - extra.address.city
+    - extra.address.line1
+    - extra.address.phone
+    - extra.address.state
+    - extra.address.zip
+    - extra.aux_flag
+    - extra.bond_amount
+    - extra.bond_note
+    - extra.booking_age_category
+    - extra.booking_priority
+    - extra.case_date
+    - extra.case_number
+    - extra.court_group
+    - extra.court_no
+    - extra.dob
+    - extra.file_date
+    - extra.filing_flag
+    - extra.first_middle
+    - extra.first_seen_at
+    - extra.first_seen_file_date
+    - extra.group
+    - extra.history
+    - extra.last_name
+    - extra.last_seen_file_date
+    - extra.name
+    - extra.needs_bond_help
+    - extra.offense
+    - extra.race_code
+    - extra.scraped_at
+    - extra.sex_code
+    - extra.source
+    - extra.source_filename_date
+    - extra.source_url
+    - extra.spn
+    - extra.updated_at
+    - first_name *EXPECTED*
+    - full_name *EXPECTED*
+    - last_name *EXPECTED*
+    - normalized_at
+    - source_id
+    - time_bucket *EXPECTED*
+
+--------------------------------------------------------------------------------
+
+Pair: harris_nafiling  →  simple_harris
+  Source fields (sample-based, 30):
+    - _id
+    - address.city
+    - address.line1
+    - address.zip
+    - aux_flag
+    - bond_amount
+    - bond_note
+    - booking_age_category
+    - booking_priority
+    - case_number
+    - court_group
+    - court_no
+    - file_date
+    - filing_flag
+    - first_middle
+    - first_seen_at
+    - first_seen_file_date
+    - group
+    - history
+    - last_name
+    - last_seen_file_date
+    - name
+    - needs_bond_help
+    - offense
+    - scraped_at
+    - source
+    - source_filename_date
+    - source_url
+    - spn
+    - updated_at
+
+  Simple fields (sample-based, 58):
+    - _id
+    - _upsert_key.anchor
+    - _upsert_key.category
+    - _upsert_key.county
+    - bond
+    - bond_amount
+    - booking_date
+    - booking_number
+    - case_number
+    - category
+    - charge_bonds
+    - county
+    - created_at
+    - dob
+    - extra.address.city
+    - extra.address.line1
+    - extra.address.phone
+    - extra.address.state
+    - extra.address.zip
+    - extra.aux_flag
+    - extra.bond_amount
+    - extra.bond_note
+    - extra.booking_age_category
+    - extra.booking_priority
+    - extra.case_date
+    - extra.case_number
+    - extra.court_group
+    - extra.court_no
+    - extra.dob
+    - extra.file_date
+    - extra.filing_flag
+    - extra.first_middle
+    - extra.first_seen_at
+    - extra.first_seen_file_date
+    - extra.group
+    - extra.history
+    - extra.last_name
+    - extra.last_seen_file_date
+    - extra.name
+    - extra.needs_bond_help
+    - extra.offense
+    - extra.race_code
+    - extra.scraped_at
+    - extra.sex_code
+    - extra.source
+    - extra.source_filename_date
+    - extra.source_url
+    - extra.spn
+    - extra.updated_at
+    - first_name
+    - full_name
+    - last_name
+    - normalized_at
+    - offense
+    - source
+    - source_id
+    - spn
+    - time_bucket
+
+  Fields present in source but MISSING in simple (candidate mappings needed):
+    - address.city
+    - address.line1
+    - address.zip
+    - aux_flag
+    - bond_note
+    - booking_age_category
+    - booking_priority
+    - court_group
+    - court_no
+    - file_date
+    - filing_flag
+    - first_middle
+    - first_seen_at
+    - first_seen_file_date
+    - group
+    - history
+    - last_seen_file_date
+    - name
+    - needs_bond_help
+    - scraped_at
+    - source_filename_date
+    - source_url
+    - updated_at
+
+  Fields present in simple but NOT found in source (verify normalizer/input):
+    - _upsert_key.anchor
+    - _upsert_key.category
+    - _upsert_key.county
+    - bond
+    - booking_date *EXPECTED*
+    - booking_number
+    - category
+    - charge_bonds
+    - county *EXPECTED*
+    - created_at
+    - dob
+    - extra.address.city
+    - extra.address.line1
+    - extra.address.phone
+    - extra.address.state
+    - extra.address.zip
+    - extra.aux_flag
+    - extra.bond_amount
+    - extra.bond_note
+    - extra.booking_age_category
+    - extra.booking_priority
+    - extra.case_date
+    - extra.case_number
+    - extra.court_group
+    - extra.court_no
+    - extra.dob
+    - extra.file_date
+    - extra.filing_flag
+    - extra.first_middle
+    - extra.first_seen_at
+    - extra.first_seen_file_date
+    - extra.group
+    - extra.history
+    - extra.last_name
+    - extra.last_seen_file_date
+    - extra.name
+    - extra.needs_bond_help
+    - extra.offense
+    - extra.race_code
+    - extra.scraped_at
+    - extra.sex_code
+    - extra.source
+    - extra.source_filename_date
+    - extra.source_url
+    - extra.spn
+    - extra.updated_at
+    - first_name *EXPECTED*
+    - full_name *EXPECTED*
+    - normalized_at
+    - source_id
+    - time_bucket *EXPECTED*
+
+--------------------------------------------------------------------------------
+

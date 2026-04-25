@@ -1,0 +1,231 @@
+name: warrant-system
+
+# Consolidated orchestration compose for all three services.
+# Each service can also be run independently from its own directory using its own compose file.
+#
+# Usage from repo root:
+#   docker compose -f infra/docker/docker-compose.yml up -d
+#   docker compose -f infra/docker/docker-compose.yml up -d inmate-enrichment-api inmate-enrichment-worker
+#
+# Build contexts are relative to this file location (infra/docker/), so they point up two levels.
+
+services:
+
+  # ─── inmate-enrichment ───────────────────────────────────────────────────────
+
+  ie-mongo:
+    image: mongo:6
+    restart: unless-stopped
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    volumes:
+      - ie-mongo-data:/data/db
+    # Not exposed on host — internal to this stack only
+
+  ie-mongo-setup:
+    image: mongo:6
+    depends_on:
+      - ie-mongo
+    entrypoint:
+      - bash
+      - -lc
+      - >
+        until mongosh --host ie-mongo:27017 --eval 'db.runCommand({ ping: 1 })' >/dev/null 2>&1;
+        do sleep 1; done;
+        mongosh --host ie-mongo:27017
+        --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"ie-mongo:27017"}]})' || true
+
+  ie-redis:
+    image: redis:7
+    restart: unless-stopped
+    # Not exposed on host — internal to this stack only
+
+  ie-api:
+    build:
+      context: ../../services/inmate-enrichment
+      dockerfile: api/Dockerfile
+    restart: unless-stopped
+    environment:
+      - MONGO_URI=${IE_MONGO_URI:-mongodb://ie-mongo:27017/inmate_enrichment?replicaSet=rs0}
+      - MONGO_DB=${IE_MONGO_DB:-inmate_enrichment}
+      - SUBJECTS_COLLECTION=${IE_SUBJECTS_COLLECTION:-subjects}
+      - REDIS_URL=${IE_REDIS_URL:-redis://ie-redis:6379}
+      - PORT=${IE_API_PORT:-4000}
+      - ENRICHMENT_WINDOW_HOURS=${IE_ENRICHMENT_WINDOW_HOURS}
+      - IDEMPOTENCY_WINDOW_SECONDS=${IE_IDEMPOTENCY_WINDOW_SECONDS}
+      - PROVIDER_WHITEPAGES_ENABLED=${IE_PROVIDER_WHITEPAGES_ENABLED}
+      - PARTY_PULL_PREFER_STATEWIDE=${IE_PARTY_PULL_PREFER_STATEWIDE}
+      - PDL_API_KEY=${IE_PDL_API_KEY}
+      - WHITEPAGES_API_KEY=${IE_WHITEPAGES_API_KEY}
+      - OPENAI_API_KEY=${IE_OPENAI_API_KEY}
+      - PIPL_API_KEY=${IE_PIPL_API_KEY}
+      - PROVIDER_PIPL_ENABLED=${IE_PROVIDER_PIPL_ENABLED}
+      - AUTO_ENRICH_ENABLED=${IE_AUTO_ENRICH_ENABLED}
+      - AUTO_ENRICH_SWEEP_CRON=${IE_AUTO_ENRICH_SWEEP_CRON}
+      - RAW_PAYLOAD_TTL_HOURS=${IE_RAW_PAYLOAD_TTL_HOURS}
+      - QUEUE_CONCURRENCY=${IE_QUEUE_CONCURRENCY}
+      - BOND_THRESHOLD=${IE_BOND_THRESHOLD}
+      - HCSO_SCRAPE_ENABLED=${IE_HCSO_SCRAPE_ENABLED}
+      - HCSO_BASE_URL=${IE_HCSO_BASE_URL}
+      - HCSO_SCRAPE_MODE=${IE_HCSO_SCRAPE_MODE}
+    ports:
+      - "4000:4000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4000/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      - ie-mongo
+      - ie-mongo-setup
+      - ie-redis
+
+  ie-worker:
+    build:
+      context: ../../services/inmate-enrichment
+      dockerfile: worker/Dockerfile
+    restart: unless-stopped
+    environment:
+      - MONGO_URI=${IE_MONGO_URI:-mongodb://ie-mongo:27017/inmate_enrichment?replicaSet=rs0}
+      - MONGO_DB=${IE_MONGO_DB:-inmate_enrichment}
+      - SUBJECTS_COLLECTION=${IE_SUBJECTS_COLLECTION:-subjects}
+      - REDIS_URL=${IE_REDIS_URL:-redis://ie-redis:6379}
+      - ENRICHMENT_WINDOW_HOURS=${IE_ENRICHMENT_WINDOW_HOURS}
+      - IDEMPOTENCY_WINDOW_SECONDS=${IE_IDEMPOTENCY_WINDOW_SECONDS}
+      - PROVIDER_WHITEPAGES_ENABLED=${IE_PROVIDER_WHITEPAGES_ENABLED}
+      - PARTY_PULL_PREFER_STATEWIDE=${IE_PARTY_PULL_PREFER_STATEWIDE}
+      - PDL_API_KEY=${IE_PDL_API_KEY}
+      - WHITEPAGES_API_KEY=${IE_WHITEPAGES_API_KEY}
+      - OPENAI_API_KEY=${IE_OPENAI_API_KEY}
+      - PIPL_API_KEY=${IE_PIPL_API_KEY}
+      - PROVIDER_PIPL_ENABLED=${IE_PROVIDER_PIPL_ENABLED}
+      - RAW_PAYLOAD_TTL_HOURS=${IE_RAW_PAYLOAD_TTL_HOURS}
+      - QUEUE_CONCURRENCY=${IE_QUEUE_CONCURRENCY}
+      - BOND_THRESHOLD=${IE_BOND_THRESHOLD}
+      - HCSO_SCRAPE_ENABLED=${IE_HCSO_SCRAPE_ENABLED}
+      - HCSO_BASE_URL=${IE_HCSO_BASE_URL}
+      - HCSO_SCRAPE_MODE=${IE_HCSO_SCRAPE_MODE}
+    depends_on:
+      - ie-mongo
+      - ie-mongo-setup
+      - ie-redis
+
+  # ─── bail-bonds-dashboard ────────────────────────────────────────────────────
+
+  dashboard-mongo:
+    image: mongo:7
+    restart: unless-stopped
+    ports:
+      - "27018:27017"
+    volumes:
+      - dashboard-mongo-data:/data/db
+
+  dashboard-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+    ports:
+      - "6381:6379"
+    volumes:
+      - dashboard-redis-data:/data
+
+  dashboard-api:
+    build:
+      context: ../../apps/dashboard/server
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      - PORT=${DASHBOARD_API_PORT:-8080}
+      - MONGO_URI=${DASHBOARD_MONGO_URI}
+      - MONGO_DB=${DASHBOARD_MONGO_DB:-warrantdb}
+      - NODE_ENV=development
+      - WEB_ORIGIN=${DASHBOARD_WEB_ORIGIN:-http://localhost:5173}
+      - REDIS_URL=${DASHBOARD_REDIS_URL:-redis://dashboard-redis:6379/0}
+      - ENRICHMENT_API_URL=${DASHBOARD_ENRICHMENT_API_URL:-http://ie-api:4000}
+      - SMTP_HOST=${DASHBOARD_SMTP_HOST}
+      - SMTP_PORT=${DASHBOARD_SMTP_PORT:-587}
+      - SMTP_SECURE=${DASHBOARD_SMTP_SECURE:-false}
+      - SMTP_USER=${DASHBOARD_SMTP_USER}
+      - SMTP_PASS=${DASHBOARD_SMTP_PASS}
+      - EMAIL_FROM=${DASHBOARD_EMAIL_FROM}
+      - APP_NAME=${DASHBOARD_APP_NAME:-Bail Bonds Dashboard}
+      - GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/firebase
+    ports:
+      - "${DASHBOARD_API_PORT:-8080}:${DASHBOARD_API_PORT:-8080}"
+    # /api/health/light is the liveness probe — always 200, no DB calls.
+    # /api/health (full) does a Mongo ping but can be slow under load; use light for Docker.
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/health/light"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 15s
+    depends_on:
+      - dashboard-mongo
+      - dashboard-redis
+    secrets:
+      - firebase
+    command: node src/index.js
+
+  # ─── warrantdb-pipeline ──────────────────────────────────────────────────────
+  #
+  # FUTURE DIRECTION — Shared Mongo replica set
+  # ─────────────────────────────────────────────
+  # The three separate Mongo services below (ie-mongo, dashboard-mongo, pipeline-mongo)
+  # are intended to be consolidated into a single shared replica set:
+  #
+  #   warrant-mongo:
+  #     image: mongo:7
+  #     command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+  #
+  # Each service will continue to use its own database name on that shared host:
+  #   - warrantdb          (bail-bonds-dashboard)
+  #   - inmate_enrichment  (inmate-enrichment api + worker)
+  #   - warrantdb_pipeline (warrantdb-pipeline api)
+  #
+  # Future shared URI pattern:
+  #   mongodb://warrant-mongo:27017/?replicaSet=rs0
+  #
+  # DO NOT remove the existing per-service Mongo instances until that migration is tested.
+
+  pipeline-mongo:
+    image: mongo:7
+    restart: always
+    ports:
+      - "27019:27017"
+    volumes:
+      - pipeline-mongo-data:/data/db
+
+  pipeline-api:
+    build:
+      context: ../../services/warrantdb-pipeline
+    restart: unless-stopped
+    ports:
+      - "${PIPELINE_API_PORT:-8081}:${PIPELINE_API_PORT:-8081}"
+    environment:
+      - MONGO_URI=${PIPELINE_MONGO_URI:-mongodb://pipeline-mongo:27017/warrantdb_pipeline}
+      - MONGO_DB=${PIPELINE_MONGO_DB:-warrantdb_pipeline}
+      - PORT=${PIPELINE_API_PORT:-8081}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8081/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    depends_on:
+      - pipeline-mongo
+
+secrets:
+  firebase:
+    file: ../../apps/dashboard/server/.secrets/firebase.json
+
+volumes:
+  ie-mongo-data: {}
+  dashboard-mongo-data: {}
+  dashboard-redis-data: {}
+  pipeline-mongo-data: {}

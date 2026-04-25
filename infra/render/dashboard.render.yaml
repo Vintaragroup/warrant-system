@@ -1,0 +1,73 @@
+services:
+  - name: warrantdb-api
+    type: web
+    runtime: docker
+    plan: starter
+    # Docker build from monorepo
+    dockerfilePath: server/Dockerfile
+    dockerContext: ./server
+    # Health check for container readiness (lightweight, no DB)
+    healthCheckPath: /api/health/light
+    # Restrict auto-deploys to a stable branch
+    autoDeploy: false
+    branch: deploy/production
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGO_URI
+        sync: false # set in Render Dashboard or via env group
+      - key: MONGO_DB
+        value: warrantdb
+      - key: WEB_ORIGIN
+        sync: false
+      # SMTP settings for invitation emails
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_SECURE
+        value: "false"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: APP_NAME
+        value: Bail Bonds Dashboard
+      # If your server supports GOOGLE_APPLICATION_CREDENTIALS path pointing to a secret file,
+      # create a Secret File named firebase.json in the Render Dashboard and set this path accordingly.
+      - key: GOOGLE_APPLICATION_CREDENTIALS
+        value: /opt/render/project/secrets/firebase.json
+      - key: FIREBASE_PROJECT_ID
+        sync: false
+
+staticSites:
+  - name: warrantdb-web
+    plan: starter
+    buildCommand: npm ci && npm run build
+    publishPath: ./dist
+    # Restrict auto-deploys to a stable branch
+    autoDeploy: false
+    branch: deploy/production
+    envVars:
+      - key: VITE_API_URL
+        sync: false # set to your API base URL (e.g., https://warrantdb-api.onrender.com)
+      - key: VITE_FIREBASE_API_KEY
+        sync: false
+      - key: VITE_FIREBASE_AUTH_DOMAIN
+        sync: false
+      - key: VITE_FIREBASE_PROJECT_ID
+        sync: false
+      - key: VITE_FIREBASE_APP_ID
+        sync: false
+      - key: VITE_FIREBASE_MEASUREMENT_ID
+        sync: false
+    routes:
+      # SPA rewrite: send all non-asset routes to index.html
+      - type: rewrite
+        source: /*
+        destination: /index.html
+
+previews:
+  generation: manual

@@ -1,0 +1,32 @@
+version: "1"
+services:
+  # Web API (FastAPI/Uvicorn) — optional if you only need background jobs
+  - type: web
+    name: warrant-api
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: MONGO_URI
+        sync: false
+      - key: MONGO_DB
+        value: warrantdb
+
+  # Background worker used by scheduled jobs
+  - type: worker
+    name: warrant-pipeline
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: sleep infinity
+    envVars:
+      - key: MONGO_URI
+        sync: false
+      - key: MONGO_DB
+        value: warrantdb
+      - key: HARRIS_BASE_FILES_URL
+        value: https://www.hcdistrictclerk.com/Common/e-services/Files
+      - key: HARRIS_DATASETS_PAGE
+        value: https://www.hcdistrictclerk.com/Common/e-services/PublicDatasets.aspx
+

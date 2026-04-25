@@ -1,0 +1,1560 @@
+{
+  "runId": "run_2025-09-20T14-18-16-501Z",
+  "ranAt": "2025-09-20T14:18:16.501Z",
+  "mode": "dry-run",
+  "collections": {
+    "simple_harris": {
+      "total": 3412,
+      "byStatus": {
+        "numeric": 2456,
+        "summons": 11,
+        "refer_to_magistrate": 760,
+        "no_bond": 140,
+        "unknown_text": 45
+      },
+      "samples": [
+        {
+          "id": "68aa156ae040b45d40e63697",
+          "bond_raw": "SUMMONS ISSUED",
+          "status": "summons",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156ae040b45d40e636e8",
+          "bond_raw": "SUMMONS ISSUED",
+          "status": "summons",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156ae040b45d40e636ea",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156ae040b45d40e636fb",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156ae040b45d40e6370c",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156ae040b45d40e63711",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156ae040b45d40e63713",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156ae040b45d40e63716",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156ae040b45d40e63722",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156ae040b45d40e63727",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156ae040b45d40e6372a",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156ae040b45d40e6372c",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156ae040b45d40e6372e",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156ae040b45d40e63731",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156ae040b45d40e63733",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156ae040b45d40e63737",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156ae040b45d40e63747",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156ae040b45d40e6374c",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156ae040b45d40e63754",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156ae040b45d40e63755",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156ae040b45d40e63756",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156ae040b45d40e63757",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156ae040b45d40e63759",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156ae040b45d40e6375a",
+          "bond_raw": "J",
+          "status": "unknown_text",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e6375d",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e63760",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e63762",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e63768",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e6376b",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e6376c",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e6376f",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e63770",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e63774",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e63775",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e63776",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e63778",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e6377b",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e6377d",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e6377e",
+          "bond_raw": "J",
+          "status": "unknown_text",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e63780",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e63781",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e63782",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e63783",
+          "bond_raw": "J",
+          "status": "unknown_text",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e63784",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e6378b",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e63789",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e6378a",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e6378c",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e6378d",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e63788",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        }
+      ],
+      "updatedIds": []
+    },
+    "simple_jefferson": {
+      "total": 575,
+      "byStatus": {
+        "numeric": 364,
+        "no_bond": 211
+      },
+      "samples": [
+        {
+          "id": "68cae4f768cb4cb2e2a3712b",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cae4f868cb4cb2e2a3712d",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cae4fa68cb4cb2e2a37135",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cae4fb68cb4cb2e2a37136",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cae4fc68cb4cb2e2a37137",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cae4fd68cb4cb2e2a37138",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cae50068cb4cb2e2a3713b",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cae50568cb4cb2e2a37140",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cae50a68cb4cb2e2a37147",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cae50d68cb4cb2e2a3714a",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cae50f68cb4cb2e2a3714d",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cae51168cb4cb2e2a37150",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cae51268cb4cb2e2a37151",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c5f68cb4cb2e2a3738a",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c5f68cb4cb2e2a3738b",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6068cb4cb2e2a37397",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6068cb4cb2e2a3739a",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6068cb4cb2e2a3739b",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6068cb4cb2e2a3739c",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6068cb4cb2e2a3739d",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6068cb4cb2e2a373a3",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6068cb4cb2e2a373a7",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6168cb4cb2e2a373ac",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6168cb4cb2e2a373b0",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6168cb4cb2e2a373b3",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6168cb4cb2e2a373b4",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6168cb4cb2e2a373b6",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6168cb4cb2e2a373b9",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6168cb4cb2e2a373ba",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6168cb4cb2e2a373bf",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6268cb4cb2e2a373c4",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6268cb4cb2e2a373d0",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6268cb4cb2e2a373d3",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6368cb4cb2e2a373d9",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6368cb4cb2e2a373da",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6368cb4cb2e2a373db",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6368cb4cb2e2a373e2",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6368cb4cb2e2a373e4",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6368cb4cb2e2a373e8",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6368cb4cb2e2a373ec",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6368cb4cb2e2a373ed",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6368cb4cb2e2a373ee",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6368cb4cb2e2a373ef",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6368cb4cb2e2a373f1",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6468cb4cb2e2a373f3",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6468cb4cb2e2a373f9",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6468cb4cb2e2a373fb",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6468cb4cb2e2a37402",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6468cb4cb2e2a37403",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6468cb4cb2e2a37404",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        }
+      ],
+      "updatedIds": []
+    },
+    "simple_brazoria": {
+      "total": 3140,
+      "byStatus": {
+        "numeric": 2736,
+        "no_bond": 404
+      },
+      "samples": [
+        {
+          "id": "68aa1576e040b45d40e639bb",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68aa1576e040b45d40e639bd",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68aa1576e040b45d40e639be",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68aa1576e040b45d40e639c3",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68aa1576e040b45d40e639cb",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68aa1576e040b45d40e639d4",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68aa1576e040b45d40e639d5",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68aa1576e040b45d40e639dc",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68aa1576e040b45d40e639f4",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68aa1576e040b45d40e63a06",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68aa1576e040b45d40e63a0b",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68aa1576e040b45d40e63a14",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68aa1576e040b45d40e63a18",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68aa1576e040b45d40e63a21",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68aa1576e040b45d40e63a22",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68aa1576e040b45d40e63a2f",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68aa1576e040b45d40e63a32",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68aa1576e040b45d40e63a35",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68aa1576e040b45d40e63a3f",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68aa1576e040b45d40e63a48",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68aa1576e040b45d40e63a4e",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68aa1576e040b45d40e63a58",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68aa1576e040b45d40e63a62",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68aa1576e040b45d40e63a69",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68aa1576e040b45d40e63a70",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68aa1576e040b45d40e63a72",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68aa1576e040b45d40e63a73",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68aa1576e040b45d40e63a78",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68aa1576e040b45d40e63a7a",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68aa1576e040b45d40e63a83",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68aa1576e040b45d40e63a88",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68aa1576e040b45d40e63a8e",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68aa1576e040b45d40e63a8f",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68aa1576e040b45d40e63a97",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68aa1576e040b45d40e63a9d",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68aa1576e040b45d40e63aa0",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68aa1576e040b45d40e63aa9",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68aa1576e040b45d40e63ab2",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68aa1576e040b45d40e63abc",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68aa1576e040b45d40e63abe",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68aa1576e040b45d40e63acb",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68aa1576e040b45d40e63acf",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68aa1576e040b45d40e63ad5",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68aa1576e040b45d40e63afc",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68c041344d93cf335f87aa31",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68c041344d93cf335f87aa38",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68c041344d93cf335f87aa39",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68c041344d93cf335f87aa44",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68c041344d93cf335f87aa46",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        },
+        {
+          "id": "68c041344d93cf335f87aa47",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "brazoria"
+        }
+      ],
+      "updatedIds": []
+    },
+    "simple_fortbend": {
+      "total": 858,
+      "byStatus": {
+        "no_bond": 152,
+        "numeric": 706
+      },
+      "samples": [
+        {
+          "id": "68aa1584e040b45d40e63f70",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e63f72",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e63f73",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e63f7b",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e63f80",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e63f89",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e63f8d",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e63f8e",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e63f95",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e63fa1",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e63fa5",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e63fb4",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e63fbb",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e63fbd",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e63fc3",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e63fc8",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e63fd8",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e63fdb",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e63feb",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e64006",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e6400a",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e64012",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e64018",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e64019",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e64015",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e6401e",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e6401f",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e64023",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e64024",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e64028",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e64029",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e6402c",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e6402e",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e64031",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e6403a",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e64042",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e64047",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e64049",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e6404e",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e64053",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e64057",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e6405e",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e64068",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e6406d",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e6406e",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e64076",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e6406f",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e6407a",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e6407d",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        },
+        {
+          "id": "68aa1584e040b45d40e64088",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "fortbend"
+        }
+      ],
+      "updatedIds": []
+    },
+    "simple_galveston": {
+      "total": 5455,
+      "byStatus": {
+        "no_bond": 1670,
+        "numeric": 3785
+      },
+      "samples": [
+        {
+          "id": "68aa157ee040b45d40e63aff",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b01",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b00",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b02",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b03",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b04",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b05",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b06",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b07",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b08",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b09",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b0a",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b0b",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b0c",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b0d",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b0e",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b0f",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b10",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b11",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b12",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b13",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b14",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b15",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b16",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b17",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b18",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b19",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b1d",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b1a",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b1b",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b1f",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b1c",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b1e",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b20",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b21",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b22",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b23",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b24",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b25",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b26",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b27",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b28",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b29",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b2a",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b2b",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b2c",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b2d",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b2e",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b2f",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        },
+        {
+          "id": "68aa157ee040b45d40e63b30",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "galveston"
+        }
+      ],
+      "updatedIds": []
+    }
+  }
+}

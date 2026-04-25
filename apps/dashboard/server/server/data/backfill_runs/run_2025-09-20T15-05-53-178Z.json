@@ -1,0 +1,304 @@
+{
+  "runId": "run_2025-09-20T15-05-53-178Z",
+  "ranAt": "2025-09-20T15:05:53.180Z",
+  "mode": "apply",
+  "collections": {
+    "simple_jefferson": {
+      "total": 575,
+      "byStatus": {
+        "numeric": 70,
+        "no_bond": 31
+      },
+      "samples": [
+        {
+          "id": "68cae4f768cb4cb2e2a3712b",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cae4f868cb4cb2e2a3712d",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cae4fa68cb4cb2e2a37135",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cae4fb68cb4cb2e2a37136",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cae4fc68cb4cb2e2a37137",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cae4fd68cb4cb2e2a37138",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cae50068cb4cb2e2a3713b",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cae50568cb4cb2e2a37140",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cae50a68cb4cb2e2a37147",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cae50d68cb4cb2e2a3714a",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cae50f68cb4cb2e2a3714d",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cae51168cb4cb2e2a37150",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cae51268cb4cb2e2a37151",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c5f68cb4cb2e2a3738a",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c5f68cb4cb2e2a3738b",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6068cb4cb2e2a37397",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6068cb4cb2e2a3739a",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6068cb4cb2e2a3739b",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6068cb4cb2e2a3739c",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6068cb4cb2e2a3739d",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6068cb4cb2e2a373a3",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6068cb4cb2e2a373a7",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6168cb4cb2e2a373ac",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6168cb4cb2e2a373b0",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6168cb4cb2e2a373b3",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6168cb4cb2e2a373b4",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6168cb4cb2e2a373b6",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6168cb4cb2e2a373b9",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6168cb4cb2e2a373ba",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6168cb4cb2e2a373bf",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        },
+        {
+          "id": "68cb3c6268cb4cb2e2a373c4",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "jefferson"
+        }
+      ],
+      "updatedIds": [
+        "68cada9f68cb4cb2e2a37033",
+        "68cae4f768cb4cb2e2a3712b",
+        "68cae4f768cb4cb2e2a3712c",
+        "68cae4f868cb4cb2e2a3712d",
+        "68cae4f868cb4cb2e2a3712e",
+        "68cae4f868cb4cb2e2a3712f",
+        "68cae4f868cb4cb2e2a37130",
+        "68cae4f968cb4cb2e2a37131",
+        "68cae4f968cb4cb2e2a37132",
+        "68cae4f968cb4cb2e2a37133",
+        "68cae4f968cb4cb2e2a37134",
+        "68cae4fa68cb4cb2e2a37135",
+        "68cae4fb68cb4cb2e2a37136",
+        "68cae4fc68cb4cb2e2a37137",
+        "68cae4fd68cb4cb2e2a37138",
+        "68cae4fe68cb4cb2e2a37139",
+        "68cae4ff68cb4cb2e2a3713a",
+        "68cae50068cb4cb2e2a3713b",
+        "68cae50168cb4cb2e2a3713c",
+        "68cae50268cb4cb2e2a3713d",
+        "68cae50368cb4cb2e2a3713e",
+        "68cae50468cb4cb2e2a3713f",
+        "68cae50568cb4cb2e2a37140",
+        "68cae50568cb4cb2e2a37141",
+        "68cae50668cb4cb2e2a37142",
+        "68cae50768cb4cb2e2a37143",
+        "68cae50768cb4cb2e2a37144",
+        "68cae50868cb4cb2e2a37145",
+        "68cae50968cb4cb2e2a37146",
+        "68cae50a68cb4cb2e2a37147",
+        "68cae50b68cb4cb2e2a37148",
+        "68cae50c68cb4cb2e2a37149",
+        "68cae50d68cb4cb2e2a3714a",
+        "68cae50e68cb4cb2e2a3714b",
+        "68cae50f68cb4cb2e2a3714c",
+        "68cae50f68cb4cb2e2a3714d",
+        "68cae51068cb4cb2e2a3714e",
+        "68cae51168cb4cb2e2a3714f",
+        "68cae51168cb4cb2e2a37150",
+        "68cae51268cb4cb2e2a37151",
+        "68cb3c5f68cb4cb2e2a37389",
+        "68cb3c5f68cb4cb2e2a3738a",
+        "68cb3c5f68cb4cb2e2a3738b",
+        "68cb3c5f68cb4cb2e2a3738c",
+        "68cb3c5f68cb4cb2e2a3738d",
+        "68cb3c5f68cb4cb2e2a3738e",
+        "68cb3c6068cb4cb2e2a3738f",
+        "68cb3c6068cb4cb2e2a37390",
+        "68cb3c6068cb4cb2e2a37391",
+        "68cb3c6068cb4cb2e2a37392",
+        "68cb3c6068cb4cb2e2a37393",
+        "68cb3c6068cb4cb2e2a37394",
+        "68cb3c6068cb4cb2e2a37395",
+        "68cb3c6068cb4cb2e2a37396",
+        "68cb3c6068cb4cb2e2a37397",
+        "68cb3c6068cb4cb2e2a37398",
+        "68cb3c6068cb4cb2e2a37399",
+        "68cb3c6068cb4cb2e2a3739a",
+        "68cb3c6068cb4cb2e2a3739b",
+        "68cb3c6068cb4cb2e2a3739c",
+        "68cb3c6068cb4cb2e2a3739d",
+        "68cb3c6068cb4cb2e2a3739e",
+        "68cb3c6068cb4cb2e2a3739f",
+        "68cb3c6068cb4cb2e2a373a0",
+        "68cb3c6068cb4cb2e2a373a1",
+        "68cb3c6068cb4cb2e2a373a2",
+        "68cb3c6068cb4cb2e2a373a3",
+        "68cb3c6068cb4cb2e2a373a4",
+        "68cb3c6068cb4cb2e2a373a5",
+        "68cb3c6068cb4cb2e2a373a6",
+        "68cb3c6068cb4cb2e2a373a7",
+        "68cb3c6168cb4cb2e2a373a8",
+        "68cb3c6168cb4cb2e2a373a9",
+        "68cb3c6168cb4cb2e2a373aa",
+        "68cb3c6168cb4cb2e2a373ab",
+        "68cb3c6168cb4cb2e2a373ac",
+        "68cb3c6168cb4cb2e2a373ad",
+        "68cb3c6168cb4cb2e2a373ae",
+        "68cb3c6168cb4cb2e2a373af",
+        "68cb3c6168cb4cb2e2a373b0",
+        "68cb3c6168cb4cb2e2a373b1",
+        "68cb3c6168cb4cb2e2a373b2",
+        "68cb3c6168cb4cb2e2a373b3",
+        "68cb3c6168cb4cb2e2a373b4",
+        "68cb3c6168cb4cb2e2a373b5",
+        "68cb3c6168cb4cb2e2a373b6",
+        "68cb3c6168cb4cb2e2a373b7",
+        "68cb3c6168cb4cb2e2a373b8",
+        "68cb3c6168cb4cb2e2a373b9",
+        "68cb3c6168cb4cb2e2a373ba",
+        "68cb3c6168cb4cb2e2a373bb",
+        "68cb3c6168cb4cb2e2a373bc",
+        "68cb3c6168cb4cb2e2a373bd",
+        "68cb3c6168cb4cb2e2a373be",
+        "68cb3c6168cb4cb2e2a373bf",
+        "68cb3c6168cb4cb2e2a373c0",
+        "68cb3c6268cb4cb2e2a373c1",
+        "68cb3c6268cb4cb2e2a373c2",
+        "68cb3c6268cb4cb2e2a373c3",
+        "68cb3c6268cb4cb2e2a373c4"
+      ]
+    }
+  }
+}

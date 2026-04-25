@@ -1,0 +1,319 @@
+{
+  "runId": "run_2025-09-20T14-00-06-489Z",
+  "ranAt": "2025-09-20T14:00:06.491Z",
+  "mode": "apply",
+  "collections": {
+    "simple_harris": {
+      "total": 3412,
+      "byStatus": {
+        "numeric": 810,
+        "summons": 4,
+        "refer_to_magistrate": 156,
+        "no_bond": 16,
+        "unknown_text": 15
+      },
+      "samples": [
+        {
+          "id": "68aa156ae040b45d40e63697",
+          "bond_raw": "SUMMONS ISSUED",
+          "status": "summons",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156ae040b45d40e636e8",
+          "bond_raw": "SUMMONS ISSUED",
+          "status": "summons",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156ae040b45d40e636ea",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156ae040b45d40e636fb",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156ae040b45d40e6370c",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156ae040b45d40e63711",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156ae040b45d40e63713",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156ae040b45d40e63716",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156ae040b45d40e63722",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156ae040b45d40e63727",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156ae040b45d40e6372a",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156ae040b45d40e6372c",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156ae040b45d40e6372e",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156ae040b45d40e63731",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156ae040b45d40e63733",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156ae040b45d40e63737",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156ae040b45d40e63747",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156ae040b45d40e6374c",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156ae040b45d40e63754",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156ae040b45d40e63755",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156ae040b45d40e63756",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156ae040b45d40e63757",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156ae040b45d40e63759",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156ae040b45d40e6375a",
+          "bond_raw": "J",
+          "status": "unknown_text",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e6375d",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e63760",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e63762",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e63768",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e6376b",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e6376c",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e6376f",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e63770",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e63774",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e63775",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e63776",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e63778",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e6377b",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e6377d",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e6377e",
+          "bond_raw": "J",
+          "status": "unknown_text",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e63780",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e63781",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e63782",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e63783",
+          "bond_raw": "J",
+          "status": "unknown_text",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e63784",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e6378b",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e63789",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e6378a",
+          "bond_raw": "",
+          "status": "no_bond",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e6378c",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e6378d",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        },
+        {
+          "id": "68aa156be040b45d40e63788",
+          "bond_raw": "REFER TO MAGISTRATE",
+          "status": "refer_to_magistrate",
+          "canonical": "harris"
+        }
+      ]
+    }
+  }
+}

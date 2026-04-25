@@ -1,0 +1,31 @@
+{
+  "folders": [
+    {
+      "path": "."
+    },
+    {
+      "path": "/Users/ryanmorrow/Documents/Projects2025/WarrentDB/Bail-Bonds-Dashboard"
+    },
+    {
+      "path": "/Users/ryanmorrow/Documents/Projects2025/WarrentDB/warrantdb-pipeline"
+    }
+  ],
+  "settings": {
+    "terminal.integrated.defaultProfile.osx": "zsh",
+    "files.exclude": {
+      "**/.git": true,
+      "**/node_modules": true,
+      "**/dist": true,
+      "**/.DS_Store": true
+    },
+    "editor.renderWhitespace": "selection",
+    "editor.formatOnSave": true
+  },
+  "extensions": {
+    "recommendations": [
+      "ms-azuretools.vscode-docker",
+      "dbaeumer.vscode-eslint",
+      "esbenp.prettier-vscode"
+    ]
+  }
+}

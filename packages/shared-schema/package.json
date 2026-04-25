@@ -1,0 +1,8 @@
+{
+  "name": "@warrant-system/shared-schema",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Stub — cross-service schema definitions (not yet implemented)",
+  "main": "index.js",
+  "scripts": {}
+}

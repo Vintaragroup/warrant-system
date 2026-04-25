@@ -1,0 +1,17 @@
+@baseUrl = http://localhost:4000
+@subjectId = A12345
+
+### Health
+GET {{baseUrl}}/health
+
+### Run enrichment
+POST {{baseUrl}}/api/enrichment/run
+Content-Type: application/json
+
+{
+  "subjectIds": ["{{subjectId}}"],
+  "mode": "standard"
+}
+
+### Get status
+GET {{baseUrl}}/api/enrichment/status?jobId={{jobId}}

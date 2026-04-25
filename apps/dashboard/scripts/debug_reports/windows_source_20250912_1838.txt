@@ -1,0 +1,28 @@
+Window Evaluation (source) @ 20250912_1838
+============================================================
+
+Brazoria:
+  24h: count=    0  sum=$0
+  48h: count=    0  sum=$0
+  72h: count=    0  sum=$0
+
+Fortbend:
+  24h: count=   59  sum=$0
+  48h: count=    1  sum=$0
+  72h: count=    0  sum=$0
+
+Galveston:
+  24h: count=    0  sum=$0
+  48h: count=   11  sum=$13,646
+  72h: count=   34  sum=$1,202,737
+
+Harris:
+  24h: count=    0  sum=$0
+  48h: count=  554  sum=$1,634,300
+  72h: count=  228  sum=$1,320,298
+
+Jefferson:
+  24h: count=    0  sum=$0
+  48h: count=   12  sum=$109,000
+  72h: count=   20  sum=$170,350
+

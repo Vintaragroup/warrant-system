@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+
+    <title>Bail Bonds Dashboard</title>
+    <meta name="description" content="Mobile‑first bail bonds operations dashboard: cases, check‑ins, court dates, payments, and alerts." />
+
+    <!-- Favicon: replace with your own when ready -->
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+
+    <!-- PWA / theming hooks (safe even if you don’t add a manifest yet) -->
+    <meta name="theme-color" content="#0ea5e9" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+
+    <!-- Social (Open Graph / Twitter) basic preview -->
+    <meta property="og:title" content="Bail Bonds Dashboard" />
+    <meta property="og:description" content="Mobile‑first operations dashboard for bail bonds teams." />
+    <meta property="og:type" content="website" />
+  </head>
+  <body>
+    <!-- Load runtime environment config (Firebase credentials, API URL, etc.) -->
+    <script src="/env.js"></script>
+    <div id="root"></div>
+    <script>
+      (function () {
+        var env = (typeof window !== 'undefined' && window.__ENV__) || {};
+        var enabled = false;
+        try {
+          enabled = String(env.DEV_ERROR_OVERLAY || '').toLowerCase() === 'true' || /(?:^|[?&])dev_error_overlay=1(?:&|$)/.test(location.search);
+        } catch (_) {}
+        if (!enabled) return; // Overlay disabled by default; enable via env or URL param
+
+        function showErr(msg) {
+          try {
+            var el = document.getElementById('mobile-error-overlay');
+            if (!el) {
+              el = document.createElement('div');
+              el.id = 'mobile-error-overlay';
+              el.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:99999;padding:8px 12px;background:#fee2e2;color:#991b1b;font:14px/1.3 -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;border-bottom:1px solid #fecaca;word-break:break-word;';
+              document.body.appendChild(el);
+            }
+            el.textContent = 'Error: ' + msg;
+          } catch (e) {}
+        }
+        // Expose a simple global hook so app code can report errors too.
+        try { window.__REPORT_ERROR = showErr; } catch (e) {}
+        window.addEventListener('error', function (e) {
+          var m = (e && e.message) || 'Unknown script error';
+          showErr(m);
+        });
+        window.addEventListener('unhandledrejection', function (e) {
+          var m = (e && (e.reason && (e.reason.message || e.reason)) ) || 'Unhandled rejection';
+          showErr(String(m));
+        });
+      })();
+    </script>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

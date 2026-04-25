@@ -1,0 +1,80 @@
+{
+  "database": "warrantdb",
+  "per_collection_requested": 10,
+  "generated_at": "2025-09-17T00:09:38.560521Z",
+  "pretty": true,
+  "gzip": true,
+  "combine": true,
+  "outputs": [
+    {
+      "collection": "brazoria_inmates",
+      "count_written": 10,
+      "file": "warrantdb_samples_20250916_200937/brazoria_inmates.jsonl.gz"
+    },
+    {
+      "collection": "custody_events",
+      "count_written": 0,
+      "file": "warrantdb_samples_20250916_200937/custody_events.jsonl.gz"
+    },
+    {
+      "collection": "fortbend_inmates",
+      "count_written": 10,
+      "file": "warrantdb_samples_20250916_200937/fortbend_inmates.jsonl.gz"
+    },
+    {
+      "collection": "galveston_events",
+      "count_written": 10,
+      "file": "warrantdb_samples_20250916_200937/galveston_events.jsonl.gz"
+    },
+    {
+      "collection": "harris_bond",
+      "count_written": 10,
+      "file": "warrantdb_samples_20250916_200937/harris_bond.jsonl.gz"
+    },
+    {
+      "collection": "harris_misfel",
+      "count_written": 10,
+      "file": "warrantdb_samples_20250916_200937/harris_misfel.jsonl.gz"
+    },
+    {
+      "collection": "harris_nafiling",
+      "count_written": 10,
+      "file": "warrantdb_samples_20250916_200937/harris_nafiling.jsonl.gz"
+    },
+    {
+      "collection": "jefferson_events",
+      "count_written": 10,
+      "file": "warrantdb_samples_20250916_200937/jefferson_events.jsonl.gz"
+    },
+    {
+      "collection": "simple_brazoria",
+      "count_written": 10,
+      "file": "warrantdb_samples_20250916_200937/simple_brazoria.jsonl.gz"
+    },
+    {
+      "collection": "simple_fortbend",
+      "count_written": 10,
+      "file": "warrantdb_samples_20250916_200937/simple_fortbend.jsonl.gz"
+    },
+    {
+      "collection": "simple_galveston",
+      "count_written": 10,
+      "file": "warrantdb_samples_20250916_200937/simple_galveston.jsonl.gz"
+    },
+    {
+      "collection": "simple_harris",
+      "count_written": 10,
+      "file": "warrantdb_samples_20250916_200937/simple_harris.jsonl.gz"
+    },
+    {
+      "collection": "simple_jefferson",
+      "count_written": 10,
+      "file": "warrantdb_samples_20250916_200937/simple_jefferson.jsonl.gz"
+    },
+    {
+      "collection": "_combined",
+      "count_written": 120,
+      "file": "warrantdb_samples_20250916_200937/_combined.jsonl.gz"
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "runId": "run_2025-09-20T14-04-13-313Z",
+  "ranAt": "2025-09-20T14:04:13.314Z",
+  "mode": "apply",
+  "collections": {
+    "simple_harris": {
+      "error": "MongoBulkWriteError: Unrecognized pipeline stage name: '$push'"
+    }
+  }
+}

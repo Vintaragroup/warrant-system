@@ -1,0 +1,22 @@
+{
+  "runId": "run_2025-09-20T14-05-51-835Z",
+  "ranAt": "2025-09-20T14:05:51.836Z",
+  "mode": "apply",
+  "collections": {
+    "simple_harris": {
+      "total": 3412,
+      "byStatus": {
+        "numeric": 10,
+        "summons": 1
+      },
+      "samples": [
+        {
+          "id": "68aa156ae040b45d40e63697",
+          "bond_raw": "SUMMONS ISSUED",
+          "status": "summons",
+          "canonical": "harris"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,22 @@
+[
+  {
+    "fileName": "main-overview.mdc",
+    "description": "Complete system overview documenting the bail bonds management system architecture, key components, and high-level workflow"
+  },
+  {
+    "fileName": "data-models-relationships.mdc",
+    "description": "Detailed documentation of core data models including bond classifications, time buckets, case management entities, and their relationships"
+  },
+  {
+    "fileName": "algorithms-time-processing.mdc",
+    "description": "Documentation of critical time-based algorithms including booking window calculations, time bucket management, and case prioritization logic"
+  },
+  {
+    "fileName": "authorization-model.mdc",
+    "description": "Comprehensive documentation of the multi-tenant authorization system with role hierarchies, department/county-level permissions, and access control rules"
+  },
+  {
+    "fileName": "data-flow-enrichment.mdc",
+    "description": "Documentation of data flow through the system, focusing on case enrichment processes, verification workflows, and integrations with external providers"
+  }
+]

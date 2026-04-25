@@ -1,0 +1,10 @@
+{
+  "runId": "run_2025-09-20T14-05-30-688Z",
+  "ranAt": "2025-09-20T14:05:30.690Z",
+  "mode": "apply",
+  "collections": {
+    "simple_harris": {
+      "error": "MongoBulkWriteError: $concatArrays only supports arrays, not object"
+    }
+  }
+}

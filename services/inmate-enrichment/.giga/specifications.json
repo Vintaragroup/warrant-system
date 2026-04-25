@@ -1,0 +1,22 @@
+[
+  {
+    "fileName": "main-overview.mdc",
+    "description": "Complete system overview documenting the inmate enrichment system architecture, core components, and high-level data flow between the worker, API, and web interface"
+  },
+  {
+    "fileName": "data-models-relationships.mdc",
+    "description": "Detailed documentation of the core data models (Inmate, EnrichmentJob, RelatedParty) and their relationships, including schema definitions and data validation rules"
+  },
+  {
+    "fileName": "enrichment-pipeline.mdc",
+    "description": "Comprehensive documentation of the DOB enrichment pipeline implementation, including the multi-step verification process, provider fallback logic, and status handling"
+  },
+  {
+    "fileName": "scoring-algorithms.mdc",
+    "description": "Detailed explanation of the related party scoring algorithms, including weighted factors, confidence calculations, and validation rules used to determine relationship strength"
+  },
+  {
+    "fileName": "data-providers.mdc",
+    "description": "Documentation of the integration with external data providers (HCSO, PDL, Pipl, Whitepages), including scraping logic, API interactions, and data normalization"
+  }
+]
