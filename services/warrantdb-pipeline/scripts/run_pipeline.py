@@ -11,12 +11,17 @@ from typing import List
 # any of your working code. It:
 #   1) Runs each scraper via scripts.run_ingestion --source <name>
 #   2) Runs your normalizer (scripts.normalize_to_simple)
-#   3) Runs the delta reporter (scripts.report_simple_deltas)
+#   3) (opt-in) Syncs simple_* records into the enrichment inmates collection
+#   4) Runs the delta reporter (scripts.report_simple_deltas)
 # Configure behavior with environment variables (optional):
-#   PIPELINE_SOURCES: comma-separated list of sources to run
-#                     default: harris_inmate,galveston_p2c_fast,jefferson_jail
-#   PIPELINE_STEPS:   comma-separated subset of steps to execute
-#                     choices: ingest,normalize,report (default: all three)
+#   PIPELINE_SOURCES:     comma-separated list of sources to run
+#                         default: harris_inmate,galveston_p2c_fast,jefferson_jail
+#   PIPELINE_STEPS:       comma-separated subset of steps to execute
+#                         choices: ingest,normalize,sync,report
+#                         default: ingest,normalize,report  (sync is NOT default)
+#   SYNC_TO_ENRICHMENT:   set to 'true' to enable the sync step even when
+#                         PIPELINE_STEPS is not explicitly set (default: false)
+#   SYNC_DRY_RUN:         set to 'true' to run sync without writing (default: false)
 # ---------------------------------------------------------------------------
 
 DEFAULT_SOURCES: List[str] = [
@@ -29,6 +34,7 @@ DEFAULT_SOURCES: List[str] = [
 ]
 
 NORMALIZER_MODULE = "scripts.normalize_to_simple"
+SYNC_MODULE = "scripts.sync_to_enrichment"
 REPORT_MODULE = "scripts.report_simple_deltas"
 
 
@@ -66,8 +72,20 @@ def get_steps() -> List[str]:
     if not raw:
         return ["ingest", "normalize", "report"]
     steps = [s.strip().lower() for s in raw.split(",") if s.strip()]
-    valid = {"ingest", "normalize", "report"}
+    valid = {"ingest", "normalize", "sync", "report"}
     return [s for s in steps if s in valid]
+
+
+def _sync_opted_in(steps: List[str]) -> bool:
+    """Return True if the sync step should run.
+
+    Sync is opt-in and never included in the default step list.  It runs when:
+      - PIPELINE_STEPS explicitly contains 'sync', OR
+      - SYNC_TO_ENRICHMENT env var is set to a truthy value.
+    """
+    if "sync" in steps:
+        return True
+    return os.getenv("SYNC_TO_ENRICHMENT", "").lower() in ("1", "true", "yes")
 
 
 def step_ingest(sources: List[str]) -> int:
@@ -83,6 +101,15 @@ def step_ingest(sources: List[str]) -> int:
 def step_normalize() -> int:
     _log("STEP: normalize")
     return run_cmd([sys.executable, "-m", NORMALIZER_MODULE])
+
+
+def step_sync() -> int:
+    _log("STEP: sync")
+    cmd = [sys.executable, "-m", SYNC_MODULE]
+    # Propagate dry-run flag if set in the environment.
+    if os.getenv("SYNC_DRY_RUN", "").lower() in ("1", "true", "yes"):
+        cmd.append("--dry-run")
+    return run_cmd(cmd)
 
 
 def step_report() -> int:
@@ -105,6 +132,14 @@ def main() -> int:
     if "normalize" in steps:
         rc = step_normalize()
         overall_rc = overall_rc or rc
+
+    if _sync_opted_in(steps):
+        _log("STEP: sync (opt-in)")
+        rc = step_sync()
+        if rc != 0:
+            # Sync failure is non-blocking — log and continue to report.
+            _log(f"WARN: sync step exited with code {rc}; continuing to report")
+            overall_rc = overall_rc or rc
 
     if "report" in steps:
         rc = step_report()
