@@ -361,10 +361,20 @@ def _maybe_derive_booking_datetime(doc: Dict[str, Any], debug: bool = False) -> 
     """Populate booking_datetime / booking_date_v2 derivation fields if missing.
     Precedence (first non-null parsable):
       first_seen_at -> updated_at -> booking_date (legacy day only)
+      -> scraped_at (proxy fallback: ingestion timestamp, NOT true booking time)
+
+    The scraped_at fallback is intentionally last. It is an approximation used
+    for counties (Fort Bend, Galveston) where the scraper cannot always extract
+    the actual booking date from the source page. Records using this fallback are
+    tagged with "booking_date_proxy" so downstream consumers know the date is
+    derived from the scrape time, not an authoritative booking record.
+
     This does NOT overwrite existing booking_date. Adds:
       booking_datetime (ISO8601 Z)
       booking_date_v2 (YYYY-MM-DD)
       booking_derivation_source
+    Also backfills booking_date (YYYY-MM-DD) if it is currently absent,
+    so sync adapter validation passes for these otherwise-valid records.
     """
     # Do not overwrite an existing booking_datetime
     if doc.get("booking_datetime"):
@@ -374,6 +384,9 @@ def _maybe_derive_booking_datetime(doc: Dict[str, Any], debug: bool = False) -> 
         ("first_seen_at", doc.get("first_seen_at")),
         ("updated_at", doc.get("updated_at")),
         ("legacy_booking_date", doc.get("booking_date")),
+        # scraped_at is a proxy: it reflects when the record was ingested,
+        # which is typically the same day as the booking but is NOT authoritative.
+        ("scraped_at", doc.get("scraped_at")),
     ]
     chosen_src = None
     chosen_dt: Optional[datetime] = None
@@ -399,11 +412,26 @@ def _maybe_derive_booking_datetime(doc: Dict[str, Any], debug: bool = False) -> 
             tags.append("future_date_candidate")
         doc["tags"] = tags
 
+    # Tag records where scraped_at was used as a proxy so consumers can filter
+    if chosen_src == "scraped_at":
+        tags = doc.get("tags") or []
+        if "booking_date_proxy" not in tags:
+            tags.append("booking_date_proxy")
+        doc["tags"] = tags
+
     # Store booking_datetime in UTC ISO8601 Z form
     doc["booking_datetime"] = chosen_dt.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
     doc["booking_derivation_source"] = chosen_src
     # booking_date_v2 is the date in America/Chicago
-    doc["booking_date_v2"] = chosen_dt.astimezone(ZoneInfo("America/Chicago")).date().isoformat()
+    derived_date = chosen_dt.astimezone(ZoneInfo("America/Chicago")).date().isoformat()
+    doc["booking_date_v2"] = derived_date
+
+    # Backfill booking_date if absent so sync adapter validation passes.
+    # Only written when the field is truly missing (None / not present) —
+    # never overwrites an existing authoritative date.
+    if not doc.get("booking_date"):
+        doc["booking_date"] = derived_date
+
     if debug:
         print(f"[DERIVE] booking_datetime set from {chosen_src}: {doc['booking_datetime']}")
 

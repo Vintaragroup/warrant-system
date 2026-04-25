@@ -1,7 +1,7 @@
 map_version: v0.1-galveston-20250916c
 source: galveston_p2c
 county: galveston
-collection: Galveston_events
+collection: galveston_events
 primary_key:
   - person_id
   - source_url
@@ -95,9 +95,15 @@ fields:
   source_url:
     from: source_url
 
+  person_id:
+    from: person_id
+
   scraped_at:
     from: scraped_at
     transforms:
+      # parse_datetime first because Galveston stores scraped_at as an ISO
+      # string (not a BSON Date), so to_iso_datetime needs a datetime object.
+      - parse_datetime
       - to_iso_datetime
 
   normalized_at:
