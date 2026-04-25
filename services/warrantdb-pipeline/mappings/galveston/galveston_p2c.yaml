@@ -3,8 +3,9 @@ source: galveston_p2c
 county: galveston
 collection: galveston_events
 primary_key:
-  - person_id
-  - source_url
+  - county
+  - category
+  - anchor
 
 fields:
   county:
@@ -97,6 +98,11 @@ fields:
 
   person_id:
     from: person_id
+
+  anchor:
+    any_of:
+      - from: person_id
+      - from: source_url
 
   scraped_at:
     from: scraped_at

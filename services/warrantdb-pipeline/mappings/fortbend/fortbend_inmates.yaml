@@ -3,8 +3,9 @@ source: fortbend_inquiry
 county: fortbend
 collection: fortbend_inmates
 primary_key:
-  - booking_number
-  - jail_id
+  - county
+  - category
+  - anchor
 
 fields:
   county:
@@ -47,6 +48,11 @@ fields:
     any_of:
       - from: jail_id
       - from: id
+
+  anchor:
+    any_of:
+      - from: booking_number
+      - from: jail_id
 
   booking_date:
     any_of:
@@ -109,6 +115,11 @@ fields:
 
   source_url:
     from: detail_url
+
+  # first_seen_at: raw fetched_at is already an ISO-8601 string; pass through
+  # so _maybe_derive_booking_datetime can use it as the highest-priority source.
+  first_seen_at:
+    from: fetched_at
 
   scraped_at:
     any_of:
