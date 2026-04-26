@@ -1,4 +1,5 @@
 # Scraper Discovery Checklist
+
 **Warrant System – warrantdb-pipeline**
 **Version:** 1.0 | **Date:** 2026-04-25
 
@@ -18,16 +19,16 @@ Use this checklist when adding a new county scraper or auditing an existing one.
 
 ## Section 1: County / Source Identification
 
-- [ ] **County name** (official): _______________
+- [ ] **County name** (official): ******\_\_\_******
 - [ ] **State**: TX
-- [ ] **Responsible agency**: Sheriff's Office / District Clerk / Police Dept / Other: _______________
-- [ ] **Source URL(s)**: _______________
-- [ ] **Platform / vendor identified** (Tyler, P2C, Odyssey, custom, etc.): _______________
-- [ ] **Data type**: ☐ Jail roster ☐ Warrant list ☐ Court bond docket ☐ Email attachment ☐ Other: ___
-- [ ] **Data freshness**: How often does the site update? _______________
-- [ ] **Public data verification**: Confirmed this data is publicly available under Texas Government Code §552: ___
-- [ ] **`robots.txt` reviewed**: Location → `<base_url>/robots.txt`. Findings: _______________
-- [ ] **Terms of Service reviewed**: Found at: _______________. Restrictions: _______________
+- [ ] **Responsible agency**: Sheriff's Office / District Clerk / Police Dept / Other: ******\_\_\_******
+- [ ] **Source URL(s)**: ******\_\_\_******
+- [ ] **Platform / vendor identified** (Tyler, P2C, Odyssey, custom, etc.): ******\_\_\_******
+- [ ] **Data type**: ☐ Jail roster ☐ Warrant list ☐ Court bond docket ☐ Email attachment ☐ Other: \_\_\_
+- [ ] **Data freshness**: How often does the site update? ******\_\_\_******
+- [ ] **Public data verification**: Confirmed this data is publicly available under Texas Government Code §552: \_\_\_
+- [ ] **`robots.txt` reviewed**: Location → `<base_url>/robots.txt`. Findings: ******\_\_\_******
+- [ ] **Terms of Service reviewed**: Found at: ******\_\_\_******. Restrictions: ******\_\_\_******
 
 ---
 
@@ -37,35 +38,35 @@ Use this checklist when adding a new county scraper or auditing an existing one.
 
 - [ ] **Login required**: ☐ Yes ☐ No ☐ Optional (more results with login)
 - [ ] **Session cookie required**: ☐ Yes (warm-up GET needed) ☐ No ☐ Unknown
-- [ ] **IP rate limiting observed**: ☐ Yes (describe: ___) ☐ No ☐ Unknown
+- [ ] **IP rate limiting observed**: ☐ Yes (describe: \_\_\_) ☐ No ☐ Unknown
 - [ ] **CAPTCHA present**: ☐ Yes (type: reCAPTCHA v2 / v3 / hCaptcha / other) ☐ No
-- [ ] **Anti-scraping headers checked** (X-Robots-Tag, etc.): _______________
+- [ ] **Anti-scraping headers checked** (X-Robots-Tag, etc.): ******\_\_\_******
 
 ### 2.2 JavaScript / Rendering
 
 - [ ] **Site works without JS**: ☐ Yes ☐ No (JS required) ☐ Partially
-- [ ] **AJAX / XHR endpoints identified**: ☐ Yes (URL: ___) ☐ No ☐ Unknown
+- [ ] **AJAX / XHR endpoints identified**: ☐ Yes (URL: \_\_\_) ☐ No ☐ Unknown
 - [ ] **Playwright/Selenium required**: ☐ Yes ☐ No ☐ Only for endpoint sniff
 - [ ] **WebSocket used**: ☐ Yes ☐ No
-- [ ] **Page source inspected** (View Source vs DevTools Elements differ): _______________
+- [ ] **Page source inspected** (View Source vs DevTools Elements differ): ******\_\_\_******
 
 ### 2.3 Form / Request Mechanics
 
 - [ ] **Request method**: ☐ GET ☐ POST ☐ Both
-- [ ] **Hidden form fields required** (ViewState, EventValidation, anti-forgery tokens): ☐ Yes (list: ___) ☐ No
-- [ ] **Query parameters documented**: _______________
+- [ ] **Hidden form fields required** (ViewState, EventValidation, anti-forgery tokens): ☐ Yes (list: \_\_\_) ☐ No
+- [ ] **Query parameters documented**: ******\_\_\_******
 - [ ] **POST body format**: ☐ form-encoded ☐ JSON ☐ multipart ☐ XML
 - [ ] **Referrer header required**: ☐ Yes ☐ No
-- [ ] **User-Agent restriction**: ☐ Yes (describe: ___) ☐ No
+- [ ] **User-Agent restriction**: ☐ Yes (describe: \_\_\_) ☐ No
 - [ ] **Origin / X-Requested-With headers required**: ☐ Yes ☐ No
 
 ### 2.4 Pagination
 
 - [ ] **Pagination present**: ☐ Yes ☐ No (single page) ☐ rows=N param
-- [ ] **Pagination mechanism**: ☐ URL params ☐ Page postback (ASP.NET __EVENTTARGET) ☐ Infinite scroll ☐ Cursor
-- [ ] **Max results per page**: _______________
+- [ ] **Pagination mechanism**: ☐ URL params ☐ Page postback (ASP.NET \_\_EVENTTARGET) ☐ Infinite scroll ☐ Cursor
+- [ ] **Max results per page**: ******\_\_\_******
 - [ ] **Can fetch all results in one request** (e.g. rows=9999): ☐ Yes ☐ No
-- [ ] **Total result count exposed**: ☐ Yes (selector: ___) ☐ No
+- [ ] **Total result count exposed**: ☐ Yes (selector: \_\_\_) ☐ No
 
 ### 2.5 Name Search Requirements
 
@@ -73,13 +74,13 @@ Use this checklist when adding a new county scraper or auditing an existing one.
 - [ ] **Last name required**: ☐ Yes (enforced by site) ☐ Optional ☐ No field
 - [ ] **Wildcard / prefix search supported**: ☐ Yes ☐ No ☐ Unknown
 - [ ] **Blank name returns all records**: ☐ Yes ☐ No ☐ Unknown
-- [ ] **If both names required — coverage strategy**: ☐ Surname enumeration file ☐ Alphabet sweep ☐ Known-name list ☐ Other: ___
+- [ ] **If both names required — coverage strategy**: ☐ Surname enumeration file ☐ Alphabet sweep ☐ Known-name list ☐ Other: \_\_\_
 
 ### 2.6 TLS / SSL
 
 - [ ] **SSL certificate valid**: ☐ Yes ☐ No (self-signed) ☐ Expired
-- [ ] **Certificate authority**: _______________
-- [ ] **SSL verification should be enabled**: ☐ Yes ☐ No (reason: ___)
+- [ ] **Certificate authority**: ******\_\_\_******
+- [ ] **SSL verification should be enabled**: ☐ Yes ☐ No (reason: \_\_\_)
 
 ---
 
@@ -90,8 +91,8 @@ Use this checklist when adding a new county scraper or auditing an existing one.
 Document every field visible in the search results list:
 
 | Field Name (on site) | Sample Value | Notes |
-|---|---|---|
-| (add rows as needed) | | |
+| -------------------- | ------------ | ----- |
+| (add rows as needed) |              |       |
 
 - [ ] **Full name available in list view**: ☐ Yes ☐ No ← if No, note in Section 6
 - [ ] **Booking number available in list view**: ☐ Yes ☐ No
@@ -103,16 +104,16 @@ Document every field visible in the search results list:
 ### 3.2 Detail Page Fields
 
 - [ ] **Detail page exists**: ☐ Yes ☐ No
-- [ ] **Detail URL pattern**: _______________
+- [ ] **Detail URL pattern**: ******\_\_\_******
 - [ ] **Detail page adds these fields** (beyond list view):
 
 | Field Name (on site) | Sample Value | Maps to schema field |
-|---|---|---|
-| (add rows as needed) | | |
+| -------------------- | ------------ | -------------------- |
+| (add rows as needed) |              |                      |
 
 - [ ] **Charges listed on detail page**: ☐ Yes ☐ No
 - [ ] **Per-charge bond amounts**: ☐ Yes ☐ No
-- [ ] **Mug shot available**: ☐ Yes (URL pattern: ___) ☐ No
+- [ ] **Mug shot available**: ☐ Yes (URL pattern: \_\_\_) ☐ No
 - [ ] **Physical description (height, weight, tattoos)**: ☐ Yes ☐ No
 - [ ] **Attorney info**: ☐ Yes ☐ No
 - [ ] **Housing unit / facility**: ☐ Yes ☐ No
@@ -121,60 +122,60 @@ Document every field visible in the search results list:
 
 ### 3.3 Date & Timestamp Availability
 
-| Timestamp | Available | Location | Format | Notes |
-|---|---|---|---|---|
-| Booking date | ☐ Yes ☐ No | | | |
-| Booking time | ☐ Yes ☐ No | | | |
-| Release date | ☐ Yes ☐ No | | | |
-| Court date | ☐ Yes ☐ No | | | |
-| Last updated | ☐ Yes ☐ No | | | |
-| DOB | ☐ Yes ☐ No | | | |
-| Date of offense | ☐ Yes ☐ No | | | |
+| Timestamp       | Available  | Location | Format | Notes |
+| --------------- | ---------- | -------- | ------ | ----- |
+| Booking date    | ☐ Yes ☐ No |          |        |       |
+| Booking time    | ☐ Yes ☐ No |          |        |       |
+| Release date    | ☐ Yes ☐ No |          |        |       |
+| Court date      | ☐ Yes ☐ No |          |        |       |
+| Last updated    | ☐ Yes ☐ No |          |        |       |
+| DOB             | ☐ Yes ☐ No |          |        |       |
+| Date of offense | ☐ Yes ☐ No |          |        |       |
 
 ### 3.4 Identity Fields
 
-| Field | Available | Format | Notes |
-|---|---|---|---|
-| Full name | ☐ Yes ☐ No | LAST, FIRST / FIRST LAST / other: ___ | |
-| First name | ☐ Yes ☐ No | | |
-| Last name | ☐ Yes ☐ No | | |
-| Middle name | ☐ Yes ☐ No | | |
-| DOB | ☐ Yes ☐ No | | |
-| Age | ☐ Yes ☐ No | | DOB derivable? |
-| Race | ☐ Yes ☐ No | | Encoded? |
-| Sex / Gender | ☐ Yes ☐ No | | Encoded? |
-| SPN / Sheriff ID | ☐ Yes ☐ No | | |
-| State ID (SID) | ☐ Yes ☐ No | | |
-| FBI number | ☐ Yes ☐ No | | |
-| Address | ☐ Yes ☐ No | | |
+| Field            | Available  | Format                                   | Notes          |
+| ---------------- | ---------- | ---------------------------------------- | -------------- |
+| Full name        | ☐ Yes ☐ No | LAST, FIRST / FIRST LAST / other: \_\_\_ |                |
+| First name       | ☐ Yes ☐ No |                                          |                |
+| Last name        | ☐ Yes ☐ No |                                          |                |
+| Middle name      | ☐ Yes ☐ No |                                          |                |
+| DOB              | ☐ Yes ☐ No |                                          |                |
+| Age              | ☐ Yes ☐ No |                                          | DOB derivable? |
+| Race             | ☐ Yes ☐ No |                                          | Encoded?       |
+| Sex / Gender     | ☐ Yes ☐ No |                                          | Encoded?       |
+| SPN / Sheriff ID | ☐ Yes ☐ No |                                          |                |
+| State ID (SID)   | ☐ Yes ☐ No |                                          |                |
+| FBI number       | ☐ Yes ☐ No |                                          |                |
+| Address          | ☐ Yes ☐ No |                                          |                |
 
 ### 3.5 Legal / Bond Fields
 
-| Field | Available | Notes |
-|---|---|---|
-| Booking number | ☐ Yes ☐ No | |
-| Case number | ☐ Yes ☐ No | |
-| Charge description | ☐ Yes ☐ No | |
-| Charge code / statute | ☐ Yes ☐ No | |
-| Bond amount (total) | ☐ Yes ☐ No | |
-| Bond amount (per charge) | ☐ Yes ☐ No | |
-| Bond type | ☐ Yes ☐ No | |
-| Bond status | ☐ Yes ☐ No | |
-| Bond posted? | ☐ Yes ☐ No | |
-| Arresting agency | ☐ Yes ☐ No | |
-| Arresting officer | ☐ Yes ☐ No | |
-| Warrant type | ☐ Yes ☐ No | |
+| Field                    | Available  | Notes |
+| ------------------------ | ---------- | ----- |
+| Booking number           | ☐ Yes ☐ No |       |
+| Case number              | ☐ Yes ☐ No |       |
+| Charge description       | ☐ Yes ☐ No |       |
+| Charge code / statute    | ☐ Yes ☐ No |       |
+| Bond amount (total)      | ☐ Yes ☐ No |       |
+| Bond amount (per charge) | ☐ Yes ☐ No |       |
+| Bond type                | ☐ Yes ☐ No |       |
+| Bond status              | ☐ Yes ☐ No |       |
+| Bond posted?             | ☐ Yes ☐ No |       |
+| Arresting agency         | ☐ Yes ☐ No |       |
+| Arresting officer        | ☐ Yes ☐ No |       |
+| Warrant type             | ☐ Yes ☐ No |       |
 
 ---
 
 ## Section 4: Upsert / Deduplication Key
 
-- [ ] **Natural unique key identified**: _______________
-- [ ] **Key type**: ☐ Booking number ☐ Jail ID ☐ SPN ☐ (county, booking_number) ☐ Name+DOB (last resort) ☐ Other: ___
+- [ ] **Natural unique key identified**: ******\_\_\_******
+- [ ] **Key type**: ☐ Booking number ☐ Jail ID ☐ SPN ☐ (county, booking_number) ☐ Name+DOB (last resort) ☐ Other: \_\_\_
 - [ ] **Key is stable** (does not change if record is re-fetched): ☐ Yes ☐ No
-- [ ] **Key is unique within county**: ☐ Yes ☐ No (explain: ___)
+- [ ] **Key is unique within county**: ☐ Yes ☐ No (explain: \_\_\_)
 - [ ] **Key is present in list view**: ☐ Yes ☐ No (requires detail page)
-- [ ] **Compound key needed**: ☐ Yes (fields: ___) ☐ No
+- [ ] **Compound key needed**: ☐ Yes (fields: \_\_\_) ☐ No
 - [ ] **MongoDB index to create**: `db.<collection>.create_index([("<field1>", 1), ("<field2>", 1)], unique=True)`
 
 ---
@@ -182,14 +183,14 @@ Document every field visible in the search results list:
 ## Section 5: Coverage & Completeness
 
 - [ ] **Can full roster be fetched without name input**: ☐ Yes ☐ No
-  - If No: coverage strategy → _______________
+  - If No: coverage strategy → ******\_\_\_******
 - [ ] **Date window supported** (fetch only last N days): ☐ Yes ☐ No
   - Method: ☐ Query param ☐ Client-side filter ☐ Neither
-- [ ] **Estimated total records in current roster**: _______________
-- [ ] **Estimated new records per day**: _______________
-- [ ] **Released inmates removed from site**: ☐ Yes (how quickly: ___) ☐ No ☐ Unknown
+- [ ] **Estimated total records in current roster**: ******\_\_\_******
+- [ ] **Estimated new records per day**: ******\_\_\_******
+- [ ] **Released inmates removed from site**: ☐ Yes (how quickly: \_\_\_) ☐ No ☐ Unknown
 - [ ] **Historical data available** (back more than 30 days): ☐ Yes ☐ No ☐ Unknown
-- [ ] **Roster last updated timestamp shown on site**: ☐ Yes (location: ___) ☐ No
+- [ ] **Roster last updated timestamp shown on site**: ☐ Yes (location: \_\_\_) ☐ No
 
 ---
 
@@ -197,11 +198,11 @@ Document every field visible in the search results list:
 
 Document every field/behavior that is intentionally missing or structurally unavailable:
 
-| Gap | Root Cause | Can It Be Fixed? | Workaround |
-|---|---|---|---|
-| (e.g., full_name always null) | | | |
-| (e.g., no DOB in list view) | | | |
-| (add rows as needed) | | | |
+| Gap                           | Root Cause | Can It Be Fixed? | Workaround |
+| ----------------------------- | ---------- | ---------------- | ---------- |
+| (e.g., full_name always null) |            |                  |            |
+| (e.g., no DOB in list view)   |            |                  |            |
+| (add rows as needed)          |            |                  |            |
 
 - [ ] **All permanent nulls in mapping YAML documented above**: ☐ Yes ☐ No
 - [ ] **Gaps reviewed and accepted by team**: ☐ Yes ☐ No
@@ -214,11 +215,11 @@ Document every field/behavior that is intentionally missing or structurally unav
 
 For each CSS selector or HTML pattern used:
 
-| Selector / Pattern | Element | Fragility | Notes |
-|---|---|---|---|
-| (e.g., `#InmatesTable tr`) | Inmate rows | Low — explicit ID | |
-| (e.g., `tds[3]` positional) | Booking date | HIGH — no header match | |
-| (add rows as needed) | | | |
+| Selector / Pattern          | Element      | Fragility              | Notes |
+| --------------------------- | ------------ | ---------------------- | ----- |
+| (e.g., `#InmatesTable tr`)  | Inmate rows  | Low — explicit ID      |       |
+| (e.g., `tds[3]` positional) | Booking date | HIGH — no header match |       |
+| (add rows as needed)        |              |                        |       |
 
 - [ ] **Selectors use semantic IDs/classes** (not positional index): ☐ Yes ☐ Partially ☐ No
 - [ ] **Fallback selector exists if primary fails**: ☐ Yes ☐ No
@@ -234,10 +235,10 @@ For each CSS selector or HTML pattern used:
 
 ### 7.3 Failure Modes
 
-- [ ] **What happens if the site returns 404**: _______________
-- [ ] **What happens if HTML structure changes**: _______________
-- [ ] **What happens if rate-limited (429/503)**: _______________
-- [ ] **What happens if site is down**: _______________
+- [ ] **What happens if the site returns 404**: ******\_\_\_******
+- [ ] **What happens if HTML structure changes**: ******\_\_\_******
+- [ ] **What happens if rate-limited (429/503)**: ******\_\_\_******
+- [ ] **What happens if site is down**: ******\_\_\_******
 - [ ] **Error detected and logged** (vs. silently writing garbage): ☐ Yes ☐ No
 - [ ] **HTML guard / sanity check** (validates response is data, not error page): ☐ Yes ☐ No
 
@@ -247,23 +248,23 @@ For each CSS selector or HTML pattern used:
 
 ### 8.1 Field Mapping Outline
 
-| `simple_*` field | Source raw field | Transform needed | Notes |
-|---|---|---|---|
-| `full_name` | | | |
-| `last_name` | | extract_last | |
-| `first_name` | | extract_first | |
-| `dob` | | parse_date or const: null | |
-| `gender` | | decode_sex_code or const: null | |
-| `race` | | decode_race_code | |
-| `booking_number` | | | |
-| `anchor` | | booking_number or jail_id | |
-| `booking_date` | | to_iso_datetime or const: null | |
-| `first_seen_at` | `fetched_at` | to_iso_datetime | Always set this |
-| `bond_amount` | | to_float | |
-| `source_url` | | | |
-| `agency` | | | |
-| `facility` | | | |
-| (add rows as needed) | | | |
+| `simple_*` field     | Source raw field | Transform needed               | Notes           |
+| -------------------- | ---------------- | ------------------------------ | --------------- |
+| `full_name`          |                  |                                |                 |
+| `last_name`          |                  | extract_last                   |                 |
+| `first_name`         |                  | extract_first                  |                 |
+| `dob`                |                  | parse_date or const: null      |                 |
+| `gender`             |                  | decode_sex_code or const: null |                 |
+| `race`               |                  | decode_race_code               |                 |
+| `booking_number`     |                  |                                |                 |
+| `anchor`             |                  | booking_number or jail_id      |                 |
+| `booking_date`       |                  | to_iso_datetime or const: null |                 |
+| `first_seen_at`      | `fetched_at`     | to_iso_datetime                | Always set this |
+| `bond_amount`        |                  | to_float                       |                 |
+| `source_url`         |                  |                                |                 |
+| `agency`             |                  |                                |                 |
+| `facility`           |                  |                                |                 |
+| (add rows as needed) |                  |                                |                 |
 
 ### 8.2 Mapping YAML Checklist
 
@@ -302,7 +303,7 @@ For each CSS selector or HTML pattern used:
 - [ ] All HTTP calls wrapped with `tenacity` retry (3 attempts, exponential backoff): ☐ Yes
 - [ ] SSL verification enabled (`verify=True` or `verify=certifi.where()`): ☐ Yes
 - [ ] Request timeout set (≥ 30s for slow county sites): ☐ Yes
-- [ ] Request delay implemented between searches: ☐ Yes (interval: ___ s)
+- [ ] Request delay implemented between searches: ☐ Yes (interval: \_\_\_ s)
 - [ ] `User-Agent` header set to browser-like string: ☐ Yes
 - [ ] Referrer header set where required: ☐ Yes ☐ N/A
 - [ ] Response status code checked before parsing: ☐ Yes
@@ -310,7 +311,7 @@ For each CSS selector or HTML pattern used:
 
 ### 9.3 Parsing
 
-- [ ] Parser: ☐ `html.parser` ☐ `lxml` ☐ `html5lib` (justify choice: ___)
+- [ ] Parser: ☐ `html.parser` ☐ `lxml` ☐ `html5lib` (justify choice: \_\_\_)
 - [ ] Column headers matched by text (not positional index): ☐ Yes ☐ N/A
 - [ ] Money parsing strips `$`, `,`, `\xa0`, spaces: ☐ Yes
 - [ ] Date parsing uses `dateutil.parser.parse()` with fallback: ☐ Yes
@@ -331,8 +332,8 @@ For each CSS selector or HTML pattern used:
 
 - [ ] First page only (intentional): ☐ Yes (document why)
 - [ ] Full pagination loop implemented: ☐ Yes
-- [ ] "Next page" detection: _______________
-- [ ] Max-page guard (prevents infinite loop): ☐ Yes (max: ___)
+- [ ] "Next page" detection: ******\_\_\_******
+- [ ] Max-page guard (prevents infinite loop): ☐ Yes (max: \_\_\_)
 
 ### 9.6 run_ingestion.py Registration
 
@@ -385,25 +386,25 @@ For each CSS selector or HTML pattern used:
 
 Use this section when auditing an **existing** scraper (not a new one):
 
-| Issue | File | Severity | Status | Owner |
-|---|---|---|---|---|
-| `playwright` not in requirements.txt | requirements.txt | 🔴 Critical | Open | — |
-| Galveston `full_name` always null | galveston_p2c.yaml, galveston_p2c_fast.py | 🔴 Critical | Open | — |
-| `selenium`/`webdriver-manager` unused | requirements.txt | 🟡 Medium | Open | — |
-| No retry logic in any scraper | All ingestion/*.py | 🟡 Medium | Open | — |
-| Brazoria no surname iteration | brazoria_jail.py / brazoria_ingest.py | 🟡 Medium | Open | — |
-| Fort Bend no surname iteration | fortbend_jail.py / fortbend_ingest.py | 🟡 Medium | Open | — |
-| Fort Bend `booking_date` is race value | fortbend_inmates.yaml | 🟡 Medium | Documented/Mitigated | — |
-| `configs/fortbend.json` URL mismatch | fortbend.json vs fortbend_jail.py | 🟡 Medium | Open | — |
-| Harris HCSO JailInfo not scraped | — | 🟡 Medium | Open | — |
-| Galveston SSL verification disabled | galveston_p2c_fast.py | 🟡 Medium | Open | — |
-| `_calculate_booking_age_category` duplicated 4×  | 4 scraper files | 🟢 Low | Open | — |
-| `datetime.utcnow()` deprecated usage | Multiple files | 🟢 Low | Open | — |
-| No `first_seen_at` in raw docs (some scrapers) | brazoria, galveston, jefferson | 🟢 Low | Open | — |
-| All scrapers use `print()` instead of `logging` | All ingestion/*.py | 🟢 Low | Open | — |
-| `detail_fetched_at` stored as datetime obj (Brazoria) | brazoria_jail.py | 🟢 Low | Open | — |
-| `dropbox` in requirements.txt — possibly unused | requirements.txt | 🟢 Low | Open | — |
-| Brazoria Tyler pagination not implemented (>25 results) | brazoria_jail.py | 🟢 Low | Open | — |
+| Issue                                                   | File                                      | Severity    | Status               | Owner |
+| ------------------------------------------------------- | ----------------------------------------- | ----------- | -------------------- | ----- |
+| `playwright` not in requirements.txt                    | requirements.txt                          | 🔴 Critical | Open                 | —     |
+| Galveston `full_name` always null                       | galveston_p2c.yaml, galveston_p2c_fast.py | 🔴 Critical | Open                 | —     |
+| `selenium`/`webdriver-manager` unused                   | requirements.txt                          | 🟡 Medium   | Open                 | —     |
+| No retry logic in any scraper                           | All ingestion/\*.py                       | 🟡 Medium   | Open                 | —     |
+| Brazoria no surname iteration                           | brazoria_jail.py / brazoria_ingest.py     | 🟡 Medium   | Open                 | —     |
+| Fort Bend no surname iteration                          | fortbend_jail.py / fortbend_ingest.py     | 🟡 Medium   | Open                 | —     |
+| Fort Bend `booking_date` is race value                  | fortbend_inmates.yaml                     | 🟡 Medium   | Documented/Mitigated | —     |
+| `configs/fortbend.json` URL mismatch                    | fortbend.json vs fortbend_jail.py         | 🟡 Medium   | Open                 | —     |
+| Harris HCSO JailInfo not scraped                        | —                                         | 🟡 Medium   | Open                 | —     |
+| Galveston SSL verification disabled                     | galveston_p2c_fast.py                     | 🟡 Medium   | Open                 | —     |
+| `_calculate_booking_age_category` duplicated 4×         | 4 scraper files                           | 🟢 Low      | Open                 | —     |
+| `datetime.utcnow()` deprecated usage                    | Multiple files                            | 🟢 Low      | Open                 | —     |
+| No `first_seen_at` in raw docs (some scrapers)          | brazoria, galveston, jefferson            | 🟢 Low      | Open                 | —     |
+| All scrapers use `print()` instead of `logging`         | All ingestion/\*.py                       | 🟢 Low      | Open                 | —     |
+| `detail_fetched_at` stored as datetime obj (Brazoria)   | brazoria_jail.py                          | 🟢 Low      | Open                 | —     |
+| `dropbox` in requirements.txt — possibly unused         | requirements.txt                          | 🟢 Low      | Open                 | —     |
+| Brazoria Tyler pagination not implemented (>25 results) | brazoria_jail.py                          | 🟢 Low      | Open                 | —     |
 
 ---
 
@@ -506,4 +507,4 @@ now_iso = now.isoformat()  # "2026-04-25T12:00:00+00:00"
 
 ---
 
-*End of checklist. Archive this file as `SCRAPER_DISCOVERY_<COUNTY>.md` before implementation.*
+_End of checklist. Archive this file as `SCRAPER_DISCOVERY_<COUNTY>.md` before implementation._

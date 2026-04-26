@@ -1,9 +1,10 @@
 # Scheduling the Warrant Pipeline (twice daily + idempotent writes)
 
 This repo already includes:
+
 - `scripts/run_pipeline.py` orchestrating ingestion ➜ normalize ➜ delta report
 - Upserts for persons via `BaseScraper.upsert_person()`
-- Normalized *simple_* collections with stable `_upsert_key` (idempotent)
+- Normalized _simple\__ collections with stable `_upsert_key` (idempotent)
 - Optional audit logs in `scrape_audit`
 
 Below are three production-ready scheduling options. All assume Python 3.11+ and a `.env` with `MONGO_URI` and `MONGO_DB`.
@@ -12,7 +13,7 @@ Below are three production-ready scheduling options. All assume Python 3.11+ and
 
 ## Option A — crontab (Linux/macOS)
 
-1) Ensure your venv and env are set:
+1. Ensure your venv and env are set:
 
 ```bash
 cd /opt/warrantdb-pipeline
@@ -22,14 +23,16 @@ pip install -r requirements.txt
 # Put MONGO_URI and MONGO_DB in .env (or export them in the crontab line)
 ```
 
-2) Create indexes (one-time, safe to re-run):
+2. Create indexes (one-time, safe to re-run):
+
 ```bash
 python -m scripts.setup_indexes
 python -m scripts.setup_indexes_extra
 python -m scripts.setup_indexes_events
 ```
 
-3) Add to crontab (runs 5:05 AM and 5:05 PM **America/New_York**):
+3. Add to crontab (runs 5:05 AM and 5:05 PM **America/New_York**):
+
 ```cron
 # WarrantDB twice-daily pipeline
 5 5,17 * * * cd /opt/warrantdb-pipeline &&   /usr/bin/env -S bash -lc 'source .venv/bin/activate &&   export TZ=America/New_York &&   export PIPELINE_SOURCES="harris_inmate,galveston_p2c_fast,jefferson_jail,fortbend_jail,brazoria_jail" &&   export PIPELINE_STEPS="ingest,normalize,report" &&   export JEFF_MIN_LAST_LEN=2 JEFF_MIN_FIRST_LEN=1 JEFF_SEARCH_DELAY_SEC=1 JEFF_ROW_DELAY_SEC=0.4 JEFF_REQ_TIMEOUT=30 &&   python -m scripts.run_pipeline >> logs/pipeline.$(date +\%F).log 2>&1'
@@ -76,6 +79,7 @@ WantedBy=timers.target
 ```
 
 Then:
+
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now warrantdb.timer
@@ -85,14 +89,16 @@ sudo systemctl enable --now warrantdb.timer
 
 ## Option C — Render Cron Jobs (recommended if you deploy on Render)
 
-1) Deploy this repo as a Background Worker on Render with `.env` (MONGO_URI, MONGO_DB).  
-2) Create **two** Render Cron Jobs (UTC-based) that run the worker command:
+1. Deploy this repo as a Background Worker on Render with `.env` (MONGO_URI, MONGO_DB).
+2. Create **two** Render Cron Jobs (UTC-based) that run the worker command:
+
 ```
 render run python -m scripts.run_pipeline
 ```
+
 Schedule them at 09:05 UTC and 21:05 UTC (which correspond to 5:05 AM/PM ET while DST is active). Update if DST changes.
 
-You can pass env vars in the Worker’s settings (PIPELINE_SOURCES, PIPELINE_STEPS, JEFF_*).
+You can pass env vars in the Worker’s settings (PIPELINE*SOURCES, PIPELINE_STEPS, JEFF*\*).
 
 ---
 
@@ -106,7 +112,7 @@ You can pass env vars in the Worker’s settings (PIPELINE_SOURCES, PIPELINE_STE
 
 ## Quick sanity check
 
-```bash
+````bash
 # One-off run
 python -m scripts.run_pipeline
 
@@ -125,7 +131,7 @@ Run this once per night after normalization to enrich recent Harris entries with
 ```bash
 # Cron example (runs at 2:15 AM local time; adjust as needed)
 15 2 * * * cd /opt/warrantdb-pipeline && /usr/bin/env -S bash -lc 'source .venv/bin/activate && python -m scripts.enrich_harris_dob --limit 200 --window 24h >> logs/enrich_harris_dob.$(date +\%F).log 2>&1'
-```
+````
 
 For Render, create a Cron Job that runs your Worker command:
 
@@ -134,9 +140,11 @@ render run python -m scripts.enrich_harris_dob --limit 200 --window 24h
 ```
 
 Environment variables required:
+
 - HCSO_SPN_URL_FMT, HCSO_NAME_URL_FMT
 - Optional: HCSO_THROTTLE_SEC, HCSO_TIMEOUT_SEC, HCSO_BETWEEN_PEOPLE_SEC
-```
+
+````
 
 ---
 
@@ -190,7 +198,7 @@ PYTHONPATH=$PWD python3 scripts/run_ingestion_v2.py --source jefferson_lookup --
 
 # Brazoria lookup (requires both names)
 PYTHONPATH=$PWD python3 scripts/run_ingestion_v2.py --source brazoria_lookup --last-name SMITH --first-name JOHN --dry-run
-```
+````
 
 ### Staging writes (requires master gate)
 
@@ -223,7 +231,7 @@ USE_V2_INGESTION=true DRY_RUN=false ENABLE_V2_LOOKUPS=true \
 
 ### Offline smoke test
 
-Run this before deploying any v2 code change.  No network required unless `--live` is passed.
+Run this before deploying any v2 code change. No network required unless `--live` is passed.
 
 ```bash
 cd services/warrantdb-pipeline

@@ -1,4 +1,5 @@
 # Scraper Discovery Report
+
 **Warrant System – warrantdb-pipeline**
 **Date:** 2026-04-25
 **Author:** Discovery Audit (Senior Python Web-Scraping Engineer)
@@ -34,8 +35,9 @@
 This pipeline scrapes inmate/booking/bond data from five Texas county sources and feeds a downstream enrichment worker via a normalized `simple_<county>` schema. The current system is functional but has several critical reliability gaps:
 
 **Critical Issues:**
+
 - **Galveston** (`galveston_p2c_fast.py`): `full_name` is **always null** — the P2C roster endpoint does not include names. This produces 2,196 sync skips on every run. No fix is possible without accessing the detail-page-level data for every row or finding an alternate name source.
-- **Harris** (`harris_inmate.py`): The scraper targets the **District Clerk bond docket**, not the Sheriff's Office jail roster. This is *court filing data*, not real-time jail population. There is a separate, superior source at `apps.harriscountyso.org/JailInfo/` that is not scraped.
+- **Harris** (`harris_inmate.py`): The scraper targets the **District Clerk bond docket**, not the Sheriff's Office jail roster. This is _court filing data_, not real-time jail population. There is a separate, superior source at `apps.harriscountyso.org/JailInfo/` that is not scraped.
 - **Fort Bend** (`fortbend_jail.py`): The raw `booking_date` column from the website actually contains **race values** (BLACK, WHITE, etc.), not dates. This is a known quirk documented in the mapping YAML. Fixed by deriving `first_seen_at` from `fetched_at`.
 - **Brazoria** (`brazoria_jail.py`): Requires **both** `first` and `last` name in the POST. Running without a known-name list will return zero results.
 - **Jefferson** (`jefferson_jail.py`): Entire coverage depends on a static surname list (`configs/jefferson_lastnames.txt`). New surnames not in the list are silently missed.
@@ -91,6 +93,7 @@ warrantdb-pipeline/
 ```
 
 **Data flow:**
+
 ```
 Website → ingestion/*.py → raw MongoDB collection (e.g. harris_bond, brazoria_inmates)
          ↓
@@ -109,65 +112,65 @@ enrichment worker (separate service) → enriched inmate profiles
 
 ### 3.1 Scraper Files
 
-| File | County | Source Website | Entry Point | Output Collection | Tech Stack |
-|---|---|---|---|---|---|
-| `ingestion/harris_inmate.py` | Harris | `hcdistrictclerk.com` | `HarrisInmateScraper` via `run_ingestion` | `harris_bond`, `harris_misfel`, `harris_nafiling` | requests, BeautifulSoup, CSV |
-| `ingestion/harris_email_roster.py` | Harris | Email IMAP attachments | `HarrisEmailRosterImporter` via `run_ingestion` | `harris_email_roster` | openpyxl, xlrd, csv |
-| `ingestion/brazoria_jail.py` | Brazoria | `pubweb.brazoriacountytx.gov` | `BrazoriaJailScraper` / `search_brazoria()` | `brazoria_inmates` | requests, BeautifulSoup |
-| `ingestion/brazoria_ingest.py` | Brazoria | — | `python -m ingestion.brazoria_ingest` | `brazoria_inmates` | pymongo, requests |
-| `ingestion/galveston_p2c_fast.py` | Galveston | `p2c.galvestoncountytx.gov` | `GalvestonP2CFastScraper` via `run_ingestion` | `galveston_events` | httpx (async), BeautifulSoup, Playwright (sniff), certifi |
-| `ingestion/fortbend_jail.py` | Fort Bend | `jailinq.fortbendcountytx.gov` | `FortBendJailScraper` / `search_fort_bend()` | `fortbend_inmates` | requests, BeautifulSoup |
-| `ingestion/fortbend_ingest.py` | Fort Bend | — | `python -m ingestion.fortbend_ingest` | `fortbend_inmates` | pymongo, requests |
-| `ingestion/jefferson_jail.py` | Jefferson | `jeffersoncountytx.gov/InmateSearch` | `JeffersonJailScraper` via `run_ingestion` | `jefferson_events` | requests, BeautifulSoup, lxml |
+| File                               | County    | Source Website                       | Entry Point                                     | Output Collection                                 | Tech Stack                                                |
+| ---------------------------------- | --------- | ------------------------------------ | ----------------------------------------------- | ------------------------------------------------- | --------------------------------------------------------- |
+| `ingestion/harris_inmate.py`       | Harris    | `hcdistrictclerk.com`                | `HarrisInmateScraper` via `run_ingestion`       | `harris_bond`, `harris_misfel`, `harris_nafiling` | requests, BeautifulSoup, CSV                              |
+| `ingestion/harris_email_roster.py` | Harris    | Email IMAP attachments               | `HarrisEmailRosterImporter` via `run_ingestion` | `harris_email_roster`                             | openpyxl, xlrd, csv                                       |
+| `ingestion/brazoria_jail.py`       | Brazoria  | `pubweb.brazoriacountytx.gov`        | `BrazoriaJailScraper` / `search_brazoria()`     | `brazoria_inmates`                                | requests, BeautifulSoup                                   |
+| `ingestion/brazoria_ingest.py`     | Brazoria  | —                                    | `python -m ingestion.brazoria_ingest`           | `brazoria_inmates`                                | pymongo, requests                                         |
+| `ingestion/galveston_p2c_fast.py`  | Galveston | `p2c.galvestoncountytx.gov`          | `GalvestonP2CFastScraper` via `run_ingestion`   | `galveston_events`                                | httpx (async), BeautifulSoup, Playwright (sniff), certifi |
+| `ingestion/fortbend_jail.py`       | Fort Bend | `jailinq.fortbendcountytx.gov`       | `FortBendJailScraper` / `search_fort_bend()`    | `fortbend_inmates`                                | requests, BeautifulSoup                                   |
+| `ingestion/fortbend_ingest.py`     | Fort Bend | —                                    | `python -m ingestion.fortbend_ingest`           | `fortbend_inmates`                                | pymongo, requests                                         |
+| `ingestion/jefferson_jail.py`      | Jefferson | `jeffersoncountytx.gov/InmateSearch` | `JeffersonJailScraper` via `run_ingestion`      | `jefferson_events`                                | requests, BeautifulSoup, lxml                             |
 
 ### 3.2 Base Classes
 
-| File | Purpose |
-|---|---|
-| `ingestion/base_scraper.py` | `BaseScraper` — shared `upsert_person()` with `_ext_id`/booking/name+DOB key strategy |
+| File                           | Purpose                                                                                                                   |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `ingestion/base_scraper.py`    | `BaseScraper` — shared `upsert_person()` with `_ext_id`/booking/name+DOB key strategy                                     |
 | `ingestion/audited_scraper.py` | `AuditedScraper` — extends Base; tracks scrape_audit records in MongoDB, adds counters for links found / upserts / errors |
 
 ### 3.3 Pipeline & Normalization
 
-| File | Purpose |
-|---|---|
-| `normalize_to_simple.py` | Main normalizer: iterates raw collection, applies YAML mapping, upserts `simple_<county>` |
-| `pipeline/mapping/apply.py` | YAML field-mapping engine |
-| `pipeline/mapping/transforms.py` | All transform functions (parse_date, to_iso_datetime, decode_sex_code, etc.) |
+| File                             | Purpose                                                                                   |
+| -------------------------------- | ----------------------------------------------------------------------------------------- |
+| `normalize_to_simple.py`         | Main normalizer: iterates raw collection, applies YAML mapping, upserts `simple_<county>` |
+| `pipeline/mapping/apply.py`      | YAML field-mapping engine                                                                 |
+| `pipeline/mapping/transforms.py` | All transform functions (parse_date, to_iso_datetime, decode_sex_code, etc.)              |
 
 ### 3.4 Enrichment Modules
 
-| File | County / Source | Method |
-|---|---|---|
-| `enrichment/harris_hcso_dob.py` | Harris / HCSO | requests + BeautifulSoup (URL configurable) |
-| `enrichment/tdcj_enrich.py` | TDCJ statewide | Playwright (requires installation) |
-| `enrichment/enrich_pdl.py` | People Data Labs | REST API (requires `PDL_API_KEY`) |
-| `enrichment/public_records.py` | Placeholder | Not implemented |
+| File                            | County / Source  | Method                                      |
+| ------------------------------- | ---------------- | ------------------------------------------- |
+| `enrichment/harris_hcso_dob.py` | Harris / HCSO    | requests + BeautifulSoup (URL configurable) |
+| `enrichment/tdcj_enrich.py`     | TDCJ statewide   | Playwright (requires installation)          |
+| `enrichment/enrich_pdl.py`      | People Data Labs | REST API (requires `PDL_API_KEY`)           |
+| `enrichment/public_records.py`  | Placeholder      | Not implemented                             |
 
 ### 3.5 Orchestration Scripts
 
-| Script | Purpose |
-|---|---|
-| `scripts/run_ingestion.py` | Dispatcher: loads scraper class by name, calls `fetch()` or `run()` |
-| `scripts/run_pipeline.py` | Full pipeline: ingest → normalize → sync → report |
-| `scripts/run_harris_e2e.py` | Harris: fetch email → import → ingest → normalize → rebucket → report |
-| `scripts/run_twice_daily.sh` | Shell wrapper for cron/systemd; sets all env vars |
-| `scripts/sync_to_enrichment.py` | Copies `simple_*` → `inmate_enrichment.inmates` (72h eligibility window) |
-| `scripts/mark_existing_inmates_stale.py` | One-time migration: marks pre-policy records as STALE |
+| Script                                   | Purpose                                                                  |
+| ---------------------------------------- | ------------------------------------------------------------------------ |
+| `scripts/run_ingestion.py`               | Dispatcher: loads scraper class by name, calls `fetch()` or `run()`      |
+| `scripts/run_pipeline.py`                | Full pipeline: ingest → normalize → sync → report                        |
+| `scripts/run_harris_e2e.py`              | Harris: fetch email → import → ingest → normalize → rebucket → report    |
+| `scripts/run_twice_daily.sh`             | Shell wrapper for cron/systemd; sets all env vars                        |
+| `scripts/sync_to_enrichment.py`          | Copies `simple_*` → `inmate_enrichment.inmates` (72h eligibility window) |
+| `scripts/mark_existing_inmates_stale.py` | One-time migration: marks pre-policy records as STALE                    |
 
 ### 3.6 Utility / Maintenance Scripts (selected)
 
-| Script | Purpose |
-|---|---|
-| `scripts/setup_indexes.py`, `setup_indexes_events.py`, `setup_indexes_extra.py` | MongoDB index creation |
-| `scripts/report_simple_deltas.py` | Reports new/changed records per run |
-| `scripts/scan_anomalies_simple_harris.py` | Anomaly detection in simple_harris |
-| `scripts/fix_anomalies_simple_harris.py` | Address cleaning, bad SPN marking |
-| `scripts/backfill_booking_datetime_harris.py` | Backfills booking_datetime from strings |
-| `scripts/enrich_harris_dob.py` | DOB enrichment via HCSO |
-| `scripts/tdcj_ivss_recent_intakes.py` | TDCJ recent intake check |
-| `scripts/cleanup_stale_simple_docs.py` | Deletes null-upsert-key docs |
-| `scripts/nightly_simple_harris.sh` | Nightly Harris maintenance (anomaly scan + fixes) |
+| Script                                                                          | Purpose                                           |
+| ------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `scripts/setup_indexes.py`, `setup_indexes_events.py`, `setup_indexes_extra.py` | MongoDB index creation                            |
+| `scripts/report_simple_deltas.py`                                               | Reports new/changed records per run               |
+| `scripts/scan_anomalies_simple_harris.py`                                       | Anomaly detection in simple_harris                |
+| `scripts/fix_anomalies_simple_harris.py`                                        | Address cleaning, bad SPN marking                 |
+| `scripts/backfill_booking_datetime_harris.py`                                   | Backfills booking_datetime from strings           |
+| `scripts/enrich_harris_dob.py`                                                  | DOB enrichment via HCSO                           |
+| `scripts/tdcj_ivss_recent_intakes.py`                                           | TDCJ recent intake check                          |
+| `scripts/cleanup_stale_simple_docs.py`                                          | Deletes null-upsert-key docs                      |
+| `scripts/nightly_simple_harris.sh`                                              | Nightly Harris maintenance (anomaly scan + fixes) |
 
 ---
 
@@ -197,42 +200,42 @@ webdriver-manager==4.0.2
 
 ### 4.2 Package Analysis
 
-| Package | Status | Notes |
-|---|---|---|
-| `requests` | ✅ Used | Harris, Brazoria, Fort Bend, Jefferson, HCSO enrichment |
-| `httpx` | ✅ Used | Galveston async fetch |
-| `beautifulsoup4` | ✅ Used | All HTML scrapers |
-| `lxml` | ✅ Used | Jefferson (lxml parser in BeautifulSoup calls) |
-| `pymongo` | ✅ Used | All scrapers |
-| `python-dotenv` | ✅ Used | Env loading |
-| `PyYAML` | ✅ Used | Mapping YAML files |
-| `python-dateutil` | ✅ Used | `transforms.py` date parsing |
-| `pydantic` | ✅ Used (API) | FastAPI request validation; not used in scrapers |
-| `fastapi` + `uvicorn` | ✅ Used (API) | `api/main.py` |
-| `openpyxl` | ✅ Used | Email roster XLSX parsing |
-| `xlrd` | ✅ Used | Email roster legacy XLS |
-| `certifi` | ✅ Used (import) | Galveston SSL verification (optional) |
-| `pdfminer.six` | ⚠️ Possibly used | `scripts/jefferson_pdf_recent_bonds.py` — confirm usage |
-| `dropbox` | ⚠️ Low confidence | No active scraper code imports it; possible legacy artifact |
-| `selenium` | ❌ NOT USED | No scraper currently uses Selenium. Should be removed or replaced with Playwright |
-| `webdriver-manager` | ❌ NOT USED | Only relevant if Selenium is used; remove |
-| **`playwright`** | ❌ MISSING | Used by `galveston_p2c_fast.py` (`_playwright_sniff_roster`) and `enrichment/tdcj_enrich.py`. **Not in requirements.txt or Dockerfile.** Will fail on fresh deployment. |
-| `tenacity` | ❌ MISSING | No retry logic in any scraper. Should be added. |
-| `structlog` or `logging` | ❌ Not used | All scrapers use raw `print()`. |
+| Package                  | Status            | Notes                                                                                                                                                                   |
+| ------------------------ | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `requests`               | ✅ Used           | Harris, Brazoria, Fort Bend, Jefferson, HCSO enrichment                                                                                                                 |
+| `httpx`                  | ✅ Used           | Galveston async fetch                                                                                                                                                   |
+| `beautifulsoup4`         | ✅ Used           | All HTML scrapers                                                                                                                                                       |
+| `lxml`                   | ✅ Used           | Jefferson (lxml parser in BeautifulSoup calls)                                                                                                                          |
+| `pymongo`                | ✅ Used           | All scrapers                                                                                                                                                            |
+| `python-dotenv`          | ✅ Used           | Env loading                                                                                                                                                             |
+| `PyYAML`                 | ✅ Used           | Mapping YAML files                                                                                                                                                      |
+| `python-dateutil`        | ✅ Used           | `transforms.py` date parsing                                                                                                                                            |
+| `pydantic`               | ✅ Used (API)     | FastAPI request validation; not used in scrapers                                                                                                                        |
+| `fastapi` + `uvicorn`    | ✅ Used (API)     | `api/main.py`                                                                                                                                                           |
+| `openpyxl`               | ✅ Used           | Email roster XLSX parsing                                                                                                                                               |
+| `xlrd`                   | ✅ Used           | Email roster legacy XLS                                                                                                                                                 |
+| `certifi`                | ✅ Used (import)  | Galveston SSL verification (optional)                                                                                                                                   |
+| `pdfminer.six`           | ⚠️ Possibly used  | `scripts/jefferson_pdf_recent_bonds.py` — confirm usage                                                                                                                 |
+| `dropbox`                | ⚠️ Low confidence | No active scraper code imports it; possible legacy artifact                                                                                                             |
+| `selenium`               | ❌ NOT USED       | No scraper currently uses Selenium. Should be removed or replaced with Playwright                                                                                       |
+| `webdriver-manager`      | ❌ NOT USED       | Only relevant if Selenium is used; remove                                                                                                                               |
+| **`playwright`**         | ❌ MISSING        | Used by `galveston_p2c_fast.py` (`_playwright_sniff_roster`) and `enrichment/tdcj_enrich.py`. **Not in requirements.txt or Dockerfile.** Will fail on fresh deployment. |
+| `tenacity`               | ❌ MISSING        | No retry logic in any scraper. Should be added.                                                                                                                         |
+| `structlog` or `logging` | ❌ Not used       | All scrapers use raw `print()`.                                                                                                                                         |
 
 ### 4.3 Recommended Scraping Stack
 
-| Component | Recommended Package | Reason |
-|---|---|---|
-| HTTP (simple sites) | `requests` (keep) | Sufficient for Tyler/HCSO sites |
-| HTTP (async / AJAX) | `httpx` (keep) | Galveston uses it well |
-| HTML parsing | `beautifulsoup4` + `lxml` (keep) | Current combo is solid |
-| JS-rendering / sniff | `playwright` (add to requirements) | Already used; just missing from deps |
-| Retry / back-off | `tenacity` (add) | Critical for reliability |
-| Structured logging | stdlib `logging` with JSON formatter or `structlog` | Replaces print statements |
-| Data validation | `pydantic` v2 (keep; extend to scrapers) | Currently only used in API layer |
-| Date parsing | `python-dateutil` (keep) | Already handles edge cases |
-| **Remove** | `selenium`, `webdriver-manager` | Unused; dead weight; security risk if outdated |
+| Component            | Recommended Package                                 | Reason                                         |
+| -------------------- | --------------------------------------------------- | ---------------------------------------------- |
+| HTTP (simple sites)  | `requests` (keep)                                   | Sufficient for Tyler/HCSO sites                |
+| HTTP (async / AJAX)  | `httpx` (keep)                                      | Galveston uses it well                         |
+| HTML parsing         | `beautifulsoup4` + `lxml` (keep)                    | Current combo is solid                         |
+| JS-rendering / sniff | `playwright` (add to requirements)                  | Already used; just missing from deps           |
+| Retry / back-off     | `tenacity` (add)                                    | Critical for reliability                       |
+| Structured logging   | stdlib `logging` with JSON formatter or `structlog` | Replaces print statements                      |
+| Data validation      | `pydantic` v2 (keep; extend to scrapers)            | Currently only used in API layer               |
+| Date parsing         | `python-dateutil` (keep)                            | Already handles edge cases                     |
+| **Remove**           | `selenium`, `webdriver-manager`                     | Unused; dead weight; security risk if outdated |
 
 ---
 
@@ -268,7 +271,7 @@ webdriver-manager==4.0.2
 
 #### 5.1.3 Failure Risks / Issues
 
-1. **Wrong data source for bail-bonds use case.** The District Clerk portal provides *court case data* (who has filed bonds in court), not the *current jail population* or *active warrant list*. For live bond opportunities, the Sheriff's Office jail roster (`apps.harriscountyso.org/JailInfo/`) or the warrant search (`apps.harriscountyso.org/warrants/`) is far more relevant.
+1. **Wrong data source for bail-bonds use case.** The District Clerk portal provides _court case data_ (who has filed bonds in court), not the _current jail population_ or _active warrant list_. For live bond opportunities, the Sheriff's Office jail roster (`apps.harriscountyso.org/JailInfo/`) or the warrant search (`apps.harriscountyso.org/warrants/`) is far more relevant.
 2. **WebForms tokens expire.** If the POST is not performed within the same session as the GET, `__EVENTVALIDATION` will reject the request. The current code re-GETs the page before every POST, which is correct, but adds one extra roundtrip per download.
 3. **No DOB in bond/nafiling data.** Only `misfel` files include DOB. The `harris_court_bonds.yaml` mapping sets `dob: const: null`. This limits enrichment matching.
 4. **Full name format is `LAST, FIRST MIDDLE`.** The mapping derives `full_name: from: name` but the `name` field is constructed as `"LAST, FIRST_MIDDLE"` — comma-separated. The normalizer's `extract_last`/`extract_first_plus_middle` transforms must correctly parse this, but this should be verified.
@@ -279,23 +282,23 @@ webdriver-manager==4.0.2
 
 #### 5.1.4 Timestamp Handling
 
-| Field | Source | Status |
-|---|---|---|
-| `scraped_at` | `dt.datetime.now(dt.timezone.utc)` | ✅ Set on every doc |
-| `_ingested_at` | Not explicitly set | ⚠️ Relying on `normalize_to_simple.py` |
-| `first_seen_at` | Not set | ❌ Missing |
-| `booking_date` | Derived from `file_date` (court filing date) | ⚠️ Semantically wrong |
-| `detail_fetched_at` | N/A (no detail pages) | — |
+| Field               | Source                                       | Status                                 |
+| ------------------- | -------------------------------------------- | -------------------------------------- |
+| `scraped_at`        | `dt.datetime.now(dt.timezone.utc)`           | ✅ Set on every doc                    |
+| `_ingested_at`      | Not explicitly set                           | ⚠️ Relying on `normalize_to_simple.py` |
+| `first_seen_at`     | Not set                                      | ❌ Missing                             |
+| `booking_date`      | Derived from `file_date` (court filing date) | ⚠️ Semantically wrong                  |
+| `detail_fetched_at` | N/A (no detail pages)                        | —                                      |
 
 #### 5.1.5 Improvement Recommendations
 
-| Item | Priority | Difficulty |
-|---|---|---|
-| Add HCSO jail roster scraper (`apps.harriscountyso.org/JailInfo/`) | HIGH | Medium |
-| Add HCSO warrant search scraper | HIGH | Medium |
-| Add tenacity retry to all CSV download attempts | Medium | Low |
-| Replace `utcnow()` with `datetime.now(timezone.utc)` | Low | Low |
-| Document that `booking_date = file_date` is a proxy | Low | Low |
+| Item                                                               | Priority | Difficulty |
+| ------------------------------------------------------------------ | -------- | ---------- |
+| Add HCSO jail roster scraper (`apps.harriscountyso.org/JailInfo/`) | HIGH     | Medium     |
+| Add HCSO warrant search scraper                                    | HIGH     | Medium     |
+| Add tenacity retry to all CSV download attempts                    | Medium   | Low        |
+| Replace `utcnow()` with `datetime.now(timezone.utc)`               | Low      | Low        |
+| Document that `booking_date = file_date` is a proxy                | Low      | Low        |
 
 ---
 
@@ -333,23 +336,23 @@ webdriver-manager==4.0.2
 
 #### 5.2.4 Timestamp Handling
 
-| Field | Source | Status |
-|---|---|---|
-| `fetched_at` | `dt.datetime.now(dt.timezone.utc)` | ✅ Set |
-| `scraped_at` | `dt.datetime.now(dt.timezone.utc)` | ✅ Set (alias) |
+| Field               | Source                                                | Status            |
+| ------------------- | ----------------------------------------------------- | ----------------- |
+| `fetched_at`        | `dt.datetime.now(dt.timezone.utc)`                    | ✅ Set            |
+| `scraped_at`        | `dt.datetime.now(dt.timezone.utc)`                    | ✅ Set (alias)    |
 | `detail_fetched_at` | `dt.datetime.now(dt.timezone.utc)` as datetime object | ⚠️ Not ISO string |
-| `booking_date_iso` | Parsed from raw `booking_date` | ✅ When available |
-| `first_seen_at` | Not set | ❌ Missing |
+| `booking_date_iso`  | Parsed from raw `booking_date`                        | ✅ When available |
+| `first_seen_at`     | Not set                                               | ❌ Missing        |
 
 #### 5.2.5 Improvement Recommendations
 
-| Item | Priority | Difficulty |
-|---|---|---|
-| Build a surname-iteration loop (like Jefferson) | HIGH | Medium |
-| Add Tyler pagination (page-through results) | HIGH | Medium |
-| Move booking age helpers to `audited_scraper.py` only | Medium | Low |
-| Standardize `detail_fetched_at` to ISO string | Low | Low |
-| Add tenacity retry | Medium | Low |
+| Item                                                  | Priority | Difficulty |
+| ----------------------------------------------------- | -------- | ---------- |
+| Build a surname-iteration loop (like Jefferson)       | HIGH     | Medium     |
+| Add Tyler pagination (page-through results)           | HIGH     | Medium     |
+| Move booking age helpers to `audited_scraper.py` only | Medium   | Low        |
+| Standardize `detail_fetched_at` to ISO string         | Low      | Low        |
+| Add tenacity retry                                    | Medium   | Low        |
 
 ---
 
@@ -385,25 +388,25 @@ webdriver-manager==4.0.2
 
 #### 5.3.4 Timestamp Handling
 
-| Field | Source | Status |
-|---|---|---|
-| `scraped_at` | Set in scraper output | ✅ |
-| `fetched_at` | Set in scraper | ✅ |
-| `detail_fetched_at` | Set when detail page fetched | ✅ |
-| `booked_at` | Parsed from P2C roster | ✅ (mapped to `booking_date`) |
-| `first_seen_at` | Not set | ❌ Missing |
-| `full_name` | **Always null** | ❌ Critical gap |
+| Field               | Source                       | Status                        |
+| ------------------- | ---------------------------- | ----------------------------- |
+| `scraped_at`        | Set in scraper output        | ✅                            |
+| `fetched_at`        | Set in scraper               | ✅                            |
+| `detail_fetched_at` | Set when detail page fetched | ✅                            |
+| `booked_at`         | Parsed from P2C roster       | ✅ (mapped to `booking_date`) |
+| `first_seen_at`     | Not set                      | ❌ Missing                    |
+| `full_name`         | **Always null**              | ❌ Critical gap               |
 
 #### 5.3.5 Improvement Recommendations
 
-| Item | Priority | Difficulty |
-|---|---|---|
-| Investigate `jqHandler.ashx` response — does it contain names? | CRITICAL | Low (inspect) |
-| If names in AJAX response: fix mapping YAML to populate `full_name` | CRITICAL | Low |
-| Add `playwright` to `requirements.txt` and `Dockerfile` | HIGH | Low |
-| Enable SSL verification | Medium | Low |
-| Add tenacity retry for httpx | Medium | Low |
-| Investigate Galveston Odyssey portal for supplemental name data | Medium | Medium |
+| Item                                                                | Priority | Difficulty    |
+| ------------------------------------------------------------------- | -------- | ------------- |
+| Investigate `jqHandler.ashx` response — does it contain names?      | CRITICAL | Low (inspect) |
+| If names in AJAX response: fix mapping YAML to populate `full_name` | CRITICAL | Low           |
+| Add `playwright` to `requirements.txt` and `Dockerfile`             | HIGH     | Low           |
+| Enable SSL verification                                             | Medium   | Low           |
+| Add tenacity retry for httpx                                        | Medium   | Low           |
+| Investigate Galveston Odyssey portal for supplemental name data     | Medium   | Medium        |
 
 ---
 
@@ -439,23 +442,23 @@ webdriver-manager==4.0.2
 
 #### 5.4.4 Timestamp Handling
 
-| Field | Source | Status |
-|---|---|---|
-| `fetched_at` | `dt.datetime.now(dt.timezone.utc)` | ✅ |
-| `scraped_at` | `dt.datetime.now(dt.timezone.utc)` | ✅ (same as fetched_at) |
-| `detail_fetched_at` | Set in `fetch_fort_bend_detail()` | ✅ |
-| `booking_date` | Derived from `first_seen_at` (= `fetched_at`) | ⚠️ Proxy only |
-| `first_seen_at` | Set in YAML from `fetched_at` | ✅ (fix applied this session) |
+| Field               | Source                                        | Status                        |
+| ------------------- | --------------------------------------------- | ----------------------------- |
+| `fetched_at`        | `dt.datetime.now(dt.timezone.utc)`            | ✅                            |
+| `scraped_at`        | `dt.datetime.now(dt.timezone.utc)`            | ✅ (same as fetched_at)       |
+| `detail_fetched_at` | Set in `fetch_fort_bend_detail()`             | ✅                            |
+| `booking_date`      | Derived from `first_seen_at` (= `fetched_at`) | ⚠️ Proxy only                 |
+| `first_seen_at`     | Set in YAML from `fetched_at`                 | ✅ (fix applied this session) |
 
 #### 5.4.5 Improvement Recommendations
 
-| Item | Priority | Difficulty |
-|---|---|---|
-| Investigate whether Fort Bend detail page includes booking date | HIGH | Low |
-| Add surname iteration loop (prefix-based) | HIGH | Medium |
-| Fix column parsing to use header names instead of positional index | Medium | Low |
-| Add `gender` extraction from detail page | Medium | Low |
-| Add tenacity retry | Medium | Low |
+| Item                                                               | Priority | Difficulty |
+| ------------------------------------------------------------------ | -------- | ---------- |
+| Investigate whether Fort Bend detail page includes booking date    | HIGH     | Low        |
+| Add surname iteration loop (prefix-based)                          | HIGH     | Medium     |
+| Fix column parsing to use header names instead of positional index | Medium   | Low        |
+| Add `gender` extraction from detail page                           | Medium   | Low        |
+| Add tenacity retry                                                 | Medium   | Low        |
 
 ---
 
@@ -497,38 +500,39 @@ webdriver-manager==4.0.2
 
 #### 5.5.4 Timestamp Handling
 
-| Field | Source | Status |
-|---|---|---|
-| `booked_at` | Parsed from "Jail Entry Time" detail field | ✅ |
-| `scraped_at` | Set by `AuditedScraper` | ✅ |
-| `detail_fetched_at` | Not explicitly tracked | ⚠️ |
-| `first_seen_at` | Not set | ❌ Missing |
-| `dob` | **Always null** | ❌ |
+| Field               | Source                                     | Status     |
+| ------------------- | ------------------------------------------ | ---------- |
+| `booked_at`         | Parsed from "Jail Entry Time" detail field | ✅         |
+| `scraped_at`        | Set by `AuditedScraper`                    | ✅         |
+| `detail_fetched_at` | Not explicitly tracked                     | ⚠️         |
+| `first_seen_at`     | Not set                                    | ❌ Missing |
+| `dob`               | **Always null**                            | ❌         |
 
 #### 5.5.5 Improvement Recommendations
 
-| Item | Priority | Difficulty |
-|---|---|---|
-| Expand surname list or switch to alphabet-sweep (A..Z) if site allows blank last name | HIGH | Low |
-| Add `detail_fetched_at` tracking | Medium | Low |
-| Investigate whether "booking number" appears elsewhere on detail page | Medium | Low |
-| Add tenacity retry | Medium | Low |
-| Consider caching anti-forgery token per session (not per-surname) | Medium | Low |
+| Item                                                                                  | Priority | Difficulty |
+| ------------------------------------------------------------------------------------- | -------- | ---------- |
+| Expand surname list or switch to alphabet-sweep (A..Z) if site allows blank last name | HIGH     | Low        |
+| Add `detail_fetched_at` tracking                                                      | Medium   | Low        |
+| Investigate whether "booking number" appears elsewhere on detail page                 | Medium   | Low        |
+| Add tenacity retry                                                                    | Medium   | Low        |
+| Consider caching anti-forgery token per session (not per-surname)                     | Medium   | Low        |
 
 ---
 
 ## 6. Website Behavior Matrix
 
-| County | URL | Requires JS | Session Cookies | CAPTCHA | POST/GET | Hidden Tokens | Pagination | Name Req'd | Detail Pages | SSL |
-|---|---|---|---|---|---|---|---|---|---|---|
-| Harris (DC) | hcdistrictclerk.com | No | Yes | No | POST | ViewState, EventValidation | No (bulk CSVs) | No (bulk download) | No | ✅ Valid |
-| Harris (HCSO) | apps.harriscountyso.org | Unknown | Unknown | Unknown | Unknown | Unknown | Unknown | Partial | Unknown | ✅ Valid |
-| Brazoria | pubweb.brazoriacountytx.gov | No | Yes | No | GET+POST fallback | ASP.NET hidden fields | Yes (25/page) ⚠️ | Both first+last | Yes | ✅ Valid |
-| Galveston | p2c.galvestoncountytx.gov | Yes (jqHandler.ashx) | Yes | No | GET (after sniff) | AJAX session params | rows=N param | No (full roster) | Yes | ✅ Valid |
-| Fort Bend | jailinq.fortbendcountytx.gov | No | Minimal | No | GET | None observed | Possibly (unconfirmed) | No (blank allowed) | Yes | ✅ Valid |
-| Jefferson | jeffersoncountytx.gov/InmateSearch | No | Yes | No | GET+POST | Anti-forgery token | Results page | Last name required | Yes | ✅ Valid |
+| County        | URL                                | Requires JS          | Session Cookies | CAPTCHA | POST/GET          | Hidden Tokens              | Pagination             | Name Req'd         | Detail Pages | SSL      |
+| ------------- | ---------------------------------- | -------------------- | --------------- | ------- | ----------------- | -------------------------- | ---------------------- | ------------------ | ------------ | -------- |
+| Harris (DC)   | hcdistrictclerk.com                | No                   | Yes             | No      | POST              | ViewState, EventValidation | No (bulk CSVs)         | No (bulk download) | No           | ✅ Valid |
+| Harris (HCSO) | apps.harriscountyso.org            | Unknown              | Unknown         | Unknown | Unknown           | Unknown                    | Unknown                | Partial            | Unknown      | ✅ Valid |
+| Brazoria      | pubweb.brazoriacountytx.gov        | No                   | Yes             | No      | GET+POST fallback | ASP.NET hidden fields      | Yes (25/page) ⚠️       | Both first+last    | Yes          | ✅ Valid |
+| Galveston     | p2c.galvestoncountytx.gov          | Yes (jqHandler.ashx) | Yes             | No      | GET (after sniff) | AJAX session params        | rows=N param           | No (full roster)   | Yes          | ✅ Valid |
+| Fort Bend     | jailinq.fortbendcountytx.gov       | No                   | Minimal         | No      | GET               | None observed              | Possibly (unconfirmed) | No (blank allowed) | Yes          | ✅ Valid |
+| Jefferson     | jeffersoncountytx.gov/InmateSearch | No                   | Yes             | No      | GET+POST          | Anti-forgery token         | Results page           | Last name required | Yes          | ✅ Valid |
 
 **Key observations:**
+
 - All sites use valid TLS. SSL verification should be **enabled** everywhere.
 - Galveston is the only site requiring JavaScript-rendered data discovery; after sniff, httpx suffices.
 - Brazoria and Jefferson require name input (cannot enumerate entire jail population blindly).
@@ -538,13 +542,13 @@ webdriver-manager==4.0.2
 
 ## 7. Scraper-Code Quality Matrix
 
-| County | Retry Logic | Logging | Dedup Key | Detail Pages | Pagination | Name Split | Timestamps | Booking Date | Error Handling | Overall |
-|---|---|---|---|---|---|---|---|---|---|---|
-| Harris (inmate) | ❌ None | print() | SPN/case_no ✅ | N/A (CSV) | N/A (bulk) | LAST, FIRST ✅ | scraped_at ✅ | File date proxy ⚠️ | HTML guard ✅ | B |
-| Brazoria | ❌ None | print() | booking_no ✅ | ✅ Fetches | ❌ First page only | name string ✅ | fetched_at, detail_fetched_at ✅ | booking_date_iso ✅ | Error catch ✅ | B- |
-| Galveston | ❌ None | print() | person_id/URL ✅ | ✅ Async | rows=5000 ✅ | ❌ **Always null** | scraped_at, booked_at ✅ | booked_at ✅ | try/except ✅ | C+ |
-| Fort Bend | ❌ None | print() | booking_no/jail_id ✅ | ✅ Fetches | ❌ Unconfirmed | name string ✅ | fetched_at ✅ | ❌ Race value / derived | Column shift guard ✅ | C+ |
-| Jefferson | ❌ None | print() | _ext_id/anchor ✅ | ✅ Fetches | ✅ State tracked | full_name split ✅ | booked_at ✅ | Jail entry time ✅ | Snapshot on fail ✅ | B+ |
+| County          | Retry Logic | Logging | Dedup Key             | Detail Pages | Pagination         | Name Split         | Timestamps                       | Booking Date            | Error Handling        | Overall |
+| --------------- | ----------- | ------- | --------------------- | ------------ | ------------------ | ------------------ | -------------------------------- | ----------------------- | --------------------- | ------- |
+| Harris (inmate) | ❌ None     | print() | SPN/case_no ✅        | N/A (CSV)    | N/A (bulk)         | LAST, FIRST ✅     | scraped_at ✅                    | File date proxy ⚠️      | HTML guard ✅         | B       |
+| Brazoria        | ❌ None     | print() | booking_no ✅         | ✅ Fetches   | ❌ First page only | name string ✅     | fetched_at, detail_fetched_at ✅ | booking_date_iso ✅     | Error catch ✅        | B-      |
+| Galveston       | ❌ None     | print() | person_id/URL ✅      | ✅ Async     | rows=5000 ✅       | ❌ **Always null** | scraped_at, booked_at ✅         | booked_at ✅            | try/except ✅         | C+      |
+| Fort Bend       | ❌ None     | print() | booking_no/jail_id ✅ | ✅ Fetches   | ❌ Unconfirmed     | name string ✅     | fetched_at ✅                    | ❌ Race value / derived | Column shift guard ✅ | C+      |
+| Jefferson       | ❌ None     | print() | \_ext_id/anchor ✅    | ✅ Fetches   | ✅ State tracked   | full_name split ✅ | booked_at ✅                     | Jail entry time ✅      | Snapshot on fail ✅   | B+      |
 
 ---
 
@@ -604,17 +608,17 @@ _ingested_at        ISO datetime (set by normalizer)
 
 ### 8.3 Schema Inconsistencies
 
-| Field | Harris | Brazoria | Galveston | Fort Bend | Jefferson |
-|---|---|---|---|---|---|
-| `full_name` | ✅ LAST, FIRST | ✅ uppercase | ❌ null | ✅ uppercase | ✅ uppercase |
-| `dob` | ✅ misfel only | ✅ when available | ❌ null | ❌ null | ❌ null |
-| `booking_number` | ❌ null | ✅ | ⚠️ often null | ✅ | ⚠️ null |
-| `booking_date` | ⚠️ file_date proxy | ✅ | ✅ booked_at | ⚠️ derived (fetched_at) | ✅ jail entry time |
-| `gender` | ✅ decoded | ✅ | ✅ | ❌ null | ✅ decoded |
-| `race` | ✅ decoded | ✅ | ✅ | ✅ (from raw booking_date field!) | ✅ |
-| `charges` | ✅ (denormalized) | ✅ from detail | ✅ from detail | ✅ from detail | ✅ from detail |
-| `bond_amount` | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `source_url` | ❌ | ❌ | ✅ | ✅ via detail_url | ✅ |
+| Field            | Harris             | Brazoria          | Galveston      | Fort Bend                         | Jefferson          |
+| ---------------- | ------------------ | ----------------- | -------------- | --------------------------------- | ------------------ |
+| `full_name`      | ✅ LAST, FIRST     | ✅ uppercase      | ❌ null        | ✅ uppercase                      | ✅ uppercase       |
+| `dob`            | ✅ misfel only     | ✅ when available | ❌ null        | ❌ null                           | ❌ null            |
+| `booking_number` | ❌ null            | ✅                | ⚠️ often null  | ✅                                | ⚠️ null            |
+| `booking_date`   | ⚠️ file_date proxy | ✅                | ✅ booked_at   | ⚠️ derived (fetched_at)           | ✅ jail entry time |
+| `gender`         | ✅ decoded         | ✅                | ✅             | ❌ null                           | ✅ decoded         |
+| `race`           | ✅ decoded         | ✅                | ✅             | ✅ (from raw booking_date field!) | ✅                 |
+| `charges`        | ✅ (denormalized)  | ✅ from detail    | ✅ from detail | ✅ from detail                    | ✅ from detail     |
+| `bond_amount`    | ✅                 | ✅                | ✅             | ✅                                | ✅                 |
+| `source_url`     | ❌                 | ❌                | ✅             | ✅ via detail_url                 | ✅                 |
 
 ### 8.4 Recommended Canonical Schema
 
@@ -628,12 +632,12 @@ class SimpleInmateSchema(BaseModel):
     last_name: Optional[str]
     first_name: Optional[str]
     middle_name: Optional[str]
-    
+
     # --- Demographics ---
     dob: Optional[str]                   # ISO date YYYY-MM-DD
     gender: Optional[Literal["M", "F", "U"]]
     race: Optional[str]
-    
+
     # --- Booking ---
     booking_number: Optional[str]
     spn: Optional[str]                   # Harris Sheriff's Person Number
@@ -642,26 +646,26 @@ class SimpleInmateSchema(BaseModel):
     booking_datetime: Optional[str]      # derived datetime (highest precision)
     first_seen_at: Optional[str]         # When first scraped
     release_date: Optional[str]
-    
+
     # --- Legal ---
     offense: Optional[str]
     charges: Optional[List[Dict]]
     bond_amount: Optional[float]
     bond_type: Optional[str]
     case_number: Optional[str]
-    
+
     # --- Source ---
     county_source: str                   # e.g. "harris_bond", "galveston_p2c"
     source_url: Optional[str]
     agency: Optional[str]
     facility: Optional[str]
-    
+
     # --- Pipeline timestamps ---
     scraped_at: str                      # ISO UTC datetime
     _ingested_at: str                    # Set by normalizer
     _normalized_at: str                  # Set by normalizer
     detail_fetched_at: Optional[str]
-    
+
     # --- Quality flags ---
     booking_date_confidence: Optional[Literal["actual", "proxy_fetched_at", "file_date"]]
     has_full_name: bool
@@ -672,11 +676,13 @@ class SimpleInmateSchema(BaseModel):
 ### 8.5 Deduplication Strategy
 
 **Current strategy:**
+
 - Raw collections: upsert on `_ext_id` or `booking_number` or `(full_name, dob)` — see `BaseScraper.upsert_person()`
 - `simple_<county>` collections: upsert on `_upsert_key = {county, category, anchor}` compound index
 - `inmate_enrichment.inmates`: upsert on `_upsert_key` (same)
 
 **Issues:**
+
 - `entity_resolution/matcher.py` is a placeholder — simple `name+DOB` SHA1 hash with no fuzzy matching, no phonetic matching.
 - Cross-county deduplication is not implemented. The same person booked in Harris and Jefferson will appear as two separate records.
 - `full_name` case normalization is inconsistent — some raw sources use UPPER, some use Title Case.
@@ -688,74 +694,75 @@ class SimpleInmateSchema(BaseModel):
 
 ### 9.1 Harris County
 
-| Source | Type | URL | Reliability | Legal | Easier than scraping? |
-|---|---|---|---|---|---|
-| **HCSO JailInfo** | Live jail roster | `apps.harriscountyso.org/JailInfo/` | High | Public | Yes — currently not scraped |
-| **HCSO Warrants** | Active warrants | `apps.harriscountyso.org/warrants/` | High | Public | Yes — currently not scraped |
-| **Harris Courts** | Case/bond data | `www.myharriscountycases.com` | High | Public | Yes (current source via District Clerk) |
-| **Vinelink** | Custody status | vinelink.com (Harris) | Medium | Public | Partial |
-| **HCSO API** | Unknown — needs investigation | — | Unknown | Unknown | — |
-| **Texas OCA / CAPRS** | Court records aggregator | — | High | Restricted | No — requires agreement |
+| Source                | Type                          | URL                                 | Reliability | Legal      | Easier than scraping?                   |
+| --------------------- | ----------------------------- | ----------------------------------- | ----------- | ---------- | --------------------------------------- |
+| **HCSO JailInfo**     | Live jail roster              | `apps.harriscountyso.org/JailInfo/` | High        | Public     | Yes — currently not scraped             |
+| **HCSO Warrants**     | Active warrants               | `apps.harriscountyso.org/warrants/` | High        | Public     | Yes — currently not scraped             |
+| **Harris Courts**     | Case/bond data                | `www.myharriscountycases.com`       | High        | Public     | Yes (current source via District Clerk) |
+| **Vinelink**          | Custody status                | vinelink.com (Harris)               | Medium      | Public     | Partial                                 |
+| **HCSO API**          | Unknown — needs investigation | —                                   | Unknown     | Unknown    | —                                       |
+| **Texas OCA / CAPRS** | Court records aggregator      | —                                   | High        | Restricted | No — requires agreement                 |
 
 **Recommendation:** Add HCSO JailInfo scraper as primary Harris source. The current District Clerk feed is supplementary court data.
 
 ### 9.2 Brazoria County
 
-| Source | Type | URL | Notes |
-|---|---|---|---|
-| **Tyler PublicAccess JailingSearch** | Jail bookings | pubweb.brazoriacountytx.gov | Current source; limited by name requirement |
-| **Tyler PublicAccess CaseSearch** | Court cases | pubweb.brazoriacountytx.gov/Search.aspx?ID=100 | Configured in `brazoria.json` but not scraped |
-| **Brazoria Sheriff's Office** | Sheriff roster | brazoriacountytx.gov | Investigate for direct roster page |
-| **Vinelink** | Custody status | — | Partial, name-based |
+| Source                               | Type           | URL                                            | Notes                                         |
+| ------------------------------------ | -------------- | ---------------------------------------------- | --------------------------------------------- |
+| **Tyler PublicAccess JailingSearch** | Jail bookings  | pubweb.brazoriacountytx.gov                    | Current source; limited by name requirement   |
+| **Tyler PublicAccess CaseSearch**    | Court cases    | pubweb.brazoriacountytx.gov/Search.aspx?ID=100 | Configured in `brazoria.json` but not scraped |
+| **Brazoria Sheriff's Office**        | Sheriff roster | brazoriacountytx.gov                           | Investigate for direct roster page            |
+| **Vinelink**                         | Custody status | —                                              | Partial, name-based                           |
 
 **Recommendation:** Investigate whether `brazoria.json`'s `cases_public` Tyler portal has a full inmate list view that doesn't require name input.
 
 ### 9.3 Galveston County
 
-| Source | Type | URL | Notes |
-|---|---|---|---|
-| **P2C jailinmates.aspx** | Live jail roster | p2c.galvestoncountytx.gov | Current source; names missing |
-| **P2C jqHandler.ashx** | AJAX data endpoint | p2c.galvestoncountytx.gov/jqHandler.ashx | Current AJAX source — investigate name field |
-| **Galveston Odyssey** | Court records | odyssey.galvestoncountytx.gov | Configured in `galveston.json`; not scraped |
-| **Galveston Sheriff direct** | Possibly CSV/export | — | Needs investigation |
-| **VINE (Vinelink)** | Custody status | — | Texas uses VINELink |
+| Source                       | Type                | URL                                      | Notes                                        |
+| ---------------------------- | ------------------- | ---------------------------------------- | -------------------------------------------- |
+| **P2C jailinmates.aspx**     | Live jail roster    | p2c.galvestoncountytx.gov                | Current source; names missing                |
+| **P2C jqHandler.ashx**       | AJAX data endpoint  | p2c.galvestoncountytx.gov/jqHandler.ashx | Current AJAX source — investigate name field |
+| **Galveston Odyssey**        | Court records       | odyssey.galvestoncountytx.gov            | Configured in `galveston.json`; not scraped  |
+| **Galveston Sheriff direct** | Possibly CSV/export | —                                        | Needs investigation                          |
+| **VINE (Vinelink)**          | Custody status      | —                                        | Texas uses VINELink                          |
 
 **Recommendation:** Inspect `jqHandler.ashx` response JSON to determine if `name` field is available. If it is, fix the mapping YAML — this is a critical win. If not, fetch individual detail pages (already supported in code) to get names.
 
 ### 9.4 Fort Bend County
 
-| Source | Type | URL | Notes |
-|---|---|---|---|
-| **Fort Bend jailinq** | Live jail roster | jailinq.fortbendcountytx.gov | Current source; booking date issue |
+| Source                    | Type             | URL                                                    | Notes                                        |
+| ------------------------- | ---------------- | ------------------------------------------------------ | -------------------------------------------- |
+| **Fort Bend jailinq**     | Live jail roster | jailinq.fortbendcountytx.gov                           | Current source; booking date issue           |
 | **Fort Bend public jail** | Alternate roster | `jail.fortbendcountytx.gov/public/` (in fortbend.json) | Not currently scraped — may be better source |
-| **Tyler Technologies** | Court/booking | — | Fort Bend may use Tyler for some systems |
-| **Vinelink** | Custody check | — | Partial |
+| **Tyler Technologies**    | Court/booking    | —                                                      | Fort Bend may use Tyler for some systems     |
+| **Vinelink**              | Custody check    | —                                                      | Partial                                      |
 
 **Recommendation:** Check `jail.fortbendcountytx.gov/public/` (listed in `configs/fortbend.json`) — may be a more complete roster than the current inquiry site.
 
 ### 9.5 Jefferson County
 
-| Source | Type | URL | Notes |
-|---|---|---|---|
-| **InmateSearch** | Live jail search | jeffersoncountytx.gov/InmateSearch | Current source |
-| **Jefferson Sheriff** | Direct roster | — | Investigate for full list |
-| **Tyler Odyssey** | Court records | — | Jefferson may use Tyler/Odyssey |
-| **Vinelink** | Custody status | — | Texas VINELink |
+| Source                | Type             | URL                                | Notes                           |
+| --------------------- | ---------------- | ---------------------------------- | ------------------------------- |
+| **InmateSearch**      | Live jail search | jeffersoncountytx.gov/InmateSearch | Current source                  |
+| **Jefferson Sheriff** | Direct roster    | —                                  | Investigate for full list       |
+| **Tyler Odyssey**     | Court records    | —                                  | Jefferson may use Tyler/Odyssey |
+| **Vinelink**          | Custody status   | —                                  | Texas VINELink                  |
 
 ### 9.6 Texas Statewide
 
-| Source | Coverage | Notes |
-|---|---|---|
-| **TDCJ InmateSearch** | TDCJ incarcerated only | Used in `enrichment/tdcj_enrich.py` (Playwright) |
-| **Texas OCA** | All county courts | Requires data sharing agreement; not public API |
-| **VINELink** | Custody status by county | Good for alerts; limited fields |
-| **JailBase / BustedMugshots** | Aggregator | Third-party; terms restrict commercial use |
-| **Appriss VINE** | Victim notifications | Commercial product |
-| **Texas DPS** | Criminal history | Requires authorized access |
-| **Tyler Technologies API** | Tyler counties | No public API documented; contact Tyler |
-| **OpenJustice / PublicRecords.com** | Aggregators | Third-party; verify ToS |
+| Source                              | Coverage                 | Notes                                            |
+| ----------------------------------- | ------------------------ | ------------------------------------------------ |
+| **TDCJ InmateSearch**               | TDCJ incarcerated only   | Used in `enrichment/tdcj_enrich.py` (Playwright) |
+| **Texas OCA**                       | All county courts        | Requires data sharing agreement; not public API  |
+| **VINELink**                        | Custody status by county | Good for alerts; limited fields                  |
+| **JailBase / BustedMugshots**       | Aggregator               | Third-party; terms restrict commercial use       |
+| **Appriss VINE**                    | Victim notifications     | Commercial product                               |
+| **Texas DPS**                       | Criminal history         | Requires authorized access                       |
+| **Tyler Technologies API**          | Tyler counties           | No public API documented; contact Tyler          |
+| **OpenJustice / PublicRecords.com** | Aggregators              | Third-party; verify ToS                          |
 
 **Important note:** The current sites (P2C, Tyler PublicAccess, HCSO JailInfo) display **public information** without authentication. Scraping this data is generally permissible under Texas law (Government Code §552) and established case law (hiQ v. LinkedIn; Van Buren v. United States). However:
+
 - Do not bypass CAPTCHA, login walls, or rate-limit controls.
 - Respect `robots.txt`.
 - Add reasonable request delays (already present in most scrapers).
@@ -809,6 +816,7 @@ class SimpleInmateSchema(BaseModel):
 ```
 
 **Key changes from current state:**
+
 1. Add HCSO JailInfo scraper as primary Harris source
 2. Fix Galveston `full_name` (inspect AJAX response)
 3. Add surname iteration to Brazoria and Fort Bend
@@ -825,45 +833,45 @@ class SimpleInmateSchema(BaseModel):
 
 ### P0 — Blockers (fix before next production run)
 
-| # | Task | File(s) | Effort |
-|---|---|---|---|
-| P0-1 | Add `playwright` to `requirements.txt` and `Dockerfile` | `requirements.txt`, `Dockerfile` | 1h |
-| P0-2 | Investigate Galveston `jqHandler.ashx` response for name field | `galveston_p2c_fast.py`, `galveston_p2c.yaml` | 2h |
-| P0-3 | Remove `selenium`, `webdriver-manager` from `requirements.txt` | `requirements.txt` | 30m |
+| #    | Task                                                           | File(s)                                       | Effort |
+| ---- | -------------------------------------------------------------- | --------------------------------------------- | ------ |
+| P0-1 | Add `playwright` to `requirements.txt` and `Dockerfile`        | `requirements.txt`, `Dockerfile`              | 1h     |
+| P0-2 | Investigate Galveston `jqHandler.ashx` response for name field | `galveston_p2c_fast.py`, `galveston_p2c.yaml` | 2h     |
+| P0-3 | Remove `selenium`, `webdriver-manager` from `requirements.txt` | `requirements.txt`                            | 30m    |
 
 ### P1 — High Priority (this sprint)
 
-| # | Task | File(s) | Effort |
-|---|---|---|---|
-| P1-1 | Add HCSO JailInfo scraper | New file `ingestion/harris_hcso_jail.py` | 1-2 days |
-| P1-2 | Add surname iteration loop to Brazoria | `ingestion/brazoria_ingest.py` | 4h |
-| P1-3 | Add surname iteration loop to Fort Bend | `ingestion/fortbend_ingest.py` | 4h |
-| P1-4 | Add `tenacity` retry to all HTTP calls (5 scrapers) | All `ingestion/*.py` | 1 day |
-| P1-5 | Fix Galveston `full_name` mapping (if AJAX includes name) | `galveston_p2c.yaml` | 2h |
-| P1-6 | Add `first_seen_at` to Brazoria, Galveston, Jefferson raw docs | `ingestion/*.py` | 2h |
+| #    | Task                                                           | File(s)                                  | Effort   |
+| ---- | -------------------------------------------------------------- | ---------------------------------------- | -------- |
+| P1-1 | Add HCSO JailInfo scraper                                      | New file `ingestion/harris_hcso_jail.py` | 1-2 days |
+| P1-2 | Add surname iteration loop to Brazoria                         | `ingestion/brazoria_ingest.py`           | 4h       |
+| P1-3 | Add surname iteration loop to Fort Bend                        | `ingestion/fortbend_ingest.py`           | 4h       |
+| P1-4 | Add `tenacity` retry to all HTTP calls (5 scrapers)            | All `ingestion/*.py`                     | 1 day    |
+| P1-5 | Fix Galveston `full_name` mapping (if AJAX includes name)      | `galveston_p2c.yaml`                     | 2h       |
+| P1-6 | Add `first_seen_at` to Brazoria, Galveston, Jefferson raw docs | `ingestion/*.py`                         | 2h       |
 
 ### P2 — Medium Priority (next sprint)
 
-| # | Task | File(s) | Effort |
-|---|---|---|---|
-| P2-1 | Add Tyler pagination to Brazoria (page-through >25 results) | `ingestion/brazoria_jail.py` | 4h |
-| P2-2 | Consolidate `_calculate_booking_age_category` to `audited_scraper.py` | 4 files | 1h |
-| P2-3 | Replace `datetime.utcnow()` with `datetime.now(timezone.utc)` | Multiple files | 1h |
-| P2-4 | Enable SSL verification on Galveston | `galveston_p2c_fast.py` | 30m |
-| P2-5 | Investigate `jail.fortbendcountytx.gov/public/` as alternate Fort Bend source | New file or config | 2h |
-| P2-6 | Add `booking_date_confidence` quality flag to mapping YAMLs | All mapping YAMLs | 2h |
-| P2-7 | Replace `print()` with `logging` in all scrapers | All `ingestion/*.py` | 4h |
+| #    | Task                                                                          | File(s)                      | Effort |
+| ---- | ----------------------------------------------------------------------------- | ---------------------------- | ------ |
+| P2-1 | Add Tyler pagination to Brazoria (page-through >25 results)                   | `ingestion/brazoria_jail.py` | 4h     |
+| P2-2 | Consolidate `_calculate_booking_age_category` to `audited_scraper.py`         | 4 files                      | 1h     |
+| P2-3 | Replace `datetime.utcnow()` with `datetime.now(timezone.utc)`                 | Multiple files               | 1h     |
+| P2-4 | Enable SSL verification on Galveston                                          | `galveston_p2c_fast.py`      | 30m    |
+| P2-5 | Investigate `jail.fortbendcountytx.gov/public/` as alternate Fort Bend source | New file or config           | 2h     |
+| P2-6 | Add `booking_date_confidence` quality flag to mapping YAMLs                   | All mapping YAMLs            | 2h     |
+| P2-7 | Replace `print()` with `logging` in all scrapers                              | All `ingestion/*.py`         | 4h     |
 
 ### P3 — Long Term
 
-| # | Task | Effort |
-|---|---|---|
-| P3-1 | Add Montgomery County scraper | Medium |
-| P3-2 | Add Chambers County scraper | Medium |
-| P3-3 | Implement fuzzy/phonetic entity resolution | High |
-| P3-4 | Evaluate Texas OCA court data agreement | Low (research) |
-| P3-5 | Investigate VINELink API for custody status alerts | Low |
-| P3-6 | Add Pydantic models for scraper output validation | Medium |
+| #    | Task                                               | Effort         |
+| ---- | -------------------------------------------------- | -------------- |
+| P3-1 | Add Montgomery County scraper                      | Medium         |
+| P3-2 | Add Chambers County scraper                        | Medium         |
+| P3-3 | Implement fuzzy/phonetic entity resolution         | High           |
+| P3-4 | Evaluate Texas OCA court data agreement            | Low (research) |
+| P3-5 | Investigate VINELink API for custody status alerts | Low            |
+| P3-6 | Add Pydantic models for scraper output validation  | Medium         |
 
 ---
 
@@ -872,10 +880,13 @@ class SimpleInmateSchema(BaseModel):
 Tasks completable in under 2 hours each:
 
 1. **Add `playwright` to `requirements.txt`** — prevents silent deployment failures.
+
    ```
    playwright==1.44.0
    ```
+
    Also add to `Dockerfile`:
+
    ```dockerfile
    RUN pip install --no-cache-dir -r requirements.txt
    RUN playwright install chromium --with-deps
@@ -886,10 +897,11 @@ Tasks completable in under 2 hours each:
 3. **Enable Galveston SSL verification** — change default `SCRAPER_VERIFY_SSL=false` to `true`.
 
 4. **Add `tenacity` to requirements and wrap all `sess.get()` / `sess.post()` calls** with:
+
    ```python
    from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
    import requests
-   
+
    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=10),
           retry=retry_if_exception_type(requests.RequestException))
    def _fetch_with_retry(sess, url, **kwargs):
@@ -911,6 +923,7 @@ Tasks completable in under 2 hours each:
 The `configs/harris.json` lists `apps.harriscountyso.org/JailInfo/` as the inmates source but no scraper currently hits it. Adding this would give Harris **real-time jail population** data rather than court-filing data.
 
 Investigation needed:
+
 - Does it require a session cookie or auth?
 - Is there a full roster view or only search-by-name?
 - Does it paginate?
@@ -932,6 +945,7 @@ For Brazoria, if single-letter last name still requires a first name, use the Je
 ### 13.3 Structured Logging
 
 Replace all `print(f"[county] ...")` with:
+
 ```python
 import logging
 logger = logging.getLogger(__name__)
@@ -988,6 +1002,7 @@ Brazoria and Galveston both use Tyler PublicAccess. Tyler does offer a documente
 ### 14.4 Cross-County Entity Resolution
 
 As more counties are added, cross-county deduplication becomes critical. Recommend:
+
 - Implement phonetic matching (metaphone or double metaphone) on name + county
 - Add a `persons` collection as a global entity store (currently only a placeholder in `base_scraper.py`)
 - Use DOB when available as the strongest signal
@@ -996,6 +1011,7 @@ As more counties are added, cross-county deduplication becomes critical. Recomme
 ### 14.5 Coverage Expansion
 
 Target counties by population / bail-bond activity priority:
+
 1. **Montgomery County** — large suburban county, active jail population
 2. **Chambers County** — east of Harris, smaller but relevant geography
 3. **Waller County** — northwest Houston
@@ -1008,23 +1024,23 @@ Each should follow the same discovery checklist (see `SCRAPER_DISCOVERY_CHECKLIS
 
 ## Appendix: Key Constants and Env Vars
 
-| Variable | Default | Used By |
-|---|---|---|
-| `MONGO_URI` | — | All |
-| `MONGO_DB` | `warrantdb` | All |
-| `BRAZORIA_BASE_URL` | `https://pubweb.brazoriacountytx.gov/PublicAccess/` | `brazoria_jail.py` |
-| `FORTBEND_BASE_URL` | `https://jailinq.fortbendcountytx.gov/` | `fortbend_jail.py` |
-| `HARRIS_BASE_FILES_URL` | `https://www.hcdistrictclerk.com/Common/e-services/Files` | `harris_inmate.py` |
-| `HARRIS_DATASETS_PAGE` | `https://www.hcdistrictclerk.com/Common/e-services/PublicDatasets.aspx` | `harris_inmate.py` |
-| `GALV_CONCURRENCY` | `10` | `galveston_p2c_fast.py` |
-| `GALV_ROW_DELAY_SEC` | `0.5` | `galveston_p2c_fast.py` |
-| `ROWS_MAX` | `5000` | `galveston_p2c_fast.py` |
-| `SCRAPER_VERIFY_SSL` | `false` | `galveston_p2c_fast.py` |
-| `JEFF_SURNAME_FILE` | `configs/jefferson_lastnames.txt` | `jefferson_jail.py` |
-| `JEFF_ROW_DELAY_SEC` | `0.6` | `jefferson_jail.py` |
-| `JEFF_SEARCH_DELAY_SEC` | `1` | `jefferson_jail.py` |
-| `PIPELINE_SOURCES` | see run_twice_daily.sh | `run_pipeline.py` |
-| `PIPELINE_STEPS` | `ingest,normalize,report` | `run_pipeline.py` |
-| `ENRICHMENT_WINDOW_HOURS` | `72` | `sync_to_enrichment.py` |
-| `PDL_API_KEY` | — | `enrich_pdl.py` |
-| `SCRAPER_AUDIT` | `true` | `audited_scraper.py` |
+| Variable                  | Default                                                                 | Used By                 |
+| ------------------------- | ----------------------------------------------------------------------- | ----------------------- |
+| `MONGO_URI`               | —                                                                       | All                     |
+| `MONGO_DB`                | `warrantdb`                                                             | All                     |
+| `BRAZORIA_BASE_URL`       | `https://pubweb.brazoriacountytx.gov/PublicAccess/`                     | `brazoria_jail.py`      |
+| `FORTBEND_BASE_URL`       | `https://jailinq.fortbendcountytx.gov/`                                 | `fortbend_jail.py`      |
+| `HARRIS_BASE_FILES_URL`   | `https://www.hcdistrictclerk.com/Common/e-services/Files`               | `harris_inmate.py`      |
+| `HARRIS_DATASETS_PAGE`    | `https://www.hcdistrictclerk.com/Common/e-services/PublicDatasets.aspx` | `harris_inmate.py`      |
+| `GALV_CONCURRENCY`        | `10`                                                                    | `galveston_p2c_fast.py` |
+| `GALV_ROW_DELAY_SEC`      | `0.5`                                                                   | `galveston_p2c_fast.py` |
+| `ROWS_MAX`                | `5000`                                                                  | `galveston_p2c_fast.py` |
+| `SCRAPER_VERIFY_SSL`      | `false`                                                                 | `galveston_p2c_fast.py` |
+| `JEFF_SURNAME_FILE`       | `configs/jefferson_lastnames.txt`                                       | `jefferson_jail.py`     |
+| `JEFF_ROW_DELAY_SEC`      | `0.6`                                                                   | `jefferson_jail.py`     |
+| `JEFF_SEARCH_DELAY_SEC`   | `1`                                                                     | `jefferson_jail.py`     |
+| `PIPELINE_SOURCES`        | see run_twice_daily.sh                                                  | `run_pipeline.py`       |
+| `PIPELINE_STEPS`          | `ingest,normalize,report`                                               | `run_pipeline.py`       |
+| `ENRICHMENT_WINDOW_HOURS` | `72`                                                                    | `sync_to_enrichment.py` |
+| `PDL_API_KEY`             | —                                                                       | `enrich_pdl.py`         |
+| `SCRAPER_AUDIT`           | `true`                                                                  | `audited_scraper.py`    |

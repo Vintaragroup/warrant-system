@@ -9,13 +9,13 @@
 
 ## Summary
 
-| Scraper | Class | Run Result | Records | Notes |
-|---|---|---|---|---|
-| `galveston_p2c` | `GalvestonP2CEventFeed` | ✅ PASS | 1,122 rows | Named-key API fixed |
-| `brazoria_lookup` | `BrazoriaLookup` | ⚠️ NETWORK | 0 | Host unreachable from this machine |
-| `fortbend_lookup` | `FortBendLookup` | ✅ PASS | 8 results (RODRIGUEZ) | Warm-up + SearchButton fix |
-| `jefferson_lookup` | `JeffersonLookup` | ✅ PASS | 13 results (SMITH) | All schema fields OK |
-| `harris_reports` | `HarrisReportIngestor` | ✅ PASS | 240 rows / report | DownloadDoc POST fix |
+| Scraper            | Class                   | Run Result | Records               | Notes                              |
+| ------------------ | ----------------------- | ---------- | --------------------- | ---------------------------------- |
+| `galveston_p2c`    | `GalvestonP2CEventFeed` | ✅ PASS    | 1,122 rows            | Named-key API fixed                |
+| `brazoria_lookup`  | `BrazoriaLookup`        | ⚠️ NETWORK | 0                     | Host unreachable from this machine |
+| `fortbend_lookup`  | `FortBendLookup`        | ✅ PASS    | 8 results (RODRIGUEZ) | Warm-up + SearchButton fix         |
+| `jefferson_lookup` | `JeffersonLookup`       | ✅ PASS    | 13 results (SMITH)    | All schema fields OK               |
+| `harris_reports`   | `HarrisReportIngestor`  | ✅ PASS    | 240 rows / report     | DownloadDoc POST fix               |
 
 ---
 
@@ -69,6 +69,7 @@ python3 -m ingestion.reports.harris_reports --dry-run --limit 2
 **Bug fixed:** `_parse_roster_row()` assumed jqGrid `{"id": ..., "cell": [...]}` format. Actual API returns named-key JSON objects (`invid`, `firstname`, `lastname`, `book_id`, etc.). Rewrote parser to read named-key fields directly; kept legacy `cell`-array path as fallback.
 
 **Known limitations:**
+
 - `source_url` is always `None` — detail pages use ASP.NET PostBack (`selectRow(id)` JS), no stable GET URL exists.
 - `source_id` is set to `invid` (jqGrid sort-position index, e.g. "1", "2"), which changes on re-query. For production upserts, `booking_number` should be used as the stable dedup key.
 
@@ -98,9 +99,9 @@ python3 -m ingestion.reports.harris_reports --dry-run --limit 2
   "first_name": "AUSTIN NICHOLAS",
   "booking_number": "2510556",
   "charges": [
-    {"charge_description": "DWI", "bail_amount": "$0.00"},
-    {"charge_description": "DWI BAC>=0.15 (B/R)", "bail_amount": "$8000.00"},
-    {"charge_description": "STALKING", "bail_amount": "$50000.00"}
+    { "charge_description": "DWI", "bail_amount": "$0.00" },
+    { "charge_description": "DWI BAC>=0.15 (B/R)", "bail_amount": "$8000.00" },
+    { "charge_description": "STALKING", "bail_amount": "$50000.00" }
   ],
   "bond_amount": 58000,
   "detail_url": "https://jailinq.fortbendcountytx.gov/Inmate/View_Inmate?VarJailID=P00241684",
@@ -113,6 +114,7 @@ python3 -m ingestion.reports.harris_reports --dry-run --limit 2
 **Schema validation:** All required fields present.
 
 **Bugs fixed:**
+
 1. `search_person()` was missing the required `SearchButton=Search` query parameter — without it, jailinq returns the search form rather than results.
 2. `search_person()` was missing the warm-up GET (needed for session cookies/anti-forgery state).
 3. `fetch_detail()` was returning `None` for fields not found in the property map and storing them in the result dict, causing `_merge_detail()` to overwrite populated base fields (e.g. `full_name`) with `None`. Fixed by stripping `None`-valued fields from the detail dict before merge.
@@ -184,7 +186,8 @@ python3 -m ingestion.reports.harris_reports --dry-run --limit 2
 
 **Schema validation:** All required fields present (`county`, `source_system`, `scraped_at`, `kind`, `case_number`).
 
-**Bug fixed:** Harris changed its public datasets page from `<a href="...csv">` links to a JavaScript `DownloadDoc('Civil\\04-26-26-bond.txt')` pattern backed by an ASP.NET WebForms POST. 
+**Bug fixed:** Harris changed its public datasets page from `<a href="...csv">` links to a JavaScript `DownloadDoc('Civil\\04-26-26-bond.txt')` pattern backed by an ASP.NET WebForms POST.
+
 - `fetch_report_list()` was updated to parse `DownloadDoc(...)` calls via regex and store `rel_path` in report metadata.
 - `download_report()` was rewritten to use a two-step WebForms POST (GET page to collect `__VIEWSTATE`/`__EVENTVALIDATION` tokens, then POST with `hiddenDownloadFile` and `buttonDownload`). Direct GET to `Files/` URLs returns 404.
 
