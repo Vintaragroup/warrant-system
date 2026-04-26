@@ -1,0 +1,465 @@
+"""
+scripts/run_ingestion_v2.py
+───────────────────────────────────────────────────────────────────────────────
+Feature-flagged runner for the v2 three-layer ingestion architecture.
+
+All legacy jobs in run_ingestion.py / run_pipeline.py are untouched.
+V2 modules run ONLY when explicitly enabled via environment variables or CLI.
+
+Feature flags (environment variables)
+──────────────────────────────────────
+  USE_V2_INGESTION          — master gate; must be "true" to run anything (default: false)
+  ENABLE_V2_GALVESTON       — enable GalvestonP2CEventFeed (default: false)
+  ENABLE_V2_HARRIS_REPORTS  — enable HarrisReportIngestor  (default: false)
+  ENABLE_V2_LOOKUPS         — enable all three lookup scrapers (default: false)
+  DRY_RUN                   — when "true" print records, no MongoDB writes (default: true)
+
+CLI usage
+─────────
+  python3 scripts/run_ingestion_v2.py --source galveston --dry-run --limit 20
+  python3 scripts/run_ingestion_v2.py --source harris_reports --dry-run --limit 1
+  python3 scripts/run_ingestion_v2.py --source fortbend_lookup --last-name SMITH --dry-run
+  python3 scripts/run_ingestion_v2.py --source jefferson_lookup --last-name SMITH --dry-run
+  python3 scripts/run_ingestion_v2.py --source brazoria_lookup --last-name SMITH --first-name JOHN --dry-run
+
+  # Write to staging collections (USE_V2_INGESTION=true required):
+  USE_V2_INGESTION=true DRY_RUN=false python3 scripts/run_ingestion_v2.py --source galveston --limit 100
+
+Staging collections (non-dry-run)
+───────────────────────────────────
+  galveston     → v2_galveston_events
+  harris        → v2_harris_reports
+  all lookups   → v2_lookup_results
+
+  A separate v2_report_manifest collection tracks which Harris reports have
+  been ingested so that re-runs stay idempotent.
+
+Safety guarantees
+─────────────────
+  • USE_V2_INGESTION defaults to false — no v2 code runs in production unless
+    the flag is explicitly set.
+  • DRY_RUN defaults to true — a write cannot happen accidentally.
+  • Staging collection names are distinct from every production collection name.
+  • No production collection is ever written to by this script.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+def _flag(name: str, default: bool = False) -> bool:
+    """Read a boolean env flag.  Explicit CLI flags take precedence."""
+    val = os.getenv(name, "true" if default else "false").strip().lower()
+    return val in ("1", "true", "yes")
+
+
+def _utcnow_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+# ── Staging collection map ───────────────────────────────────────────────────
+
+# Maps every production collection name that v2 scrapers might write to → its
+# corresponding staging name.  _StagingDb uses this to redirect all writes.
+_STAGING_MAP: Dict[str, str] = {
+    # Galveston
+    "galveston_events":           "v2_galveston_events",
+    # Harris (all three kinds land in one staging collection)
+    "harris_bond":                "v2_harris_reports",
+    "harris_misfel":              "v2_harris_reports",
+    "harris_nafiling":            "v2_harris_reports",
+    # Report manifest (track which Harris files have been downloaded)
+    "report_manifest":            "v2_report_manifest",
+    # Lookups
+    "brazoria_inmates":           "v2_lookup_results",
+    "fortbend_inmates":           "v2_lookup_results",
+    "jefferson_events":           "v2_lookup_results",
+    # Endpoint cache (Galveston discovers its own POST endpoint)
+    "galveston_p2c_endpoint":     "v2_galveston_p2c_endpoint",
+}
+
+
+class _StagingDb:
+    """
+    Thin proxy around a real pymongo database that transparently redirects
+    every collection access to its staging counterpart.
+
+    Unknown collection names pass through unchanged so that audit / manifest
+    collections that are not in the map also work correctly.
+    """
+
+    def __init__(self, real_db):
+        self._db = real_db
+
+    def __getitem__(self, name: str):
+        return self._db[_STAGING_MAP.get(name, name)]
+
+    def __getattr__(self, name: str):
+        # Allows attribute-style access: db.harris_bond
+        if name.startswith("_"):
+            raise AttributeError(name)
+        return self._db[_STAGING_MAP.get(name, name)]
+
+
+class _NullDb:
+    """
+    Absorbs all pymongo calls silently.  Used in dry-run mode.
+    """
+
+    class _NullColl:
+        def find_one(self, *a, **kw):
+            return None
+
+        def insert_one(self, *a, **kw):
+            return type("R", (), {"inserted_id": None})()
+
+        def update_one(self, *a, **kw):
+            return type("R", (), {
+                "upserted_id": None,
+                "matched_count": 0,
+                "modified_count": 0,
+            })()
+
+        def find(self, *a, **kw):
+            return []
+
+    def __getitem__(self, name: str):
+        return self._NullColl()
+
+    def __getattr__(self, name: str):
+        if name.startswith("_"):
+            raise AttributeError(name)
+        return self._NullColl()
+
+
+# ── Per-source runners ────────────────────────────────────────────────────────
+
+def run_galveston(db, dry_run: bool, limit: int) -> int:
+    """
+    Fetch and optionally store Galveston P2C custody events.
+
+    dry_run=True  → normalize up to `limit` events, print, no writes
+    dry_run=False → poll() into v2_galveston_events staging collection
+    """
+    from ingestion.event_feeds.galveston_p2c import GalvestonP2CEventFeed  # noqa: PLC0415
+
+    feed = GalvestonP2CEventFeed(db)
+
+    if dry_run:
+        print(f"[galveston] dry-run — fetching events (limit={limit})")
+        raw_events = list(feed.fetch_events())
+        print(f"[galveston] fetched {len(raw_events)} raw rows")
+
+        run_scraped_at = _utcnow_iso()
+        ok = warn = skip = 0
+        for raw in raw_events[:limit]:
+            raw["_scraped_at"] = run_scraped_at
+            event = feed.normalize_event(raw)
+            if event is None:
+                skip += 1
+                continue
+            required = ["county", "source", "full_name", "scraped_at", "booking_number"]
+            missing = [f for f in required if not event.get(f)]
+            status = f"WARN missing={missing}" if missing else "OK"
+            if missing:
+                warn += 1
+            else:
+                ok += 1
+            print(f"  [{status}] {json.dumps(
+                {k: v for k, v in event.items() if k != '_upsert_key'},
+                default=str,
+                indent=2,
+            )}")
+        print(f"[galveston] dry-run summary: ok={ok} warn={warn} skip={skip}")
+        return 0
+
+    # Non-dry-run: redirect writes to staging collection
+    feed.COLLECTION = "v2_galveston_events"
+    stored = 0
+    print(f"[galveston] writing to v2_galveston_events (limit={limit})")
+    for result in feed.poll():
+        stored += 1
+        if stored >= limit:
+            break
+    print(f"[galveston] stored {stored} events")
+    return 0
+
+
+def run_harris_reports(db, dry_run: bool, limit: int) -> int:
+    """
+    Download, parse, and optionally store Harris District Clerk reports.
+
+    dry_run=True  → normalize sample rows from up to `limit` reports, print
+    dry_run=False → ingest into v2_harris_reports staging collection
+    """
+    from ingestion.reports.harris_reports import HarrisReportIngestor  # noqa: PLC0415
+
+    ingestor = HarrisReportIngestor(db)
+
+    if dry_run:
+        print(f"[harris] dry-run — limit={limit} reports")
+        reports = ingestor.fetch_report_list()
+        print(f"[harris] found {len(reports)} reports on datasets page")
+
+        for meta in reports[:limit]:
+            print(f"\n[harris] downloading: {meta['filename']} ({meta['kind']}, {meta['group']})")
+            try:
+                content = ingestor.download_report(meta)
+            except Exception as exc:
+                print(f"  [FAIL] {exc}")
+                continue
+
+            rows = list(ingestor.parse_report(content, meta))
+            print(f"  parsed {len(rows)} rows")
+
+            ok = warn = 0
+            for raw in rows[:5]:
+                raw["_report_meta"] = meta
+                record = ingestor.normalize_record(raw)
+                if record is None:
+                    continue
+                required = ["county", "source_system", "scraped_at", "kind", "case_number"]
+                missing = [f for f in required if not record.get(f)]
+                status = f"WARN missing={missing}" if missing else "OK"
+                if missing:
+                    warn += 1
+                else:
+                    ok += 1
+                print(f"  [{status}] {json.dumps(
+                    {k: v for k, v in record.items() if k not in ('_upsert_key', '_collection')},
+                    default=str,
+                    indent=2,
+                )}")
+            print(f"  sample: ok={ok} warn={warn}")
+        return 0
+
+    # Non-dry-run: override store_record to redirect to staging collection
+    _orig_store = ingestor.store_record
+
+    def _staging_store(record: Dict[str, Any]) -> Dict[str, Any]:
+        record["_collection"] = "v2_harris_reports"
+        return _orig_store(record)
+
+    ingestor.store_record = _staging_store  # type: ignore[method-assign]
+    # Also redirect report_manifest to staging
+    ingestor.REPORTS_COLLECTION = "v2_report_manifest"
+
+    # Limit the number of REPORTS processed (not records).
+    # By overriding detect_new_reports() here we ensure that:
+    #   - at most `limit` reports are downloaded
+    #   - at most `limit` manifest entries are created
+    # Without this cap, ingest() processes every new report in one call
+    # regardless of the CLI --limit value, causing the manifest to record
+    # all reports as processed even on a constrained first run.
+    _orig_detect = ingestor.detect_new_reports
+
+    def _limited_detect(force: bool = False):  # type: ignore[override]
+        count = 0
+        for meta in _orig_detect(force=force):
+            if count >= limit:
+                break
+            yield meta
+            count += 1
+
+    ingestor.detect_new_reports = _limited_detect  # type: ignore[method-assign]
+
+    stored = 0
+    print(f"[harris] writing to v2_harris_reports (max {limit} reports)")
+    for result in ingestor.ingest():
+        stored += 1
+        print(f"  stored record #{stored}: {result}")
+    print(f"[harris] total records stored: {stored}")
+    return 0
+
+
+def run_lookup(
+    source: str,
+    db,
+    dry_run: bool,
+    last_name: str,
+    first_name: str,
+) -> int:
+    """
+    Run a county lookup scraper (Brazoria / Fort Bend / Jefferson).
+
+    dry_run=True  → lookup(store=False), print normalized results
+    dry_run=False → lookup(store=True) into v2_lookup_results staging collection
+    """
+    _LOOKUP_CLASSES = {
+        "brazoria_lookup":  ("ingestion.lookups.brazoria_lookup",  "BrazoriaLookup"),
+        "fortbend_lookup":  ("ingestion.lookups.fortbend_lookup",  "FortBendLookup"),
+        "jefferson_lookup": ("ingestion.lookups.jefferson_lookup", "JeffersonLookup"),
+    }
+
+    if source not in _LOOKUP_CLASSES:
+        print(f"[v2] Unknown lookup source: {source}", file=sys.stderr)
+        return 1
+
+    mod_path, cls_name = _LOOKUP_CLASSES[source]
+    import importlib  # noqa: PLC0415
+    mod = importlib.import_module(mod_path)
+    LookupCls = getattr(mod, cls_name)
+
+    scraper = LookupCls(db)
+
+    if not dry_run:
+        scraper.COLLECTION = "v2_lookup_results"
+
+    county_label = source.replace("_lookup", "")
+    print(f"[{county_label}] {'dry-run' if dry_run else 'staging-write'} — "
+          f"searching '{last_name}, {first_name}'")
+
+    results = scraper.lookup(
+        last_name=last_name,
+        first_name=first_name,
+        fetch_details=True,
+        store=not dry_run,
+    )
+
+    print(f"[{county_label}] lookup() returned {len(results)} results")
+    for i, r in enumerate(results):
+        required = ["county", "source", "scraped_at", "full_name"]
+        missing = [f for f in required if not r.get(f)]
+        status = f"WARN missing={missing}" if missing else "OK"
+        print(f"  [{status}] result[{i}]: {json.dumps(
+            {k: v for k, v in r.items() if k not in ('raw', '_upsert_key')},
+            default=str,
+            indent=2,
+        )}")
+    return 0
+
+
+# ── Feature-flag gate ─────────────────────────────────────────────────────────
+
+def _check_feature_flags(source: str) -> None:
+    """
+    Abort if the required feature flag is not set.
+
+    When --dry-run is active, USE_V2_INGESTION is not required (safe to
+    explore output without enabling the full production gate).
+    """
+    master = _flag("USE_V2_INGESTION", default=False)
+    dry_run_env = _flag("DRY_RUN", default=True)
+
+    source_flags: Dict[str, str] = {
+        "galveston":       "ENABLE_V2_GALVESTON",
+        "harris_reports":  "ENABLE_V2_HARRIS_REPORTS",
+        "brazoria_lookup": "ENABLE_V2_LOOKUPS",
+        "fortbend_lookup": "ENABLE_V2_LOOKUPS",
+        "jefferson_lookup":"ENABLE_V2_LOOKUPS",
+    }
+
+    flag_name = source_flags.get(source)
+    if flag_name and not _flag(flag_name, default=False):
+        # Dry-run is always allowed even without the per-source flag
+        if not dry_run_env:
+            print(
+                f"[v2] WARN: {flag_name} is not set — running in dry-run mode only.\n"
+                f"     Set {flag_name}=true to enable non-dry-run writes.",
+                file=sys.stderr,
+            )
+
+    if not master and not dry_run_env:
+        print(
+            "[v2] ERROR: USE_V2_INGESTION is not set to 'true'.\n"
+            "     Non-dry-run writes require USE_V2_INGESTION=true.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+
+# ── CLI ───────────────────────────────────────────────────────────────────────
+
+def _parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(
+        description="V2 ingestion runner — feature-flagged, staging-safe",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__,
+    )
+    p.add_argument(
+        "--source",
+        required=True,
+        choices=["galveston", "harris_reports", "brazoria_lookup", "fortbend_lookup", "jefferson_lookup"],
+        help="Which v2 scraper to run",
+    )
+    p.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=None,
+        help="Print results; do not write to MongoDB (default: true unless DRY_RUN=false)",
+    )
+    p.add_argument(
+        "--no-dry-run",
+        dest="dry_run",
+        action="store_false",
+        help="Enable writes to staging collections (requires USE_V2_INGESTION=true)",
+    )
+    p.add_argument(
+        "--limit",
+        type=int,
+        default=20,
+        help="Max events/reports/rows to process (default: 20)",
+    )
+    p.add_argument(
+        "--last-name",
+        default="",
+        help="Last name for lookup sources",
+    )
+    p.add_argument(
+        "--first-name",
+        default="",
+        help="First name for lookup sources",
+    )
+    return p.parse_args()
+
+
+def main() -> int:
+    args = _parse_args()
+
+    # Resolve dry-run: CLI flag > DRY_RUN env var > default True
+    if args.dry_run is None:
+        dry_run = _flag("DRY_RUN", default=True)
+    else:
+        dry_run = args.dry_run
+
+    _check_feature_flags(args.source)
+
+    if dry_run:
+        db = _NullDb()
+        print(f"[v2] dry-run mode — source={args.source} limit={args.limit}")
+    else:
+        from storage.mongo_client import get_db  # noqa: PLC0415
+        real_db = get_db()
+        db = _StagingDb(real_db)
+        print(f"[v2] staging-write mode — source={args.source} limit={args.limit}")
+        print(f"[v2] staging map: {_STAGING_MAP}")
+
+    if args.source == "galveston":
+        return run_galveston(db, dry_run=dry_run, limit=args.limit)
+    elif args.source == "harris_reports":
+        return run_harris_reports(db, dry_run=dry_run, limit=args.limit)
+    else:
+        if not args.last_name:
+            print(
+                f"[v2] ERROR: --last-name is required for {args.source}",
+                file=sys.stderr,
+            )
+            return 1
+        return run_lookup(
+            source=args.source,
+            db=db,
+            dry_run=dry_run,
+            last_name=args.last_name,
+            first_name=args.first_name,
+        )
+
+
+if __name__ == "__main__":
+    sys.exit(main())

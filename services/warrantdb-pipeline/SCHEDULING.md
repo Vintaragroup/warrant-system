@@ -137,3 +137,116 @@ Environment variables required:
 - HCSO_SPN_URL_FMT, HCSO_NAME_URL_FMT
 - Optional: HCSO_THROTTLE_SEC, HCSO_TIMEOUT_SEC, HCSO_BETWEEN_PEOPLE_SEC
 ```
+
+---
+
+## V2 Ingestion Experimental Jobs
+
+These jobs run the new three-layer ingestion architecture (`ingestion/event_feeds/`,
+`ingestion/reports/`, `ingestion/lookups/`).  **All flags default to false or
+dry-run** — no v2 code runs in production unless explicitly enabled.
+
+### Feature flags
+
+| Variable | Default | Description |
+|---|---|---|
+| `USE_V2_INGESTION` | `false` | Master gate — required for non-dry-run writes |
+| `ENABLE_V2_GALVESTON` | `false` | Enable `GalvestonP2CEventFeed` |
+| `ENABLE_V2_HARRIS_REPORTS` | `false` | Enable `HarrisReportIngestor` |
+| `ENABLE_V2_LOOKUPS` | `false` | Enable all three lookup scrapers |
+| `DRY_RUN` | `true` | Print records; suppress MongoDB writes |
+
+### Staging collections (non-dry-run writes)
+
+| Source | Staging collection |
+|---|---|
+| Galveston | `v2_galveston_events` |
+| Harris | `v2_harris_reports` |
+| All lookups | `v2_lookup_results` |
+| Harris manifest | `v2_report_manifest` |
+
+Production collections are **never** written to by `run_ingestion_v2.py`.
+
+### Dry-run exploration (no flags needed)
+
+> **Note:** Run from `services/warrantdb-pipeline/` with `PYTHONPATH=$PWD` so the
+> `ingestion/` and `storage/` packages are importable (same requirement as all other
+> pipeline scripts).
+
+```bash
+cd services/warrantdb-pipeline
+
+# Galveston P2C — print first 5 normalized events, no DB writes
+PYTHONPATH=$PWD python3 scripts/run_ingestion_v2.py --source galveston --dry-run --limit 5
+
+# Harris District Clerk — download and normalize 1 report
+PYTHONPATH=$PWD python3 scripts/run_ingestion_v2.py --source harris_reports --dry-run --limit 1
+
+# Fort Bend lookup — search and print results
+PYTHONPATH=$PWD python3 scripts/run_ingestion_v2.py --source fortbend_lookup --last-name SMITH --dry-run
+
+# Jefferson lookup
+PYTHONPATH=$PWD python3 scripts/run_ingestion_v2.py --source jefferson_lookup --last-name SMITH --dry-run
+
+# Brazoria lookup (requires both names)
+PYTHONPATH=$PWD python3 scripts/run_ingestion_v2.py --source brazoria_lookup --last-name SMITH --first-name JOHN --dry-run
+```
+
+### Staging writes (requires master gate)
+
+```bash
+# Enable and write to staging collections
+USE_V2_INGESTION=true DRY_RUN=false ENABLE_V2_GALVESTON=true \
+  PYTHONPATH=$PWD python3 scripts/run_ingestion_v2.py --source galveston --limit 100
+
+USE_V2_INGESTION=true DRY_RUN=false ENABLE_V2_HARRIS_REPORTS=true \
+  PYTHONPATH=$PWD python3 scripts/run_ingestion_v2.py --source harris_reports --limit 5
+
+USE_V2_INGESTION=true DRY_RUN=false ENABLE_V2_LOOKUPS=true \
+  PYTHONPATH=$PWD python3 scripts/run_ingestion_v2.py --source fortbend_lookup --last-name RODRIGUEZ
+```
+
+### Crontab examples (nightly, off-peak)
+
+```cron
+# Galveston P2C — every 15 min during business hours (dry-run until promoted)
+*/15 8-22 * * * cd /opt/warrantdb-pipeline && \
+  PYTHONPATH=$PWD DRY_RUN=true python3 scripts/run_ingestion_v2.py --source galveston --limit 200 \
+  >> logs/v2_galveston.$(date +\%F).log 2>&1
+
+# Harris reports — nightly at 3 AM
+0 3 * * * cd /opt/warrantdb-pipeline && \
+  PYTHONPATH=$PWD USE_V2_INGESTION=true DRY_RUN=false ENABLE_V2_HARRIS_REPORTS=true \
+  python3 scripts/run_ingestion_v2.py --source harris_reports --limit 10 \
+  >> logs/v2_harris.$(date +\%F).log 2>&1
+```
+
+### Offline smoke test
+
+Run this before deploying any v2 code change.  No network required unless `--live` is passed.
+
+```bash
+cd services/warrantdb-pipeline
+PYTHONPATH=$PWD python3 scripts/smoke_test_ingestion_v2.py          # offline schema checks
+PYTHONPATH=$PWD python3 scripts/smoke_test_ingestion_v2.py --live   # also run real network lookups
+```
+
+### Render Cron Jobs (staging promotion path)
+
+When v2 jobs are ready to run in production on Render:
+
+```yaml
+# render.yaml — add under services:
+- type: cron
+  name: v2-galveston-ingest
+  schedule: "*/15 8-22 * * *"
+  buildCommand: pip install -r requirements.txt
+  startCommand: python3 scripts/run_ingestion_v2.py --source galveston --limit 500
+  envVars:
+    - key: USE_V2_INGESTION
+      value: "true"
+    - key: DRY_RUN
+      value: "false"
+    - key: ENABLE_V2_GALVESTON
+      value: "true"
+```
