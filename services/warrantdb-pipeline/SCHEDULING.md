@@ -4,7 +4,7 @@ This repo already includes:
 
 - `scripts/run_pipeline.py` orchestrating ingestion ➜ normalize ➜ delta report
 - Upserts for persons via `BaseScraper.upsert_person()`
-- Normalized _simple\__ collections with stable `_upsert_key` (idempotent)
+- Normalized \_simple\_\_ collections with stable `_upsert_key` (idempotent)
 - Optional audit logs in `scrape_audit`
 
 Below are three production-ready scheduling options. All assume Python 3.11+ and a `.env` with `MONGO_URI` and `MONGO_DB`.
@@ -315,3 +315,4 @@ See `render.yaml` for commented-out v2 staging cron blocks.  Uncomment the
 | Brazoria network unreachable | Confirm a successful staging write on Render before scheduling |
 | Lookup scrapers not scheduled | Design enrichment-triggered invocation; lookups require a name query |
 
+````
