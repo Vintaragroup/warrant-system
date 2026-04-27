@@ -148,11 +148,16 @@ Environment variables required:
 
 ---
 
-## V2 Ingestion Experimental Jobs
+## V2 Ingestion Staging Jobs
 
 These jobs run the new three-layer ingestion architecture (`ingestion/event_feeds/`,
 `ingestion/reports/`, `ingestion/lookups/`).  **All flags default to false or
-dry-run** — no v2 code runs in production unless explicitly enabled.
+dry-run** — no v2 code runs unless explicitly enabled.
+
+All staging writes go to `v2_*` collections.  No production collection is ever
+written to by `run_ingestion_v2.py`.
+
+---
 
 ### Feature flags
 
@@ -164,7 +169,7 @@ dry-run** — no v2 code runs in production unless explicitly enabled.
 | `ENABLE_V2_LOOKUPS` | `false` | Enable all three lookup scrapers |
 | `DRY_RUN` | `true` | Print records; suppress MongoDB writes |
 
-### Staging collections (non-dry-run writes)
+### Staging collections
 
 | Source | Staging collection |
 |---|---|
@@ -173,88 +178,140 @@ dry-run** — no v2 code runs in production unless explicitly enabled.
 | All lookups | `v2_lookup_results` |
 | Harris manifest | `v2_report_manifest` |
 
-Production collections are **never** written to by `run_ingestion_v2.py`.
+---
 
-### Dry-run exploration (no flags needed)
+### Recommended staging cadence
 
-> **Note:** Run from `services/warrantdb-pipeline/` with `PYTHONPATH=$PWD` so the
-> `ingestion/` and `storage/` packages are importable (same requirement as all other
-> pipeline scripts).
+| Source | Cadence | Rationale |
+|---|---|---|
+| **Galveston** | Every 10–15 min (business hours) | P2C roster refreshes frequently; booking events are time-sensitive |
+| **Harris reports** | Daily at ~06:00 UTC | Harris publishes new CSV files once per night; idempotent via manifest |
+| **Fort Bend lookup** | Manual / enrichment-triggered | Requires a specific name query; no value in polling without a subject |
+| **Jefferson lookup** | Manual / enrichment-triggered | Same as Fort Bend |
+| **Brazoria lookup** | **Disabled** | `pubweb.brazoriacountytx.gov` unreachable outside Render network — validate first |
+
+---
+
+### Prerequisites before enabling any scheduled staging job
+
+1. Indexes created (one-time, idempotent):
+   ```bash
+   PYTHONPATH=$PWD MONGO_URI=... MONGO_DB=warrantdb \
+     python3 scripts/create_v2_indexes.py --verbose
+   ```
+2. Smoke test passes (no network required):
+   ```bash
+   PYTHONPATH=$PWD python3 scripts/smoke_test_ingestion_v2.py
+   ```
+3. At least one successful manual staging write confirmed (see commands below).
+4. Health check shows no errors:
+   ```bash
+   PYTHONPATH=$PWD MONGO_URI=... MONGO_DB=warrantdb \
+     python3 scripts/check_v2_staging_health.py
+   ```
+
+---
+
+### Staging write commands
+
+Run from `services/warrantdb-pipeline/` with `PYTHONPATH=$PWD`.
 
 ```bash
-cd services/warrantdb-pipeline
+# Galveston — write up to 250 new/updated bookings to v2_galveston_events
+PYTHONPATH=$PWD \
+  USE_V2_INGESTION=true ENABLE_V2_GALVESTON=true DRY_RUN=false \
+  python3 scripts/run_ingestion_v2.py --source galveston --no-dry-run --limit 250
 
-# Galveston P2C — print first 5 normalized events, no DB writes
-PYTHONPATH=$PWD python3 scripts/run_ingestion_v2.py --source galveston --dry-run --limit 5
+# Harris reports — download and ingest up to 4 new report files
+PYTHONPATH=$PWD \
+  USE_V2_INGESTION=true ENABLE_V2_HARRIS_REPORTS=true DRY_RUN=false \
+  python3 scripts/run_ingestion_v2.py --source harris_reports --no-dry-run --limit 4
 
-# Harris District Clerk — download and normalize 1 report
-PYTHONPATH=$PWD python3 scripts/run_ingestion_v2.py --source harris_reports --dry-run --limit 1
+# Fort Bend lookup — manual, supply a name
+PYTHONPATH=$PWD \
+  USE_V2_INGESTION=true ENABLE_V2_LOOKUPS=true DRY_RUN=false \
+  python3 scripts/run_ingestion_v2.py --source fortbend_lookup --last-name RODRIGUEZ --no-dry-run
 
-# Fort Bend lookup — search and print results
-PYTHONPATH=$PWD python3 scripts/run_ingestion_v2.py --source fortbend_lookup --last-name SMITH --dry-run
-
-# Jefferson lookup
-PYTHONPATH=$PWD python3 scripts/run_ingestion_v2.py --source jefferson_lookup --last-name SMITH --dry-run
-
-# Brazoria lookup (requires both names)
-PYTHONPATH=$PWD python3 scripts/run_ingestion_v2.py --source brazoria_lookup --last-name SMITH --first-name JOHN --dry-run
-````
-
-### Staging writes (requires master gate)
-
-```bash
-# Enable and write to staging collections
-USE_V2_INGESTION=true DRY_RUN=false ENABLE_V2_GALVESTON=true \
-  PYTHONPATH=$PWD python3 scripts/run_ingestion_v2.py --source galveston --limit 100
-
-USE_V2_INGESTION=true DRY_RUN=false ENABLE_V2_HARRIS_REPORTS=true \
-  PYTHONPATH=$PWD python3 scripts/run_ingestion_v2.py --source harris_reports --limit 5
-
-USE_V2_INGESTION=true DRY_RUN=false ENABLE_V2_LOOKUPS=true \
-  PYTHONPATH=$PWD python3 scripts/run_ingestion_v2.py --source fortbend_lookup --last-name RODRIGUEZ
+# Jefferson lookup — manual, supply a name
+PYTHONPATH=$PWD \
+  USE_V2_INGESTION=true ENABLE_V2_LOOKUPS=true DRY_RUN=false \
+  python3 scripts/run_ingestion_v2.py --source jefferson_lookup --last-name SMITH --no-dry-run
 ```
 
-### Crontab examples (nightly, off-peak)
+### Dry-run exploration (no flags required)
 
-```cron
-# Galveston P2C — every 15 min during business hours (dry-run until promoted)
-*/15 8-22 * * * cd /opt/warrantdb-pipeline && \
-  PYTHONPATH=$PWD DRY_RUN=true python3 scripts/run_ingestion_v2.py --source galveston --limit 200 \
-  >> logs/v2_galveston.$(date +\%F).log 2>&1
+```bash
+# Galveston — print first 5 events, no DB writes
+PYTHONPATH=$PWD python3 scripts/run_ingestion_v2.py --source galveston --dry-run --limit 5
 
-# Harris reports — nightly at 3 AM
-0 3 * * * cd /opt/warrantdb-pipeline && \
-  PYTHONPATH=$PWD USE_V2_INGESTION=true DRY_RUN=false ENABLE_V2_HARRIS_REPORTS=true \
-  python3 scripts/run_ingestion_v2.py --source harris_reports --limit 10 \
-  >> logs/v2_harris.$(date +\%F).log 2>&1
+# Harris — download and normalize 1 report, no writes
+PYTHONPATH=$PWD python3 scripts/run_ingestion_v2.py --source harris_reports --dry-run --limit 1
+
+# Fort Bend / Jefferson — print results, no writes
+PYTHONPATH=$PWD python3 scripts/run_ingestion_v2.py --source fortbend_lookup --last-name SMITH --dry-run
+PYTHONPATH=$PWD python3 scripts/run_ingestion_v2.py --source jefferson_lookup --last-name SMITH --dry-run
 ```
 
 ### Offline smoke test
 
-Run this before deploying any v2 code change. No network required unless `--live` is passed.
+Run before deploying any v2 code change. No network required unless `--live` is passed.
 
 ```bash
-cd services/warrantdb-pipeline
-PYTHONPATH=$PWD python3 scripts/smoke_test_ingestion_v2.py          # offline schema checks
+PYTHONPATH=$PWD python3 scripts/smoke_test_ingestion_v2.py          # 17 offline schema checks
 PYTHONPATH=$PWD python3 scripts/smoke_test_ingestion_v2.py --live   # also run real network lookups
 ```
 
-### Render Cron Jobs (staging promotion path)
+### Staging health check
 
-When v2 jobs are ready to run in production on Render:
+```bash
+# Print doc counts, latest ingested_at, and staleness warnings
+PYTHONPATH=$PWD MONGO_URI=... MONGO_DB=warrantdb \
+  python3 scripts/check_v2_staging_health.py
 
-```yaml
-# render.yaml — add under services:
-- type: cron
-  name: v2-galveston-ingest
-  schedule: "*/15 8-22 * * *"
-  buildCommand: pip install -r requirements.txt
-  startCommand: python3 scripts/run_ingestion_v2.py --source galveston --limit 500
-  envVars:
-    - key: USE_V2_INGESTION
-      value: "true"
-    - key: DRY_RUN
-      value: "false"
-    - key: ENABLE_V2_GALVESTON
-      value: "true"
+# Dry-run (no Mongo connection needed — reports what would be checked)
+PYTHONPATH=$PWD python3 scripts/check_v2_staging_health.py --dry-run
 ```
+
+---
+
+### Crontab examples (staging, not production)
+
+```cron
+# Galveston P2C — every 10 min, 8 AM–11 PM CT (UTC 13:00–04:00)
+*/10 13-23,0-4 * * * cd /opt/warrantdb-pipeline && \
+  PYTHONPATH=$PWD USE_V2_INGESTION=true ENABLE_V2_GALVESTON=true DRY_RUN=false \
+  python3 scripts/run_ingestion_v2.py --source galveston --no-dry-run --limit 250 \
+  >> logs/v2_galveston.$(date +\%F).log 2>&1
+
+# Harris reports — daily at 1 AM CT (06:00 UTC)
+0 6 * * * cd /opt/warrantdb-pipeline && \
+  PYTHONPATH=$PWD USE_V2_INGESTION=true ENABLE_V2_HARRIS_REPORTS=true DRY_RUN=false \
+  python3 scripts/run_ingestion_v2.py --source harris_reports --no-dry-run --limit 4 \
+  >> logs/v2_harris.$(date +\%F).log 2>&1
+
+# Health check — every hour
+0 * * * * cd /opt/warrantdb-pipeline && \
+  PYTHONPATH=$PWD python3 scripts/check_v2_staging_health.py \
+  >> logs/v2_health.$(date +\%F).log 2>&1
+```
+
+### Render Cron Jobs
+
+See `render.yaml` for commented-out v2 staging cron blocks.  Uncomment the
+`v2-galveston-staging` and `v2-harris-reports-staging` service blocks to deploy.
+
+> **Do not** set `ENABLE_V2_GALVESTON=true` on the production `warrant-pipeline`
+> worker until the Galveston upsert-key migration is complete.  The new key
+> (`{county, booking_number}`) does not match existing production documents keyed
+> on `{county, source_id}`.
+
+---
+
+### Remaining promotion blockers
+
+| Blocker | Required action |
+|---|---|
+| Galveston upsert key mismatch | One-time migration: rewrite existing `galveston_events` docs to use `{county, booking_number}` key, then drop the old `source_id` unique index |
+| Brazoria network unreachable | Confirm a successful staging write on Render before scheduling |
+| Lookup scrapers not scheduled | Design enrichment-triggered invocation; lookups require a name query |
+
