@@ -1,0 +1,31 @@
+# apps/dashboard/Dockerfile.dev
+# ──────────────────────────────────────────────────────────────────────────────
+# Development image for the Vite frontend.
+#
+# Runs the Vite HMR dev server so changes to /app/src (bind-mounted by
+# docker-compose.admin-dev.yml) are reflected instantly in the browser.
+#
+# The Vite proxy is configured in vite.config.js to forward /api/* to
+# the API container using VITE_PROXY_API_TARGET (set by compose env).
+#
+# Build context is apps/dashboard/ (set in docker-compose.admin-dev.yml).
+
+FROM node:20-alpine
+
+WORKDIR /app
+
+# ── Dependencies ──────────────────────────────────────────────────────────────
+# Copy manifests first for better layer caching.
+COPY package.json package-lock.json ./
+# React 19 + some libs may have peer range mismatches — use legacy-peer-deps.
+RUN npm ci --legacy-peer-deps
+
+# ── Source ────────────────────────────────────────────────────────────────────
+# Copy the full source so the image works standalone (compose overrides
+# src/, public/, and index.html with bind-mounts for HMR).
+COPY . .
+
+EXPOSE 5173
+
+# --host 0.0.0.0 is required for Docker to forward the port to the host.
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173"]

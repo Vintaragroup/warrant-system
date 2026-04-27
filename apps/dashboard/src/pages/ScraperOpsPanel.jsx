@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Component } from 'react';
 import { SectionCard, DataTable } from '../components/PageToolkit';
 import {
   useIngestionStatus,
@@ -10,6 +10,40 @@ import {
   usePauseSource,
   useResumeSource,
 } from '../hooks/adminIngestion';
+
+// ── Error boundary ─────────────────────────────────────────────────────────────
+
+class ScraperOpsBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { caught: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { caught: error };
+  }
+
+  render() {
+    if (this.state.caught) {
+      return (
+        <SectionCard title="Scraper Operations" subtitle="Monitor and control the v2 ingestion pipeline">
+          <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-700">
+            <p className="font-semibold">Panel failed to render.</p>
+            <p className="mt-1 text-xs opacity-80">{this.state.caught.message}</p>
+            <button
+              type="button"
+              onClick={() => this.setState({ caught: null })}
+              className="mt-3 rounded-lg border border-rose-300 px-3 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-100"
+            >
+              Retry
+            </button>
+          </div>
+        </SectionCard>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -647,6 +681,7 @@ function SchedulerForm({ source, cfg, onSave, saving, onPause, onResume, pausing
 function SchedulerTab() {
   const [source, setSource] = useState('galveston');
   const [saveMsg, setSaveMsg] = useState(null);
+  const [actionMsg, setActionMsg] = useState(null);
 
   const { data, isLoading, error } = useIngestionConfig({ source });
   const { mutate: updateConfig, isPending: saving } = useUpdateIngestionConfig();
@@ -656,9 +691,10 @@ function SchedulerTab() {
   const configs = data?.configs ?? [];
   const cfg = configs.find((c) => c.source === source) ?? null;
 
-  // Clear status message when source changes
+  // Clear status messages when source changes
   useEffect(() => {
     setSaveMsg(null);
+    setActionMsg(null);
   }, [source]);
 
   function handleSave(patch) {
@@ -679,6 +715,36 @@ function SchedulerTab() {
         },
       },
     );
+  }
+
+  function handlePause(src) {
+    setActionMsg(null);
+    pauseSource(src, {
+      onSuccess: () => setActionMsg({ ok: true, text: `${src} paused.` }),
+      onError: (err) => {
+        let msg = err.message;
+        try {
+          const body = JSON.parse(err.message.replace(/^Request failed \d+: /, ''));
+          if (body?.message) msg = body.message;
+        } catch { /* raw */ }
+        setActionMsg({ ok: false, text: msg });
+      },
+    });
+  }
+
+  function handleResume(src) {
+    setActionMsg(null);
+    resumeSource(src, {
+      onSuccess: () => setActionMsg({ ok: true, text: `${src} resumed.` }),
+      onError: (err) => {
+        let msg = err.message;
+        try {
+          const body = JSON.parse(err.message.replace(/^Request failed \d+: /, ''));
+          if (body?.message) msg = body.message;
+        } catch { /* raw */ }
+        setActionMsg({ ok: false, text: msg });
+      },
+    });
   }
 
   return (
@@ -707,8 +773,8 @@ function SchedulerTab() {
           cfg={cfg}
           onSave={handleSave}
           saving={saving}
-          onPause={pauseSource}
-          onResume={resumeSource}
+          onPause={handlePause}
+          onResume={handleResume}
           pausing={pausing}
           resuming={resuming}
         />
@@ -723,6 +789,18 @@ function SchedulerTab() {
           }`}
         >
           {saveMsg.text}
+        </div>
+      )}
+
+      {actionMsg && (
+        <div
+          className={`rounded-lg border px-4 py-2 text-sm ${
+            actionMsg.ok
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+              : 'border-rose-200 bg-rose-50 text-rose-700'
+          }`}
+        >
+          {actionMsg.text}
         </div>
       )}
     </div>
@@ -834,7 +912,7 @@ function RunsTab({ mode }) {
 
 // ── Panel root ────────────────────────────────────────────────────────────────
 
-export default function ScraperOpsPanel() {
+function ScraperOpsPanelInner() {
   const [tab, setTab] = useState('overview');
 
   return (
@@ -866,5 +944,13 @@ export default function ScraperOpsPanel() {
       {tab === 'runs' && <RunsTab mode="runs" />}
       {tab === 'errors' && <RunsTab mode="errors" />}
     </SectionCard>
+  );
+}
+
+export default function ScraperOpsPanel() {
+  return (
+    <ScraperOpsBoundary>
+      <ScraperOpsPanelInner />
+    </ScraperOpsBoundary>
   );
 }

@@ -35,9 +35,11 @@ export default function AppLayout() {
           <span className="font-semibold tracking-tight">Bail Bonds Dashboard</span>
           <nav className="hidden md:flex gap-4">
             {tabs.map(t => {
-              // Hide Admin tab if user doesn't have Admin role
-              if (t.requiresAdmin && !currentUser?.roles?.includes('Admin')) {
-                return null;
+              // Hide Admin tab if user doesn't have Admin/Super Admin role
+              if (t.requiresAdmin) {
+                const roles = currentUser?.roles || [];
+                const hasAdmin = roles.includes('Admin') || roles.includes('SuperUser') || roles.includes('Super Admin') || roles.includes('super_admin');
+                if (!hasAdmin) return null;
               }
               return (
                 <NavLink
@@ -74,9 +76,11 @@ export default function AppLayout() {
       <div className="md:hidden border-b bg-white">
         <div className="mx-auto max-w-7xl px-2 py-2 flex gap-2 overflow-x-auto">
           {tabs.map(t => {
-            // Hide Admin tab if user doesn't have Admin role
-            if (t.requiresAdmin && !currentUser?.roles?.includes('Admin')) {
-              return null;
+            // Hide Admin tab if user doesn't have Admin/Super Admin role
+            if (t.requiresAdmin) {
+              const roles = currentUser?.roles || [];
+              const hasAdmin = roles.includes('Admin') || roles.includes('SuperUser') || roles.includes('Super Admin') || roles.includes('super_admin');
+              if (!hasAdmin) return null;
             }
             return (
               <NavLink

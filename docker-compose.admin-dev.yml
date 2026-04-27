@@ -1,0 +1,110 @@
+# docker-compose.admin-dev.yml
+# ──────────────────────────────────────────────────────────────────────────────
+# Local development environment for the Admin Scraper Operations panel.
+#
+# Brings up three services on a shared network:
+#   frontend  → http://localhost:5173   (Vite HMR dev server)
+#   api       → http://localhost:3001   (Node/Express + Python 3 for ingestion)
+#
+# The api container has Python 3 and the pipeline code mounted at /pipeline,
+# which allows adminIngestion.js to spawn python3 scripts/run_ingestion_v2.py
+# without a separate sidecar container.
+#
+# Usage:
+#   docker compose -f docker-compose.admin-dev.yml up --build
+#   docker compose -f docker-compose.admin-dev.yml down
+#
+# Required env vars (copy .env.admin-dev.example → .env.admin-dev and fill in):
+#   MONGO_URI        — Atlas URI or mongodb://localhost:27017
+#   MONGO_DB         — warrantdb (default)
+#   FIREBASE_JSON    — path to the Firebase Admin SDK JSON key file
+#
+# All ingestion runs default to DRY_RUN=true. Non-dry-run writes are blocked
+# unless ALLOW_ADMIN_NON_DRY_RUN=true is also set.
+
+name: warrant-admin-dev
+
+services:
+
+  # ─── API (Node/Express + Python 3 for ingestion) ───────────────────────────
+
+  api:
+    build:
+      # Repo root as context so Dockerfile.dev can COPY pipeline/requirements.txt
+      context: .
+      dockerfile: apps/dashboard/server/Dockerfile.dev
+    restart: unless-stopped
+    environment:
+      - PORT=3001
+      - NODE_ENV=development
+      - MONGO_URI=${MONGO_URI}
+      - MONGO_DB=${MONGO_DB:-warrantdb}
+      # CORS: dev mode already allows all localhost:* origins via regex in index.js
+      - WEB_ORIGIN=http://localhost:5173
+      # Pipeline root — the pipeline source is bind-mounted here (see volumes below)
+      - PIPELINE_ROOT=/pipeline
+      # Ingestion safety defaults
+      - DRY_RUN=true
+      - ALLOW_ADMIN_NON_DRY_RUN=${ALLOW_ADMIN_NON_DRY_RUN:-false}
+      - USE_V2_INGESTION=true
+      - ENABLE_V2_GALVESTON=true
+      # Firebase credentials
+      - GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/firebase
+      # Optional Redis (skip gracefully if not set)
+      - REDIS_URL=${REDIS_URL:-}
+      # Sampling: log every request in dev
+      - LOG_SAMPLE_RATE=1
+    ports:
+      - "3001:3001"
+    volumes:
+      # Live-reload: mount server source so changes reflect without rebuild
+      - ./apps/dashboard/server/src:/app/src:ro
+      - ./apps/dashboard/server/src/openapi.yaml:/app/openapi.yaml:ro
+      # node_modules from the image (not the host) — prevent host modules from leaking in
+      - /app/node_modules
+      # Pipeline code bind-mounted so python3 can be called directly in this container
+      - ./services/warrantdb-pipeline:/pipeline:ro
+    secrets:
+      - firebase
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/api/health/light"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+
+  # ─── Frontend (Vite HMR dev server) ────────────────────────────────────────
+
+  frontend:
+    build:
+      context: apps/dashboard
+      dockerfile: Dockerfile.dev
+    restart: unless-stopped
+    environment:
+      # Vite proxy target: internal Docker hostname of the api service.
+      # The browser never sees this — the Vite dev server proxies /api/* to it.
+      - VITE_PROXY_API_TARGET=http://api:3001
+      # Firebase build-time vars (needed for login to work in the browser)
+      - VITE_FIREBASE_API_KEY=${VITE_FIREBASE_API_KEY:-}
+      - VITE_FIREBASE_AUTH_DOMAIN=${VITE_FIREBASE_AUTH_DOMAIN:-}
+      - VITE_FIREBASE_PROJECT_ID=${VITE_FIREBASE_PROJECT_ID:-}
+      - VITE_FIREBASE_APP_ID=${VITE_FIREBASE_APP_ID:-}
+      - VITE_FIREBASE_MEASUREMENT_ID=${VITE_FIREBASE_MEASUREMENT_ID:-}
+    ports:
+      - "5173:5173"
+    volumes:
+      # Bind-mount source for HMR — Vite watches the container's /app/src
+      - ./apps/dashboard/src:/app/src:ro
+      - ./apps/dashboard/public:/app/public:ro
+      - ./apps/dashboard/index.html:/app/index.html:ro
+    depends_on:
+      api:
+        condition: service_healthy
+
+secrets:
+  firebase:
+    file: ${FIREBASE_JSON:-apps/dashboard/server/.secrets/firebase.json}
+
+networks:
+  default:
+    name: warrant-admin-dev

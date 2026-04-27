@@ -1,0 +1,58 @@
+# Root-level .dockerignore
+# Used when build context is the repo root (e.g., docker-compose.admin-dev.yml api service).
+# Prevents large directories from being sent to the Docker daemon unnecessarily.
+
+# Version control
+.git
+.gitignore
+.github
+
+# Node dependencies (each service installs its own inside the container)
+**/node_modules
+
+# Python caches
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/.pytest_cache
+
+# Build outputs
+**/dist
+**/build
+**/.next
+**/.output
+
+# Local dev files
+**/.DS_Store
+**/*.code-workspace
+**/.vscode
+**/.env*
+
+# Test artifacts
+**/coverage
+**/.nyc_output
+**/test-results
+
+# Large data files in the pipeline (not needed for the API build)
+services/warrantdb-pipeline/dump_local
+services/warrantdb-pipeline/debug_dumps
+services/warrantdb-pipeline/logs
+services/warrantdb-pipeline/rosters
+services/warrantdb-pipeline/email_rosters
+services/warrantdb-pipeline/debug
+services/warrantdb-pipeline/*.json
+services/warrantdb-pipeline/*.jsonl
+# Note: do NOT exclude *.txt — requirements.txt must be available during build
+services/warrantdb-pipeline/fortbend_output.txt
+
+# Dashboard server uploads
+apps/dashboard/server/uploads
+apps/dashboard/server/.secrets
+apps/dashboard/server/warrantdb_samples*
+
+# Docs (not needed at runtime)
+docs
+**/docs
+
+# Infra (not needed inside app containers)
+infra

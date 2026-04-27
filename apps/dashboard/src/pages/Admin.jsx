@@ -1,23 +1,32 @@
-import { useMemo } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PageHeader, SectionCard, SummaryStat, DataTable } from '../components/PageToolkit';
 import { useCases } from '../hooks/cases';
+import { getJSON } from '../hooks/dashboard';
+import { useUser } from '../components/UserContext';
 import ScraperOpsPanel from './ScraperOpsPanel';
-
-const INTEGRATIONS = [
-  { id: 'telnyx', name: 'Telnyx Messaging', status: 'connected', updated: '2025-02-17 12:05' },
-  { id: 'slack', name: 'Slack Alerts', status: 'connected', updated: '2025-02-17 12:10' },
-  { id: 'clio', name: 'Clio Sync', status: 'disconnected', updated: '2025-02-16 09:40' },
-];
-
-const USERS = [
-  { id: 'U-01', name: 'Ryan Morrow', role: 'Owner', email: 'ryan@example.com', lastSeen: '2025-02-18 09:12' },
-  { id: 'U-02', name: 'Lauren Vega', role: 'Manager', email: 'lauren@example.com', lastSeen: '2025-02-18 08:45' },
-  { id: 'U-03', name: 'Marco Chen', role: 'Agent', email: 'marco@example.com', lastSeen: '2025-02-17 19:23' },
-];
 
 export default function Admin() {
   const navigate = useNavigate();
+  const { currentUser } = useUser();
+
+  // ── Health check ─────────────────────────────────────────────────────────
+  const [healthState, setHealthState] = useState(null); // null | 'loading' | { ok, ts, pid?, error? }
+
+  const runHealthCheck = useCallback(async () => {
+    setHealthState('loading');
+    try {
+      const data = await getJSON('/health/light');
+      setHealthState({ ok: data.ok ?? true, ts: data.ts ?? new Date().toISOString(), pid: data.pid });
+    } catch (err) {
+      let msg = err.message ?? 'Unknown error';
+      try {
+        const body = JSON.parse(msg.replace(/^Request failed \d+: /, ''));
+        if (body?.error) msg = body.error;
+      } catch { /* use raw message */ }
+      setHealthState({ ok: false, ts: new Date().toISOString(), error: msg });
+    }
+  }, []);
 
   // Pull a small recent sample to surface data freshness
   const today = new Date();
@@ -61,9 +70,11 @@ export default function Admin() {
           <div className="flex gap-2">
             <button
               type="button"
-              className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-sm font-medium text-blue-700 hover:border-blue-300"
+              disabled={healthState === 'loading'}
+              onClick={runHealthCheck}
+              className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-sm font-medium text-blue-700 hover:border-blue-300 disabled:opacity-60"
             >
-              Run health check
+              {healthState === 'loading' ? 'Checking…' : 'Run health check'}
             </button>
             <button
               type="button"
@@ -76,6 +87,24 @@ export default function Admin() {
         )}
       />
 
+      {/* Health check result */}
+      {healthState && healthState !== 'loading' && (
+        <div
+          className={`flex items-center justify-between rounded-lg border px-4 py-3 text-sm ${
+            healthState.ok
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+              : 'border-rose-200 bg-rose-50 text-rose-800'
+          }`}
+        >
+          <span>
+            {healthState.ok ? '✓ API is healthy' : `✗ API reported an issue: ${healthState.error ?? 'unknown'}`}
+          </span>
+          <span className="text-xs opacity-70">
+            {healthState.ts ? new Date(healthState.ts).toLocaleTimeString() : ''}
+          </span>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
         <SummaryStat label="Scheduled jobs" value={5} />
         <SummaryStat label="Sources" value="galveston, harris, ft bend, jefferson, brazoria" hint="See Scraper Ops for live status" tone="default" />
@@ -84,57 +113,22 @@ export default function Admin() {
       <ScraperOpsPanel />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <SectionCard title="Integrations" subtitle="Keep external systems connected">
-          <div className="space-y-3">
-            {INTEGRATIONS.map((integration) => (
-              <article key={integration.id} className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                <div>
-                  <div className="text-sm font-semibold text-slate-900">{integration.name}</div>
-                  <div className="text-xs text-slate-500">Updated {integration.updated}</div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className={`inline-flex rounded-full px-2 py-0.5 text-xs ${
-                    integration.status === 'connected'
-                      ? 'bg-emerald-50 text-emerald-700'
-                      : 'bg-rose-50 text-rose-700'
-                  }`}>
-                    {integration.status}
-                  </span>
-                  <button type="button" className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:border-blue-300 hover:text-blue-600">
-                    Configure
-                  </button>
-                </div>
-              </article>
-            ))}
-          </div>
+        <SectionCard title="Integrations" subtitle="External system connections">
+          <p className="py-4 text-sm text-slate-500">
+            Integration management coming soon.
+          </p>
         </SectionCard>
 
-        <SectionCard title="Users & roles" subtitle="Manage access control">
-          <DataTable
-            columns={[
-              { key: 'name', header: 'Name' },
-              { key: 'role', header: 'Role' },
-              { key: 'email', header: 'Email' },
-              { key: 'lastSeen', header: 'Last seen' },
-            ]}
-            rows={USERS}
-            renderActions={() => (
-              <div className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:border-blue-300 hover:text-blue-600"
-                >
-                  Edit
-                </button>
-                <button
-                  type="button"
-                  className="rounded-lg border border-rose-300 bg-rose-50 px-2 py-1 text-xs text-rose-700 hover:bg-rose-100"
-                >
-                  Disable
-                </button>
-              </div>
-            )}
-          />
+        <SectionCard title="Users & roles" subtitle="Access control">
+          <p className="py-2 text-sm text-slate-500">
+            User management coming soon.
+          </p>
+          {currentUser && (
+            <p className="mt-1 text-xs text-slate-400">
+              Signed in as <strong>{currentUser.email}</strong> &mdash; role:{' '}
+              <strong>{(currentUser.roles ?? []).join(', ') || 'none'}</strong>
+            </p>
+          )}
         </SectionCard>
       </div>
 

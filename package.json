@@ -10,6 +10,11 @@
     "stack:status": "docker compose -f infra/docker/docker-compose.yml ps",
     "stack:logs": "docker compose -f infra/docker/docker-compose.yml logs --no-color --tail=200",
 
+    "admin:dev": "docker compose -f docker-compose.admin-dev.yml --env-file .env.admin-dev up --build",
+    "admin:dev:down": "docker compose -f docker-compose.admin-dev.yml down",
+    "admin:dev:logs": "docker compose -f docker-compose.admin-dev.yml logs --follow --no-color",
+    "admin:dev:rebuild": "docker compose -f docker-compose.admin-dev.yml --env-file .env.admin-dev up --build --force-recreate",
+
     "ie:up": "npm run stack:up --workspace=services/inmate-enrichment",
     "ie:dev": "npm run dev --workspace=services/inmate-enrichment",
     "ie:build": "npm run build --workspace=services/inmate-enrichment",

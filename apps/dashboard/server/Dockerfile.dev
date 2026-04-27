@@ -1,0 +1,52 @@
+# server/Dockerfile.dev
+# ──────────────────────────────────────────────────────────────────────────────
+# Development image for the Node/Express API with Python 3 added so the
+# adminIngestion.js route can spawn python3 scripts/run_ingestion_v2.py
+# directly inside this container.
+#
+# The pipeline source code is NOT copied here — it is bind-mounted by
+# docker-compose.admin-dev.yml at /pipeline.  Only the Python runtime and
+# the pipeline's pip dependencies are installed at build time.
+#
+# Live reload: the compose file bind-mounts ./server/src over /app/src so
+# code changes take effect on the next request without a rebuild.
+
+FROM node:20-alpine
+
+WORKDIR /app
+
+# ── System dependencies ────────────────────────────────────────────────────────
+# python3, pip, and build tools (some pip packages need C compiler on alpine).
+# Note: py3-venv is bundled with python3 on Alpine 3.21+; no separate package needed.
+RUN apk add --no-cache \
+    python3 \
+    py3-pip \
+    gcc \
+    musl-dev \
+    python3-dev \
+    libffi-dev
+
+# ── Node dependencies ─────────────────────────────────────────────────────────
+# Build context is repo root (set in docker-compose.admin-dev.yml).
+# Paths below are relative to the repo root.
+COPY apps/dashboard/server/package.json apps/dashboard/server/package-lock.json ./
+RUN npm ci
+
+# ── Python dependencies ───────────────────────────────────────────────────────
+# Copy only the requirements file — pipeline source is bind-mounted at runtime.
+# Use a venv to avoid PEP 668 system-package restrictions on newer Alpine images.
+COPY services/warrantdb-pipeline/requirements.txt /tmp/pipeline-requirements.txt
+RUN python3 -m venv /pipeline-venv \
+ && /pipeline-venv/bin/pip install --no-cache-dir -r /tmp/pipeline-requirements.txt
+
+# Put the venv's bin dir first so `python3` and `pip3` resolve to the venv.
+ENV PATH="/pipeline-venv/bin:$PATH"
+
+# ── Application source ────────────────────────────────────────────────────────
+COPY apps/dashboard/server/src ./src
+COPY apps/dashboard/server/src/openapi.yaml ./openapi.yaml
+
+ENV NODE_ENV=development
+EXPOSE 3001
+
+CMD ["node", "src/index.js"]

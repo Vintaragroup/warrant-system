@@ -89,7 +89,12 @@ const PIPELINE_ROOT = process.env.PIPELINE_ROOT
  */
 function requireAdmin(req, res, next) {
   const roles = req.user?.roles || [];
-  if (roles.includes('Admin') || roles.includes('SuperUser')) {
+  if (
+    roles.includes('Admin') ||
+    roles.includes('SuperUser') ||
+    roles.includes('Super Admin') ||
+    roles.includes('super_admin')
+  ) {
     return next();
   }
   return res.status(403).json({
