@@ -9,21 +9,21 @@
 
 ### Routes (`apps/dashboard/src/App.jsx`)
 
-| Path | Component | Auth |
-|---|---|---|
-| `/` | `Dashboard` | `RequireAuth` |
-| `/cases` | `Cases` | `RequireAuth` |
-| `/admin` | `Admin` | `RequireAuth` + client-side Admin role check |
-| `/auth/*` | `AuthRoutes` | Public |
-| `/auth/admin-users` | `AdminUserManagement` | Session |
-| `/auth/profile-settings` | `ProfileSettings` | Session |
+| Path                     | Component             | Auth                                         |
+| ------------------------ | --------------------- | -------------------------------------------- |
+| `/`                      | `Dashboard`           | `RequireAuth`                                |
+| `/cases`                 | `Cases`               | `RequireAuth`                                |
+| `/admin`                 | `Admin`               | `RequireAuth` + client-side Admin role check |
+| `/auth/*`                | `AuthRoutes`          | Public                                       |
+| `/auth/admin-users`      | `AdminUserManagement` | Session                                      |
+| `/auth/profile-settings` | `ProfileSettings`     | Session                                      |
 
 ### Admin tab visibility (`apps/dashboard/src/layouts/AppLayout.jsx`)
 
 The Admin nav tab is hidden unless the authenticated user's profile includes `'Admin'` in the `roles[]` array:
 
 ```js
-if (t.requiresAdmin && !currentUser?.roles?.includes('Admin')) return null;
+if (t.requiresAdmin && !currentUser?.roles?.includes("Admin")) return null;
 ```
 
 This is a client-side visibility gate only. The server does not enforce an Admin role on `/api/dashboard/*` routes — all require `requireAuth` (any authenticated user) but not a specific role.
@@ -32,12 +32,12 @@ This is a client-side visibility gate only. The server does not enforce an Admin
 
 The `/admin` page currently contains:
 
-| Section | Data source |
-|---|---|
+| Section         | Data source                                                |
+| --------------- | ---------------------------------------------------------- |
 | Automation jobs | **Hard-coded static array** (including `scrape:galveston`) |
-| Integrations | **Hard-coded static array** |
-| Users & roles | **Hard-coded static array** |
-| Data freshness | Live API via `useCases()` hook (last 25 bookings) |
+| Integrations    | **Hard-coded static array**                                |
+| Users & roles   | **Hard-coded static array**                                |
+| Data freshness  | Live API via `useCases()` hook (last 25 bookings)          |
 
 No runtime toggles, feature flags, or source controls exist on the Admin page today. The static job list is a UI shell only — "Run now" and "View logs" buttons have no backend action wired up.
 
@@ -48,18 +48,23 @@ No runtime toggles, feature flags, or source controls exist on the Admin page to
 The only existing feature flag is `USE_TIME_BUCKET_V2` (env-only):
 
 **Server (`apps/dashboard/server/src/index.js` lines 164–165):**
+
 ```js
-const USE_TIME_BUCKET_V2 = String(process.env.DISABLE_TIME_BUCKET_V2 || 'false').toLowerCase() === 'true'
-  ? false : true;
+const USE_TIME_BUCKET_V2 =
+  String(process.env.DISABLE_TIME_BUCKET_V2 || "false").toLowerCase() === "true"
+    ? false
+    : true;
 app.locals.flags = { USE_TIME_BUCKET_V2 };
 ```
 
 **Used in route handlers (`dashboard.js`):**
+
 ```js
 const useV2 = !!req.app?.locals?.flags?.USE_TIME_BUCKET_V2;
 ```
 
 **Pattern characteristics:**
+
 - Set once at server startup from an environment variable
 - Stored in `app.locals.flags` (server memory, request-accessible)
 - No runtime mutation supported
@@ -71,11 +76,11 @@ const useV2 = !!req.app?.locals?.flags?.USE_TIME_BUCKET_V2;
 
 ### Collection names (server-side, 3 separate hard-coded locations)
 
-| File | Usage |
-|---|---|
-| `server/src/routes/dashboard.js` line 137 | `COUNTY_COLLECTIONS` array — drives all `$unionWith` aggregations |
-| `server/src/routes/cases.js` lines 15, 24 | `COUNTY_COLLECTIONS` array + `COUNTY_MAP` for per-county case lookups |
-| `server/src/routes/health.js` lines 46, 196 | Collection health checks |
+| File                                        | Usage                                                                 |
+| ------------------------------------------- | --------------------------------------------------------------------- |
+| `server/src/routes/dashboard.js` line 137   | `COUNTY_COLLECTIONS` array — drives all `$unionWith` aggregations     |
+| `server/src/routes/cases.js` lines 15, 24   | `COUNTY_COLLECTIONS` array + `COUNTY_MAP` for per-county case lookups |
+| `server/src/routes/health.js` lines 46, 196 | Collection health checks                                              |
 
 In all three files, Galveston reads from `'simple_galveston'`. There is **no reference to `v2_galveston_events`** anywhere in the dashboard server.
 
@@ -94,17 +99,20 @@ All dashboard endpoints (`/kpi`, `/new`, `/recent`, `/per-county`, `/top`, `/dia
 ### Cases route (`cases.js`)
 
 Uses a separate `COUNTY_MAP`:
+
 ```js
 const COUNTY_MAP = new Map([
   ['galveston', 'simple_galveston'],
   ...
 ]);
 ```
+
 Case detail lookups for Galveston route through this map independently of the dashboard aggregation.
 
 ### Frontend API calls (`src/hooks/dashboard.js`)
 
 React Query hooks call:
+
 - `GET /api/dashboard/kpi`
 - `GET /api/dashboard/new`
 - `GET /api/dashboard/recent`
@@ -124,6 +132,7 @@ No server-side role enforcement exists for dashboard reads (any authenticated us
 ## 4. No Runtime Admin Toggle Exists
 
 Confirmed absent:
+
 - No `/api/flags` endpoint
 - No `/api/admin/*` endpoint
 - No feature flag service, config collection, or remote config
@@ -136,12 +145,12 @@ Confirmed absent:
 
 ### Why not the other approaches
 
-| Approach | Reason not preferred |
-|---|---|
-| **A. Env-only** | Requires a server restart to toggle; no admin UI path |
-| **B. Admin UI toggle backed by Mongo** | Overkill for a temporary migration toggle; adds DB dependency to a flag that changes the DB being read |
-| **C. Admin UI toggle backed by server memory only** | Safe but loses state on restart, no audit trail, and the default would be wrong if env var is absent |
-| **D. Hybrid** ✅ | Env var sets safe default; admin can override in-memory without restart; reverts to env default on deploy/restart — aligns with existing `USE_TIME_BUCKET_V2` pattern |
+| Approach                                            | Reason not preferred                                                                                                                                                  |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **A. Env-only**                                     | Requires a server restart to toggle; no admin UI path                                                                                                                 |
+| **B. Admin UI toggle backed by Mongo**              | Overkill for a temporary migration toggle; adds DB dependency to a flag that changes the DB being read                                                                |
+| **C. Admin UI toggle backed by server memory only** | Safe but loses state on restart, no audit trail, and the default would be wrong if env var is absent                                                                  |
+| **D. Hybrid** ✅                                    | Env var sets safe default; admin can override in-memory without restart; reverts to env default on deploy/restart — aligns with existing `USE_TIME_BUCKET_V2` pattern |
 
 ### How it works
 
@@ -171,15 +180,15 @@ Rollback:
 
 ### Files to modify
 
-| File | Change needed |
-|---|---|
-| `apps/dashboard/server/src/index.js` | Add `GALVESTON_USE_V2_COLLECTION` env read to `app.locals.flags` |
+| File                                            | Change needed                                                                                     |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `apps/dashboard/server/src/index.js`            | Add `GALVESTON_USE_V2_COLLECTION` env read to `app.locals.flags`                                  |
 | `apps/dashboard/server/src/routes/dashboard.js` | Change `COUNTY_COLLECTIONS` from a constant array to a function that reads `req.app.locals.flags` |
-| `apps/dashboard/server/src/routes/cases.js` | Change `COUNTY_MAP` entry for `'galveston'` to read from `req.app.locals.flags` |
-| `apps/dashboard/server/src/routes/health.js` | Make health check collection list flag-aware |
-| `apps/dashboard/server/src/routes/admin.js` | **New file**: `GET /api/admin/flags` + `POST /api/admin/flags` |
-| `apps/dashboard/src/pages/Admin.jsx` | Add "Data Sources" section with Galveston V2 toggle card |
-| `apps/dashboard/server/.env` (or Render env) | Add `GALVESTON_USE_V2_COLLECTION=false` |
+| `apps/dashboard/server/src/routes/cases.js`     | Change `COUNTY_MAP` entry for `'galveston'` to read from `req.app.locals.flags`                   |
+| `apps/dashboard/server/src/routes/health.js`    | Make health check collection list flag-aware                                                      |
+| `apps/dashboard/server/src/routes/admin.js`     | **New file**: `GET /api/admin/flags` + `POST /api/admin/flags`                                    |
+| `apps/dashboard/src/pages/Admin.jsx`            | Add "Data Sources" section with Galveston V2 toggle card                                          |
+| `apps/dashboard/server/.env` (or Render env)    | Add `GALVESTON_USE_V2_COLLECTION=false`                                                           |
 
 ### New API endpoint
 
@@ -193,16 +202,18 @@ POST /api/admin/flags
 ```
 
 **Auth requirement**: `requireAuth` + server-side Admin role check:
+
 ```js
-if (!req.user?.roles?.includes('Admin')) {
-  return res.status(403).json({ error: 'Admin role required' });
+if (!req.user?.roles?.includes("Admin")) {
+  return res.status(403).json({ error: "Admin role required" });
 }
 ```
 
 **Route registration** in `index.js`:
+
 ```js
-import adminRoutes from './routes/admin.js';
-app.use('/api/admin', requireAuth, adminRoutes);
+import adminRoutes from "./routes/admin.js";
+app.use("/api/admin", requireAuth, adminRoutes);
 ```
 
 ### Frontend component
@@ -229,22 +240,22 @@ Add a new `<SectionCard>` titled "Data Sources" below the existing sections.
 
 ### Persistence strategy
 
-| Layer | Value |
-|---|---|
-| Default | `GALVESTON_USE_V2_COLLECTION` env var (Render dashboard → Environment) |
-| Runtime override | `app.locals.flags.galvestonUseV2Collection` (server memory) |
+| Layer                       | Value                                                                        |
+| --------------------------- | ---------------------------------------------------------------------------- |
+| Default                     | `GALVESTON_USE_V2_COLLECTION` env var (Render dashboard → Environment)       |
+| Runtime override            | `app.locals.flags.galvestonUseV2Collection` (server memory)                  |
 | Persistence across restarts | Not automatic — by design. Promotes deliberate promotion via env var update. |
-| Permanent promotion | Set `GALVESTON_USE_V2_COLLECTION=true` in Render environment, redeploy |
+| Permanent promotion         | Set `GALVESTON_USE_V2_COLLECTION=true` in Render environment, redeploy       |
 
 ### Security / auth requirements
 
-| Control | Required |
-|---|---|
-| `/api/admin/flags` endpoint | `requireAuth` (already used on all API routes) |
-| Role gating on server | `req.user.roles.includes('Admin')` — must be server-side, not client-side only |
-| Read endpoint (GET) | Admin role required (don't expose flag state to all users) |
-| Write endpoint (POST) | Admin role required |
-| Frontend tab visibility | Already hidden for non-Admin users via `requiresAdmin: true` in AppLayout |
+| Control                     | Required                                                                       |
+| --------------------------- | ------------------------------------------------------------------------------ |
+| `/api/admin/flags` endpoint | `requireAuth` (already used on all API routes)                                 |
+| Role gating on server       | `req.user.roles.includes('Admin')` — must be server-side, not client-side only |
+| Read endpoint (GET)         | Admin role required (don't expose flag state to all users)                     |
+| Write endpoint (POST)       | Admin role required                                                            |
+| Frontend tab visibility     | Already hidden for non-Admin users via `requiresAdmin: true` in AppLayout      |
 
 ### Rollback path
 
@@ -256,17 +267,17 @@ Add a new `<SectionCard>` titled "Data Sources" below the existing sections.
 
 ## 7. Risks
 
-| Risk | Severity | Mitigation |
-|---|---|---|
-| `v2_galveston_events` has only ~5 docs | High | Require staging cron to run for ≥1 week before enabling |
-| `county` field is lowercase `"galveston"` in v2 vs title-case legacy | Medium | Already partially handled — `COUNTY_COLLECTIONS` drives `$unionWith` not filter; `county` filter strings in frontend use lowercase already |
-| `booking_date_n` derivation in `unionAll` uses `booked_at` fallback | Low | Compatibility alias `booked_at` was added to v2 in Task 6 |
-| `booking_age_category` / `booking_priority` absent from v2 | Medium | Dashboard currently derives these; verify no hard-coded queries |
-| `status` / `facility` / `released_at` absent from v2 | Medium | Dashboard does not query these directly; verify before enabling |
-| `cases.js` `COUNTY_MAP` is separate from `dashboard.js` `COUNTY_COLLECTIONS` | Medium | Must update both in same PR — easy to miss |
-| `health.js` collection list is also separate | Low | Flag-aware health check needed so health endpoint reports correct state |
-| In-memory flag state not synced across multiple server instances | Medium | Render runs single instance for this service; acceptable for now |
-| No audit trail for toggle actions | Low | Log toggle event to console; optional: write to MongoDB audit log |
+| Risk                                                                         | Severity | Mitigation                                                                                                                                 |
+| ---------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `v2_galveston_events` has only ~5 docs                                       | High     | Require staging cron to run for ≥1 week before enabling                                                                                    |
+| `county` field is lowercase `"galveston"` in v2 vs title-case legacy         | Medium   | Already partially handled — `COUNTY_COLLECTIONS` drives `$unionWith` not filter; `county` filter strings in frontend use lowercase already |
+| `booking_date_n` derivation in `unionAll` uses `booked_at` fallback          | Low      | Compatibility alias `booked_at` was added to v2 in Task 6                                                                                  |
+| `booking_age_category` / `booking_priority` absent from v2                   | Medium   | Dashboard currently derives these; verify no hard-coded queries                                                                            |
+| `status` / `facility` / `released_at` absent from v2                         | Medium   | Dashboard does not query these directly; verify before enabling                                                                            |
+| `cases.js` `COUNTY_MAP` is separate from `dashboard.js` `COUNTY_COLLECTIONS` | Medium   | Must update both in same PR — easy to miss                                                                                                 |
+| `health.js` collection list is also separate                                 | Low      | Flag-aware health check needed so health endpoint reports correct state                                                                    |
+| In-memory flag state not synced across multiple server instances             | Medium   | Render runs single instance for this service; acceptable for now                                                                           |
+| No audit trail for toggle actions                                            | Low      | Log toggle event to console; optional: write to MongoDB audit log                                                                          |
 
 ---
 

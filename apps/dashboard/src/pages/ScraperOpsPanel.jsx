@@ -1,0 +1,870 @@
+import { useState, useEffect } from 'react';
+import { SectionCard, DataTable } from '../components/PageToolkit';
+import {
+  useIngestionStatus,
+  useIngestionRuns,
+  useIngestionErrors,
+  useIngestionConfig,
+  useUpdateIngestionConfig,
+  useTriggerRun,
+  usePauseSource,
+  useResumeSource,
+} from '../hooks/adminIngestion';
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const SOURCES = [
+  'galveston',
+  'harris_reports',
+  'fortbend_lookup',
+  'jefferson_lookup',
+  'brazoria_lookup',
+];
+
+const LOOKUP_SOURCES = new Set(['fortbend_lookup', 'jefferson_lookup', 'brazoria_lookup']);
+
+const TABS = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'run', label: 'Manual Run' },
+  { id: 'scheduler', label: 'Scheduler' },
+  { id: 'runs', label: 'Run History' },
+  { id: 'errors', label: 'Errors' },
+];
+
+// ── Shared helpers ─────────────────────────────────────────────────────────────
+
+function fmtTime(iso) {
+  if (!iso) return '—';
+  try {
+    return new Date(iso).toLocaleString();
+  } catch {
+    return String(iso);
+  }
+}
+
+function fmtAge(iso) {
+  if (!iso) return '—';
+  try {
+    const ms = Date.now() - new Date(iso).getTime();
+    if (ms < 0) return 'just now';
+    const h = Math.floor(ms / 3_600_000);
+    const d = Math.floor(h / 24);
+    if (d > 0) return `${d}d ${h % 24}h ago`;
+    if (h > 0) return `${h}h ago`;
+    const m = Math.floor(ms / 60_000);
+    return m > 0 ? `${m}m ago` : 'just now';
+  } catch {
+    return String(iso);
+  }
+}
+
+function StatusBadge({ value }) {
+  const map = {
+    success: 'bg-emerald-50 text-emerald-700',
+    failed: 'bg-rose-50 text-rose-700',
+    running: 'bg-blue-50 text-blue-700',
+    skipped: 'bg-slate-100 text-slate-500',
+    enabled: 'bg-emerald-50 text-emerald-700',
+    disabled: 'bg-slate-100 text-slate-500',
+    paused: 'bg-amber-50 text-amber-700',
+  };
+  return (
+    <span
+      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+        map[String(value)] ?? 'bg-slate-100 text-slate-600'
+      }`}
+    >
+      {String(value)}
+    </span>
+  );
+}
+
+function SourceSelect({ value, onChange, includeAll = false }) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 focus:border-blue-400 focus:outline-none"
+    >
+      {includeAll && <option value="">All sources</option>}
+      {SOURCES.map((s) => (
+        <option key={s} value={s}>
+          {s}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+// ── Overview tab ──────────────────────────────────────────────────────────────
+
+function OverviewTab() {
+  const { data, isLoading, error, refetch, isFetching } = useIngestionStatus();
+  const sources = data?.sources ?? [];
+
+  if (isLoading) {
+    return <div className="py-8 text-center text-sm text-slate-500">Loading status…</div>;
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+        Failed to load status: {error.message}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-slate-400">Updated {data?.ts ? fmtTime(data.ts) : '—'}</p>
+        <button
+          type="button"
+          disabled={isFetching}
+          onClick={() => refetch()}
+          className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-600 hover:border-blue-300 hover:text-blue-600 disabled:opacity-50"
+        >
+          {isFetching ? 'Refreshing…' : 'Refresh'}
+        </button>
+      </div>
+
+      <div className="overflow-x-auto rounded-xl border border-slate-200">
+        <table className="min-w-full divide-y divide-slate-200 text-sm">
+          <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <tr>
+              <th className="px-4 py-3">Source</th>
+              <th className="px-4 py-3">Enabled</th>
+              <th className="px-4 py-3">Mode</th>
+              <th className="px-4 py-3">Schedule</th>
+              <th className="px-4 py-3">Last run</th>
+              <th className="px-4 py-3">Last success</th>
+              <th className="px-4 py-3">Last error</th>
+              <th className="px-4 py-3">Staging docs</th>
+              <th className="px-4 py-3">Stale?</th>
+              <th className="px-4 py-3">Records written</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
+            {sources.map((s) => {
+              const schedStatus = s.schedule?.paused
+                ? 'paused'
+                : s.enabled
+                  ? 'enabled'
+                  : 'disabled';
+
+              return (
+                <tr key={s.source} className="hover:bg-slate-50">
+                  <td className="px-4 py-3 font-mono text-xs font-semibold text-slate-800">
+                    {s.source}
+                  </td>
+                  <td className="px-4 py-3">
+                    <StatusBadge value={schedStatus} />
+                  </td>
+                  <td className="px-4 py-3 text-xs text-slate-500">{s.mode ?? '—'}</td>
+                  <td className="px-4 py-3 text-xs text-slate-500">
+                    {s.schedule?.strategy ?? '—'}
+                    {s.schedule?.interval_minutes
+                      ? ` / ${s.schedule.interval_minutes}m`
+                      : null}
+                    {s.schedule?.run_times?.length
+                      ? ` @ ${s.schedule.run_times.join(', ')}`
+                      : null}
+                  </td>
+                  <td className="px-4 py-3 text-xs">
+                    {s.last_run ? (
+                      <span title={fmtTime(s.last_run.started_at)}>
+                        <StatusBadge value={s.last_run.status} />
+                        <span className="ml-1 text-slate-400">
+                          {fmtAge(s.last_run.started_at)}
+                        </span>
+                      </span>
+                    ) : (
+                      '—'
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-xs text-slate-500">
+                    {fmtAge(s.last_success?.started_at)}
+                  </td>
+                  <td className="px-4 py-3 text-xs text-rose-500">
+                    {s.last_error ? fmtAge(s.last_error.started_at) : '—'}
+                  </td>
+                  <td className="px-4 py-3 text-xs">
+                    {s.staging_count != null
+                      ? s.staging_count.toLocaleString()
+                      : '—'}
+                  </td>
+                  <td className="px-4 py-3">
+                    {s.stale === true ? (
+                      <span className="inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-700">
+                        ⚠ Stale
+                      </span>
+                    ) : s.stale === false ? (
+                      <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700">
+                        OK
+                      </span>
+                    ) : (
+                      '—'
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-xs">
+                    {s.last_run?.records_written ?? '—'}
+                  </td>
+                </tr>
+              );
+            })}
+            {sources.length === 0 && (
+              <tr>
+                <td colSpan={10} className="px-4 py-8 text-center text-slate-400">
+                  No status data yet. Run a health check to populate.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ── Manual Run tab ────────────────────────────────────────────────────────────
+
+function ManualRunTab() {
+  const [source, setSource] = useState('galveston');
+  const [dryRun, setDryRun] = useState(true);
+  const [limit, setLimit] = useState(20);
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [output, setOutput] = useState(null);
+  const [awaitConfirm, setAwaitConfirm] = useState(false);
+
+  const { mutate, isPending } = useTriggerRun();
+
+  const isLookup = LOOKUP_SOURCES.has(source);
+  const missingLastName = isLookup && !lastName.trim();
+
+  // Reset confirmation + output when key inputs change
+  function handleSourceChange(val) {
+    setSource(val);
+    setAwaitConfirm(false);
+    setOutput(null);
+    setLastName('');
+    setFirstName('');
+  }
+
+  function handleDryRunChange(checked) {
+    setDryRun(checked);
+    setAwaitConfirm(false);
+  }
+
+  function handleRun() {
+    // Non-dry-run: require explicit second click to confirm
+    if (!dryRun && !awaitConfirm) {
+      setAwaitConfirm(true);
+      return;
+    }
+    setAwaitConfirm(false);
+    setOutput(null);
+
+    mutate(
+      {
+        source,
+        dry_run: dryRun,
+        limit,
+        first_name: firstName,
+        last_name: lastName,
+      },
+      {
+        onSuccess: (data) => setOutput(data),
+        onError: (err) => {
+          // Surface the backend error message (never includes secrets — backend redacts them)
+          let msg = err.message;
+          try {
+            const body = JSON.parse(err.message.replace(/^Request failed \d+: /, ''));
+            if (body?.message) msg = body.message;
+          } catch {
+            // use raw message
+          }
+          setOutput({ ok: false, message: msg });
+        },
+      },
+    );
+  }
+
+  const buttonLabel = isPending
+    ? 'Running…'
+    : awaitConfirm
+      ? 'Confirm — write to staging'
+      : 'Run scraper';
+
+  const buttonClass = isPending || missingLastName
+    ? 'cursor-not-allowed opacity-50 rounded-lg px-4 py-2 text-sm font-semibold border border-slate-300 bg-slate-100 text-slate-400'
+    : awaitConfirm
+      ? 'rounded-lg border border-amber-400 bg-amber-100 px-4 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-200'
+      : dryRun
+        ? 'rounded-lg border border-blue-400 bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700'
+        : 'rounded-lg border border-amber-500 bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700';
+
+  return (
+    <div className="space-y-5">
+      {/* Form fields */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div>
+          <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Source
+          </label>
+          <SourceSelect value={source} onChange={handleSourceChange} />
+        </div>
+
+        <div>
+          <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Limit
+          </label>
+          <input
+            type="number"
+            min={1}
+            max={500}
+            value={limit}
+            onChange={(e) => setLimit(Math.max(1, Math.min(500, Number(e.target.value))))}
+            className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 focus:border-blue-400 focus:outline-none"
+          />
+        </div>
+
+        {isLookup && (
+          <>
+            <div>
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Last name <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
+                placeholder="SMITH"
+                className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 focus:border-blue-400 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                First name
+              </label>
+              <input
+                type="text"
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
+                placeholder="Optional"
+                className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 focus:border-blue-400 focus:outline-none"
+              />
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Dry-run toggle */}
+      <label className="flex cursor-pointer select-none items-center gap-3">
+        <input
+          type="checkbox"
+          checked={dryRun}
+          onChange={(e) => handleDryRunChange(e.target.checked)}
+          className="h-4 w-4 rounded border-slate-300 accent-blue-600"
+        />
+        <span className="text-sm text-slate-700">
+          Dry-run mode <span className="text-slate-400">(no database writes — recommended)</span>
+        </span>
+      </label>
+
+      {/* Non-dry-run warning */}
+      {!dryRun && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <strong>⚠ Warning:</strong> Dry-run is disabled. This run will write records to the
+          staging collection. Production collection writes are blocked at the API layer.
+          {awaitConfirm && (
+            <span className="ml-1">Click <strong>Confirm — write to staging</strong> to proceed.</span>
+          )}
+        </div>
+      )}
+
+      {/* Run button */}
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          disabled={isPending || missingLastName}
+          onClick={handleRun}
+          className={buttonClass}
+        >
+          {buttonLabel}
+        </button>
+
+        {awaitConfirm && (
+          <button
+            type="button"
+            onClick={() => setAwaitConfirm(false)}
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-500 hover:border-slate-400"
+          >
+            Cancel
+          </button>
+        )}
+
+        {missingLastName && (
+          <span className="text-xs text-rose-500">Last name is required for lookup sources</span>
+        )}
+      </div>
+
+      {/* Output console */}
+      {output && (
+        <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <div className="flex items-center gap-2">
+            <StatusBadge value={output.ok ? 'success' : 'failed'} />
+            {output.command && (
+              <code className="text-xs text-slate-400">{output.command}</code>
+            )}
+            {output.dry_run != null && (
+              <span className="text-xs text-slate-400">
+                {output.dry_run ? '(dry-run)' : '(staging write)'}
+              </span>
+            )}
+          </div>
+
+          {/* Backend error message */}
+          {output.message && (
+            <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+              {output.message}
+            </div>
+          )}
+
+          {/* stdout */}
+          {output.stdout_tail && (
+            <div>
+              <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                stdout
+              </div>
+              <pre className="max-h-72 overflow-y-auto rounded-xl bg-slate-900 px-4 py-3 text-xs leading-relaxed text-emerald-300 whitespace-pre-wrap">
+                {output.stdout_tail}
+              </pre>
+            </div>
+          )}
+
+          {/* stderr */}
+          {output.stderr_tail && (
+            <div>
+              <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                stderr
+              </div>
+              <pre className="max-h-40 overflow-y-auto rounded-xl bg-slate-900 px-4 py-3 text-xs leading-relaxed text-amber-300 whitespace-pre-wrap">
+                {output.stderr_tail}
+              </pre>
+            </div>
+          )}
+
+          {/* Summary stats */}
+          {(output.records_written != null || output.records_seen != null) && (
+            <div className="flex gap-4 text-xs text-slate-500">
+              {output.records_seen != null && <span>Seen: {output.records_seen}</span>}
+              {output.records_written != null && <span>Written: {output.records_written}</span>}
+              {output.records_failed != null && <span>Failed: {output.records_failed}</span>}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Scheduler tab ─────────────────────────────────────────────────────────────
+
+function SchedulerForm({ source, cfg, onSave, saving, onPause, onResume, pausing, resuming }) {
+  const [enabled, setEnabled] = useState(cfg?.enabled ?? false);
+  const [intervalMinutes, setIntervalMinutes] = useState(
+    cfg?.schedule?.interval_minutes != null ? String(cfg.schedule.interval_minutes) : '',
+  );
+  const [runTimes, setRunTimes] = useState(
+    (cfg?.schedule?.run_times ?? []).join(', '),
+  );
+  const [skipWeekends, setSkipWeekends] = useState(cfg?.schedule?.skip_weekends ?? false);
+  const [maxRunsPerDay, setMaxRunsPerDay] = useState(
+    cfg?.schedule?.max_runs_per_day != null ? String(cfg.schedule.max_runs_per_day) : '',
+  );
+
+  const isPaused = cfg?.schedule?.paused ?? false;
+
+  function buildPatch() {
+    const schedulePatch = { skip_weekends: skipWeekends };
+    if (intervalMinutes !== '') schedulePatch.interval_minutes = Number(intervalMinutes);
+    if (maxRunsPerDay !== '') schedulePatch.max_runs_per_day = Number(maxRunsPerDay);
+    if (runTimes.trim()) {
+      schedulePatch.run_times = runTimes
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+    return { enabled, schedule: schedulePatch };
+  }
+
+  return (
+    <div className="space-y-5">
+      {/* Config grid */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {/* Enabled */}
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+            Enabled
+          </div>
+          <label className="flex cursor-pointer select-none items-center gap-2">
+            <input
+              type="checkbox"
+              checked={enabled}
+              onChange={(e) => setEnabled(e.target.checked)}
+              className="h-4 w-4 rounded border-slate-300 accent-blue-600"
+            />
+            <span className="text-sm text-slate-700">
+              {enabled ? 'Enabled' : 'Disabled'}
+            </span>
+          </label>
+        </div>
+
+        {/* Interval minutes */}
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-400">
+            Interval minutes{' '}
+            <span className="font-normal normal-case text-slate-400">(interval strategy)</span>
+          </label>
+          <input
+            type="number"
+            min={1}
+            max={1440}
+            value={intervalMinutes}
+            onChange={(e) => setIntervalMinutes(e.target.value)}
+            placeholder="e.g. 15"
+            className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 focus:border-blue-400 focus:outline-none"
+          />
+        </div>
+
+        {/* Run times */}
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-400">
+            Run times{' '}
+            <span className="font-normal normal-case text-slate-400">
+              (run_times strategy, HH:MM comma-separated)
+            </span>
+          </label>
+          <input
+            type="text"
+            value={runTimes}
+            onChange={(e) => setRunTimes(e.target.value)}
+            placeholder="01:00, 13:00"
+            className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 focus:border-blue-400 focus:outline-none"
+          />
+        </div>
+
+        {/* Skip weekends */}
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+            Skip weekends
+          </div>
+          <label className="flex cursor-pointer select-none items-center gap-2">
+            <input
+              type="checkbox"
+              checked={skipWeekends}
+              onChange={(e) => setSkipWeekends(e.target.checked)}
+              className="h-4 w-4 rounded border-slate-300 accent-blue-600"
+            />
+            <span className="text-sm text-slate-700">Skip Sat &amp; Sun</span>
+          </label>
+        </div>
+
+        {/* Max runs per day */}
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-400">
+            Max runs / day
+          </label>
+          <input
+            type="number"
+            min={0}
+            max={1440}
+            value={maxRunsPerDay}
+            onChange={(e) => setMaxRunsPerDay(e.target.value)}
+            placeholder="96"
+            className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 focus:border-blue-400 focus:outline-none"
+          />
+        </div>
+      </div>
+
+      {/* Raw config */}
+      {cfg && (
+        <details className="rounded-xl border border-slate-200 bg-slate-50">
+          <summary className="cursor-pointer px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-700">
+            Current stored config (raw)
+          </summary>
+          <pre className="overflow-x-auto px-4 py-3 text-xs text-slate-600">
+            {JSON.stringify(cfg, null, 2)}
+          </pre>
+        </details>
+      )}
+
+      {/* Action buttons */}
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          disabled={saving}
+          onClick={() => onSave(buildPatch())}
+          className="rounded-lg border border-blue-400 bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+        >
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+
+        <button
+          type="button"
+          disabled={pausing || isPaused}
+          onClick={() => onPause(source)}
+          className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+        >
+          {pausing ? 'Pausing…' : 'Pause'}
+        </button>
+
+        <button
+          type="button"
+          disabled={resuming || !isPaused}
+          onClick={() => onResume(source)}
+          className="rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
+        >
+          {resuming ? 'Resuming…' : 'Resume'}
+        </button>
+
+        {isPaused && (
+          <span className="inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-700">
+            paused
+          </span>
+        )}
+      </div>
+
+      <p className="text-xs text-slate-400">
+        ⚠ Schedule changes are stored in MongoDB and take effect on the next cron tick. The Render
+        cron cadence itself requires a <code>render.yaml</code> redeploy to change.
+      </p>
+    </div>
+  );
+}
+
+function SchedulerTab() {
+  const [source, setSource] = useState('galveston');
+  const [saveMsg, setSaveMsg] = useState(null);
+
+  const { data, isLoading, error } = useIngestionConfig({ source });
+  const { mutate: updateConfig, isPending: saving } = useUpdateIngestionConfig();
+  const { mutate: pauseSource, isPending: pausing } = usePauseSource();
+  const { mutate: resumeSource, isPending: resuming } = useResumeSource();
+
+  const configs = data?.configs ?? [];
+  const cfg = configs.find((c) => c.source === source) ?? null;
+
+  // Clear status message when source changes
+  useEffect(() => {
+    setSaveMsg(null);
+  }, [source]);
+
+  function handleSave(patch) {
+    setSaveMsg(null);
+    updateConfig(
+      { source, patch },
+      {
+        onSuccess: () => setSaveMsg({ ok: true, text: 'Saved successfully.' }),
+        onError: (err) => {
+          let msg = err.message;
+          try {
+            const body = JSON.parse(err.message.replace(/^Request failed \d+: /, ''));
+            if (body?.message) msg = body.message;
+          } catch {
+            // use raw message
+          }
+          setSaveMsg({ ok: false, text: msg });
+        },
+      },
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      {/* Source selector */}
+      <div className="flex items-center gap-3">
+        <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Source
+        </label>
+        <SourceSelect value={source} onChange={setSource} />
+      </div>
+
+      {isLoading && (
+        <div className="py-4 text-sm text-slate-500">Loading config…</div>
+      )}
+      {error && (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          Failed to load config: {error.message}
+        </div>
+      )}
+
+      {!isLoading && (
+        <SchedulerForm
+          key={source}
+          source={source}
+          cfg={cfg}
+          onSave={handleSave}
+          saving={saving}
+          onPause={pauseSource}
+          onResume={resumeSource}
+          pausing={pausing}
+          resuming={resuming}
+        />
+      )}
+
+      {saveMsg && (
+        <div
+          className={`rounded-lg border px-4 py-2 text-sm ${
+            saveMsg.ok
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+              : 'border-rose-200 bg-rose-50 text-rose-700'
+          }`}
+        >
+          {saveMsg.text}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Runs / Errors tab ─────────────────────────────────────────────────────────
+
+function RunsTab({ mode }) {
+  const [source, setSource] = useState('');
+  const [limit, setLimit] = useState(50);
+
+  // Both hooks always called — only one is enabled at a time
+  const isErrors = mode === 'errors';
+  const runsResult = useIngestionRuns({ source, limit }, { enabled: !isErrors });
+  const errorsResult = useIngestionErrors({ source, limit }, { enabled: isErrors });
+
+  const { data, isLoading, error, refetch, isFetching } = isErrors ? errorsResult : runsResult;
+  const items = data?.[isErrors ? 'errors' : 'runs'] ?? [];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-end gap-3">
+        <div>
+          <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Source
+          </label>
+          <SourceSelect value={source} onChange={setSource} includeAll />
+        </div>
+
+        <div>
+          <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Limit
+          </label>
+          <select
+            value={limit}
+            onChange={(e) => setLimit(Number(e.target.value))}
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 focus:border-blue-400 focus:outline-none"
+          >
+            {[20, 50, 100, 200].map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <button
+          type="button"
+          disabled={isFetching}
+          onClick={() => refetch()}
+          className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-600 hover:border-blue-300 hover:text-blue-600 disabled:opacity-50"
+        >
+          {isFetching ? 'Refreshing…' : 'Refresh'}
+        </button>
+      </div>
+
+      {isLoading && (
+        <div className="py-8 text-center text-sm text-slate-500">Loading…</div>
+      )}
+      {error && (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          Error: {error.message}
+        </div>
+      )}
+
+      {!isLoading && (
+        <DataTable
+          columns={[
+            { key: 'source', header: 'Source', render: (v) => <code className="text-xs">{v}</code> },
+            { key: 'trigger', header: 'Trigger' },
+            {
+              key: 'status',
+              header: 'Status',
+              render: (v) => <StatusBadge value={v} />,
+            },
+            {
+              key: 'dry_run',
+              header: 'Dry run',
+              render: (v) => (v ? <span className="text-blue-600">✓</span> : '—'),
+            },
+            { key: 'started_at', header: 'Started', render: (v) => fmtTime(v) },
+            { key: 'completed_at', header: 'Completed', render: (v) => fmtTime(v) },
+            { key: 'records_seen', header: 'Seen', render: (v) => v ?? '—' },
+            { key: 'records_written', header: 'Written', render: (v) => v ?? '—' },
+            {
+              key: 'skip_reason',
+              header: isErrors ? 'Error / skip' : 'Skip reason',
+              render: (v, row) => {
+                const msg = v || row.error || '—';
+                return (
+                  <span
+                    className="block max-w-xs truncate text-xs text-slate-500"
+                    title={msg}
+                  >
+                    {msg}
+                  </span>
+                );
+              },
+            },
+          ]}
+          rows={items.map((r, i) => ({ ...r, id: r.run_id || String(i) }))}
+          empty={`No ${isErrors ? 'errors' : 'runs'} recorded yet.`}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Panel root ────────────────────────────────────────────────────────────────
+
+export default function ScraperOpsPanel() {
+  const [tab, setTab] = useState('overview');
+
+  return (
+    <SectionCard
+      title="Scraper Operations"
+      subtitle="Monitor and control the v2 ingestion pipeline"
+    >
+      {/* Tab bar */}
+      <div className="mb-5 flex flex-wrap border-b border-slate-200">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setTab(t.id)}
+            className={`-mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
+              tab === t.id
+                ? 'border-blue-600 text-blue-700'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'overview' && <OverviewTab />}
+      {tab === 'run' && <ManualRunTab />}
+      {tab === 'scheduler' && <SchedulerTab />}
+      {tab === 'runs' && <RunsTab mode="runs" />}
+      {tab === 'errors' && <RunsTab mode="errors" />}
+    </SectionCard>
+  );
+}

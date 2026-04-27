@@ -118,15 +118,15 @@ All required fields (`full_name`, `county`, `source`, `scraped_at`,
 
 **Read-switchover risks remaining after compatibility fields added:**
 
-| Risk | Status |
-|---|---|
-| `booked_at` absent from v2 | ✅ Fixed — alias added |
-| `county_display` missing | ✅ Fixed — `"Galveston"` alias added |
-| `charge_description` missing | ✅ Fixed — first-charge string added |
-| `status` / `facility` / `released_at` absent | ⚠ Still missing — requires detail-page scraper changes |
-| `booking_age_category` / `booking_priority` absent | ⚠ Still missing — compute from `booking_date` |
-| `county` case mismatch (legacy `"Galveston"` vs v2 `"galveston"`) | ⚠ Must update dashboard filter strings |
-| V2 volume too low (5 docs) | ⚠ Enable staging cron first |
+| Risk                                                              | Status                                                 |
+| ----------------------------------------------------------------- | ------------------------------------------------------ |
+| `booked_at` absent from v2                                        | ✅ Fixed — alias added                                 |
+| `county_display` missing                                          | ✅ Fixed — `"Galveston"` alias added                   |
+| `charge_description` missing                                      | ✅ Fixed — first-charge string added                   |
+| `status` / `facility` / `released_at` absent                      | ⚠ Still missing — requires detail-page scraper changes |
+| `booking_age_category` / `booking_priority` absent                | ⚠ Still missing — compute from `booking_date`          |
+| `county` case mismatch (legacy `"Galveston"` vs v2 `"galveston"`) | ⚠ Must update dashboard filter strings                 |
+| V2 volume too low (5 docs)                                        | ⚠ Enable staging cron first                            |
 
 ---
 

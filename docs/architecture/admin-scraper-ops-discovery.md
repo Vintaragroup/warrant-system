@@ -5,16 +5,16 @@
 
 ## Implementation Status
 
-| Component | Status | Location |
-|---|---|---|
-| `scheduler/config.py` | ✅ Implemented | `services/warrantdb-pipeline/scheduler/config.py` |
-| `scheduler/should_run.py` | ✅ Implemented | `services/warrantdb-pipeline/scheduler/should_run.py` |
-| `scheduler/audit.py` | ✅ Implemented | `services/warrantdb-pipeline/scheduler/audit.py` |
-| `run_ingestion_v2.py` | ✅ Updated | Added `--trigger`, `--force`, `--created-by`, `--respect-schedule` flags |
-| `routes/adminIngestion.js` | ✅ Implemented | `apps/dashboard/server/src/routes/adminIngestion.js` |
-| Route mounted in `index.js` | ✅ Done | `/api/admin/ingestion` with `requireAuth` + `requireAdmin` |
-| `SCHEDULING.md` | ✅ Updated | Mongo scheduler config section added |
-| Frontend Admin UI | ❌ Pending | See §5 for recommended UI spec |
+| Component                   | Status         | Location                                                                 |
+| --------------------------- | -------------- | ------------------------------------------------------------------------ |
+| `scheduler/config.py`       | ✅ Implemented | `services/warrantdb-pipeline/scheduler/config.py`                        |
+| `scheduler/should_run.py`   | ✅ Implemented | `services/warrantdb-pipeline/scheduler/should_run.py`                    |
+| `scheduler/audit.py`        | ✅ Implemented | `services/warrantdb-pipeline/scheduler/audit.py`                         |
+| `run_ingestion_v2.py`       | ✅ Updated     | Added `--trigger`, `--force`, `--created-by`, `--respect-schedule` flags |
+| `routes/adminIngestion.js`  | ✅ Implemented | `apps/dashboard/server/src/routes/adminIngestion.js`                     |
+| Route mounted in `index.js` | ✅ Done        | `/api/admin/ingestion` with `requireAuth` + `requireAdmin`               |
+| `SCHEDULING.md`             | ✅ Updated     | Mongo scheduler config section added                                     |
+| Frontend Admin UI           | ❌ Pending     | See §5 for recommended UI spec                                           |
 
 ---
 
@@ -22,11 +22,11 @@
 
 ### Routes (`apps/dashboard/src/App.jsx`)
 
-| Path | Component | Guard |
-|---|---|---|
-| `/admin` | `Admin.jsx` | `RequireAuth` |
-| `/auth/admin-users` | `AdminUserManagement.tsx` | Session |
-| `/auth/profile-settings` | `ProfileSettings.tsx` | Session |
+| Path                     | Component                 | Guard         |
+| ------------------------ | ------------------------- | ------------- |
+| `/admin`                 | `Admin.jsx`               | `RequireAuth` |
+| `/auth/admin-users`      | `AdminUserManagement.tsx` | Session       |
+| `/auth/profile-settings` | `ProfileSettings.tsx`     | Session       |
 
 ### Admin nav tab gate (`src/layouts/AppLayout.jsx`)
 
@@ -34,12 +34,12 @@ The Admin tab renders only when `currentUser?.roles?.includes('Admin')` is true 
 
 ### Admin page today (`src/pages/Admin.jsx`)
 
-| Section | Data | Wired? |
-|---|---|---|
+| Section         | Data                                                   | Wired?                      |
+| --------------- | ------------------------------------------------------ | --------------------------- |
 | Automation jobs | Hard-coded static array (including `scrape:galveston`) | No — buttons have no action |
-| Integrations | Hard-coded static array | No |
-| Users & roles | Hard-coded static array | No |
-| Data freshness | Live via `useCases()` hook | Yes |
+| Integrations    | Hard-coded static array                                | No                          |
+| Users & roles   | Hard-coded static array                                | No                          |
+| Data freshness  | Live via `useCases()` hook                             | Yes                         |
 
 **Finding**: The Admin page is a UI shell. No scraper controls, no real-time status, no scheduling UI, and no backend connection for any automation section exists.
 
@@ -53,8 +53,10 @@ The Admin tab renders only when `currentUser?.roles?.includes('Admin')` is true 
 ### Existing feature flag pattern (`server/src/index.js`)
 
 ```js
-const USE_TIME_BUCKET_V2 = String(process.env.DISABLE_TIME_BUCKET_V2 || 'false') === 'true'
-  ? false : true;
+const USE_TIME_BUCKET_V2 =
+  String(process.env.DISABLE_TIME_BUCKET_V2 || "false") === "true"
+    ? false
+    : true;
 app.locals.flags = { USE_TIME_BUCKET_V2 };
 ```
 
@@ -66,19 +68,20 @@ Read in route handlers via `req.app?.locals?.flags?.USE_TIME_BUCKET_V2`. No runt
 
 ### Server base (`apps/dashboard/server/src/index.js`)
 
-| Mount point | Router | Auth |
-|---|---|---|
-| `/api/health` | `routes/health.js` | None |
+| Mount point      | Router                | Auth          |
+| ---------------- | --------------------- | ------------- |
+| `/api/health`    | `routes/health.js`    | None          |
 | `/api/dashboard` | `routes/dashboard.js` | `requireAuth` |
-| `/api/cases` | `routes/cases.js` | `requireAuth` |
-| `/api/admin` | ❌ does not exist | — |
-| `/api/metadata` | `routes/metadata.js` | None |
+| `/api/cases`     | `routes/cases.js`     | `requireAuth` |
+| `/api/admin`     | ❌ does not exist     | —             |
+| `/api/metadata`  | `routes/metadata.js`  | None          |
 
 No `/api/admin` mount point exists. No ingestion, scheduling, or scraper-control endpoints exist.
 
 ### Existing health endpoint (`GET /api/health`)
 
 Returns for each `simple_*` collection:
+
 - `count` (estimated)
 - `latest_normalized_at`
 - `latest_booking_date`
@@ -87,6 +90,7 @@ Returns for each `simple_*` collection:
 - Redis ping + GPS job heartbeat
 
 Does **not** return:
+
 - scrape run history
 - scraper error logs
 - v2 staging collection status
@@ -132,13 +136,13 @@ Defined in `scripts/run_pipeline.py` and `scripts/run_twice_daily.sh`. No Render
 
 ### V2 staging cron jobs (ALL currently commented out)
 
-| Render cron name | Schedule (UTC) | Sources | Collection target | Status |
-|---|---|---|---|---|
-| `v2-galveston-staging` | `*/10 13-23,0-4 * * *` | `galveston` | `v2_galveston_events` | ❌ Commented out |
-| `v2-harris-reports-staging` | `0 6 * * *` (daily at 06:00 UTC = 1 AM CT) | `harris_reports` | `v2_harris_reports` | ❌ Commented out |
-| Fort Bend lookup | — | `fortbend_lookup` | `v2_lookup_results` | 🚫 Intentionally omitted (on-demand only) |
-| Jefferson lookup | — | `jefferson_lookup` | `v2_lookup_results` | 🚫 Intentionally omitted (on-demand only) |
-| Brazoria lookup | — | `brazoria_lookup` | `v2_lookup_results` | 🚫 Disabled (network issue pending resolution) |
+| Render cron name            | Schedule (UTC)                             | Sources            | Collection target     | Status                                         |
+| --------------------------- | ------------------------------------------ | ------------------ | --------------------- | ---------------------------------------------- |
+| `v2-galveston-staging`      | `*/10 13-23,0-4 * * *`                     | `galveston`        | `v2_galveston_events` | ❌ Commented out                               |
+| `v2-harris-reports-staging` | `0 6 * * *` (daily at 06:00 UTC = 1 AM CT) | `harris_reports`   | `v2_harris_reports`   | ❌ Commented out                               |
+| Fort Bend lookup            | —                                          | `fortbend_lookup`  | `v2_lookup_results`   | 🚫 Intentionally omitted (on-demand only)      |
+| Jefferson lookup            | —                                          | `jefferson_lookup` | `v2_lookup_results`   | 🚫 Intentionally omitted (on-demand only)      |
+| Brazoria lookup             | —                                          | `brazoria_lookup`  | `v2_lookup_results`   | 🚫 Disabled (network issue pending resolution) |
 
 ### Weekend handling
 
@@ -146,18 +150,19 @@ No weekend skip logic exists in any current Render cron schedule or shell script
 
 ### Key env flags controlling v2 ingestion
 
-| Variable | Default | Effect |
-|---|---|---|
-| `USE_V2_INGESTION` | `false` | Master gate — v2 code does not run unless `true` |
-| `ENABLE_V2_GALVESTON` | `false` | Enable Galveston event feed |
-| `ENABLE_V2_HARRIS_REPORTS` | `false` | Enable Harris report ingestor |
-| `ENABLE_V2_LOOKUPS` | `false` | Enable all three lookup scrapers |
-| `DRY_RUN` | `true` | When `true`, no MongoDB writes occur |
-| `SCRAPER_AUDIT` | `true` | Enables `scrape_audit` writes (legacy only) |
+| Variable                   | Default | Effect                                           |
+| -------------------------- | ------- | ------------------------------------------------ |
+| `USE_V2_INGESTION`         | `false` | Master gate — v2 code does not run unless `true` |
+| `ENABLE_V2_GALVESTON`      | `false` | Enable Galveston event feed                      |
+| `ENABLE_V2_HARRIS_REPORTS` | `false` | Enable Harris report ingestor                    |
+| `ENABLE_V2_LOOKUPS`        | `false` | Enable all three lookup scrapers                 |
+| `DRY_RUN`                  | `true`  | When `true`, no MongoDB writes occur             |
+| `SCRAPER_AUDIT`            | `true`  | Enables `scrape_audit` writes (legacy only)      |
 
 ### Can schedules be changed at runtime without redeployment?
 
 **No.** Render cron jobs are defined entirely in `render.yaml`. Changes require:
+
 1. Edit `render.yaml`
 2. Commit and push to the deploy branch
 3. Render redeploys the service
@@ -168,16 +173,16 @@ There is no Render API or webhook available for runtime cron mutation. Any "runt
 
 ## 4. Existing Scraper Audit Data Inventory
 
-| Collection | Purpose | Populated by | Status |
-|---|---|---|---|
-| `scrape_audit` | Per-run counters, status, errors | `AuditedScraper._audit_emit()` | ✅ Exists — legacy scrapers only |
-| `report_manifest` | Tracks which Harris report files have been downloaded | `ReportIngestor` | ✅ Exists — legacy |
-| `v2_report_manifest` | Same, for v2 staging Harris runs | `run_ingestion_v2.py` | ✅ Exists when v2 Harris is run |
-| `v2_galveston_events` | Staging output for v2 Galveston | `GalvestonP2CEventFeed` | ✅ ~5 docs (low volume) |
-| `v2_harris_reports` | Staging output for v2 Harris | `HarrisReportIngestor` | Unknown |
-| `v2_lookup_results` | Staging output for all lookup scrapers | `*Lookup.lookup()` | Unknown |
-| `v2_galveston_p2c_endpoint` | Galveston POST endpoint cache | `GalvestonP2CEventFeed` | Present |
-| Admin config collection | Scraper schedules, flags | Nothing | ❌ Does not exist |
+| Collection                  | Purpose                                               | Populated by                   | Status                           |
+| --------------------------- | ----------------------------------------------------- | ------------------------------ | -------------------------------- |
+| `scrape_audit`              | Per-run counters, status, errors                      | `AuditedScraper._audit_emit()` | ✅ Exists — legacy scrapers only |
+| `report_manifest`           | Tracks which Harris report files have been downloaded | `ReportIngestor`               | ✅ Exists — legacy               |
+| `v2_report_manifest`        | Same, for v2 staging Harris runs                      | `run_ingestion_v2.py`          | ✅ Exists when v2 Harris is run  |
+| `v2_galveston_events`       | Staging output for v2 Galveston                       | `GalvestonP2CEventFeed`        | ✅ ~5 docs (low volume)          |
+| `v2_harris_reports`         | Staging output for v2 Harris                          | `HarrisReportIngestor`         | Unknown                          |
+| `v2_lookup_results`         | Staging output for all lookup scrapers                | `*Lookup.lookup()`             | Unknown                          |
+| `v2_galveston_p2c_endpoint` | Galveston POST endpoint cache                         | `GalvestonP2CEventFeed`        | Present                          |
+| Admin config collection     | Scraper schedules, flags                              | Nothing                        | ❌ Does not exist                |
 
 ### What `scrape_audit` contains today
 
@@ -212,20 +217,20 @@ Suggested tab structure (nav pills inside the Admin page):
 
 One card per source. Sources: `galveston`, `harris`, `fortbend`, `jefferson`, `brazoria`.
 
-| Column | Source | Notes |
-|---|---|---|
-| Source | `galveston` | |
-| Enabled | ✅ / ❌ | From admin config collection |
-| Collection (current) | `simple_galveston` or `v2_galveston_events` | |
-| Schedule | `*/10 13-23,0-4 * * *` | From admin config |
-| Next run (approx) | 2026-04-27 14:10 UTC | Derived client-side from cron expression |
-| Last run | 3h ago | From `scrape_audit` or v2 audit log |
-| Last success | 3h ago | |
-| Last error | 2d ago — "Connection timeout" | |
-| Records (total) | 8,412 | From collection count |
-| Records (last run) | +47 | From audit delta |
-| Stale | ⚠ / ✅ | Based on `check_v2_staging_health.py` thresholds |
-| Staging | Active / Inactive | v2 cron enabled? |
+| Column               | Source                                      | Notes                                            |
+| -------------------- | ------------------------------------------- | ------------------------------------------------ |
+| Source               | `galveston`                                 |                                                  |
+| Enabled              | ✅ / ❌                                     | From admin config collection                     |
+| Collection (current) | `simple_galveston` or `v2_galveston_events` |                                                  |
+| Schedule             | `*/10 13-23,0-4 * * *`                      | From admin config                                |
+| Next run (approx)    | 2026-04-27 14:10 UTC                        | Derived client-side from cron expression         |
+| Last run             | 3h ago                                      | From `scrape_audit` or v2 audit log              |
+| Last success         | 3h ago                                      |                                                  |
+| Last error           | 2d ago — "Connection timeout"               |                                                  |
+| Records (total)      | 8,412                                       | From collection count                            |
+| Records (last run)   | +47                                         | From audit delta                                 |
+| Stale                | ⚠ / ✅                                      | Based on `check_v2_staging_health.py` thresholds |
+| Staging              | Active / Inactive                           | v2 cron enabled?                                 |
 
 ### 5.2 Manual Run Tab
 
@@ -250,6 +255,7 @@ Output console:
 ```
 
 **Safety rules**:
+
 - Non-dry-run requires a confirmation modal: "This will write to [collection]. Are you sure?"
 - Non-dry-run requires `USE_V2_INGESTION=true` on the pipeline service — surface a warning if not set
 - Production collection writes blocked from UI initially (staging writes only)
@@ -259,13 +265,14 @@ Output console:
 
 Table with one row per (source × day) for the past 14 days:
 
-| Date | Source | Runs | Success | Failed | Records written | Last error |
-|---|---|---|---|---|---|---|
-| 2026-04-27 | galveston | 144 | 144 | 0 | +1,240 | — |
-| 2026-04-27 | harris | 1 | 1 | 0 | +86 | — |
-| 2026-04-26 | galveston | 0 | 0 | 0 | 0 | ⚠ Weekend skip |
+| Date       | Source    | Runs | Success | Failed | Records written | Last error     |
+| ---------- | --------- | ---- | ------- | ------ | --------------- | -------------- |
+| 2026-04-27 | galveston | 144  | 144     | 0      | +1,240          | —              |
+| 2026-04-27 | harris    | 1    | 1       | 0      | +86             | —              |
+| 2026-04-26 | galveston | 0    | 0       | 0      | 0               | ⚠ Weekend skip |
 
 Summary widgets:
+
 - Stale sources (> threshold since last success)
 - Sources with errors in last 24h
 - Sources with zero records in last run
@@ -326,11 +333,11 @@ Brazoria / Fort Bend / Jefferson
 
 ### Recommendation: Hybrid (env defaults + MongoDB config collection)
 
-| Layer | What is stored | When it takes effect |
-|---|---|---|
-| `render.yaml` env vars | Master feature flags (`USE_V2_INGESTION`, `ENABLE_V2_*`), Render cron schedule | Redeploy required |
-| `app.locals.flags` (server memory) | Runtime overrides (read-source toggles) | Immediately, reverts on restart |
-| `admin_config` MongoDB collection | Schedule config, pause/resume state, audit trail | Immediately (polled by in-app scheduler) |
+| Layer                              | What is stored                                                                 | When it takes effect                     |
+| ---------------------------------- | ------------------------------------------------------------------------------ | ---------------------------------------- |
+| `render.yaml` env vars             | Master feature flags (`USE_V2_INGESTION`, `ENABLE_V2_*`), Render cron schedule | Redeploy required                        |
+| `app.locals.flags` (server memory) | Runtime overrides (read-source toggles)                                        | Immediately, reverts on restart          |
+| `admin_config` MongoDB collection  | Schedule config, pause/resume state, audit trail                               | Immediately (polled by in-app scheduler) |
 
 #### `admin_config` document shape (one doc per source):
 
@@ -581,27 +588,28 @@ POST /api/admin/flags
 
 ### Auth gaps to address
 
-| Gap | Current state | Fix needed |
-|---|---|---|
-| Admin role gate on server | **Not enforced** — client-side only | Add `requireAdmin` middleware: `req.user?.roles?.includes('Admin') || 403` |
-| `/api/admin/*` mount | Does not exist | Register with `requireAuth` + `requireAdmin` |
-| Manual run endpoint | Does not exist | Block `dry_run: false` to production collections at API layer |
-| Schedule mutation | Does not exist | Write audit log entry for every change |
-| Run output in console | Not implemented | Never include `MONGO_URI`, credentials, or raw exception stacks in output |
+| Gap                       | Current state                       | Fix needed                                                                |
+| ------------------------- | ----------------------------------- | ------------------------------------------------------------------------- | --- | ---- |
+| Admin role gate on server | **Not enforced** — client-side only | Add `requireAdmin` middleware: `req.user?.roles?.includes('Admin')        |     | 403` |
+| `/api/admin/*` mount      | Does not exist                      | Register with `requireAuth` + `requireAdmin`                              |
+| Manual run endpoint       | Does not exist                      | Block `dry_run: false` to production collections at API layer             |
+| Schedule mutation         | Does not exist                      | Write audit log entry for every change                                    |
+| Run output in console     | Not implemented                     | Never include `MONGO_URI`, credentials, or raw exception stacks in output |
 
 ### Dangerous action controls
 
-| Action | Required safeguard |
-|---|---|
-| Non-dry-run manual trigger | Confirmation modal in UI + server-side check that target is a staging collection |
-| V2 read toggle ON | Prerequisite check: staging doc count ≥ threshold |
-| Pause a scraper | Confirmation modal |
-| Delete/reset audit data | Not supported from UI — ops/DBA only |
-| Expose `scrape_audit` details | Redact field values that might contain PII or credentials |
+| Action                        | Required safeguard                                                               |
+| ----------------------------- | -------------------------------------------------------------------------------- |
+| Non-dry-run manual trigger    | Confirmation modal in UI + server-side check that target is a staging collection |
+| V2 read toggle ON             | Prerequisite check: staging doc count ≥ threshold                                |
+| Pause a scraper               | Confirmation modal                                                               |
+| Delete/reset audit data       | Not supported from UI — ops/DBA only                                             |
+| Expose `scrape_audit` details | Redact field values that might contain PII or credentials                        |
 
 ### Schedule change audit trail
 
 Every write to `admin_config` should record:
+
 ```json
 {
   "updated_at": "ISO",
@@ -609,11 +617,13 @@ Every write to `admin_config` should record:
   "change": { "field": "skip_weekends", "from": false, "to": true }
 }
 ```
+
 Or append to an `admin_audit` collection for a full change log.
 
 ### Production write protection
 
 The pipeline is architecturally prevented from writing to production collections through:
+
 1. `_StagingDb` proxy in `run_ingestion_v2.py` (redirects all writes)
 2. `USE_V2_INGESTION` master gate
 3. `DRY_RUN` default true
@@ -661,17 +671,17 @@ Convert the `warrant-pipeline` worker from `sleep infinity` to a polling loop th
 
 ## 10. Risks and Safeguards
 
-| Risk | Severity | Safeguard |
-|---|---|---|
-| Admin page triggers write to production collection | Critical | Block non-staging targets at API level; never pass production collection names from UI |
-| Schedule change takes effect in Render cron (impossible) | Medium | Surface clear label: "Render cron is fixed — runtime fields only affect in-app scheduler" |
-| `scrape_audit` has no v2 records | High | Phase 1 adds v2 audit writes before UI reads are built |
-| Manual run hangs / times out | Medium | Apply `MAX_DB_MS` timeout to run endpoint; stream partial output |
-| Non-Admin user accesses admin API | High | Add server-side `requireAdmin` middleware in Phase 1 |
-| Leaked credentials in run output | Critical | Strip env vars, tokens, and connection strings from console output |
-| `admin_config` collection unavailable | Low | Fall back to env-based defaults if collection is empty |
-| V2 toggle enabled with too few docs | High | Require minimum document count check before allowing toggle |
-| Admin role assigned too broadly | Medium | Only assign Admin role explicitly; dev default is Admin (dev only) |
+| Risk                                                     | Severity | Safeguard                                                                                 |
+| -------------------------------------------------------- | -------- | ----------------------------------------------------------------------------------------- |
+| Admin page triggers write to production collection       | Critical | Block non-staging targets at API level; never pass production collection names from UI    |
+| Schedule change takes effect in Render cron (impossible) | Medium   | Surface clear label: "Render cron is fixed — runtime fields only affect in-app scheduler" |
+| `scrape_audit` has no v2 records                         | High     | Phase 1 adds v2 audit writes before UI reads are built                                    |
+| Manual run hangs / times out                             | Medium   | Apply `MAX_DB_MS` timeout to run endpoint; stream partial output                          |
+| Non-Admin user accesses admin API                        | High     | Add server-side `requireAdmin` middleware in Phase 1                                      |
+| Leaked credentials in run output                         | Critical | Strip env vars, tokens, and connection strings from console output                        |
+| `admin_config` collection unavailable                    | Low      | Fall back to env-based defaults if collection is empty                                    |
+| V2 toggle enabled with too few docs                      | High     | Require minimum document count check before allowing toggle                               |
+| Admin role assigned too broadly                          | Medium   | Only assign Admin role explicitly; dev default is Admin (dev only)                        |
 
 ---
 
@@ -680,23 +690,27 @@ Convert the `warrant-pipeline` worker from `sleep infinity` to a polling loop th
 Before any phase goes to production:
 
 **Phase 1 (backend)**
+
 - [ ] `GET /api/admin/ingestion/status` returns 200 for Admin user, 403 for non-Admin
 - [ ] `scrape_audit` query returns ≥1 legacy result for `source: galveston_jail`
 - [ ] `admin_config` seed documents created for all 5 sources
 - [ ] No credentials appear in any API response body
 
 **Phase 2 (UI overview)**
+
 - [ ] Admin page shows live job status (not static)
 - [ ] Non-Admin user does not see Admin tab
 - [ ] Non-Admin API call returns 403
 
 **Phase 3 (manual run)**
+
 - [ ] Dry-run executes without MongoDB writes (verified via `_NullDb`)
 - [ ] Confirmation modal appears before non-dry-run
 - [ ] Non-staging target rejected by API
 - [ ] Output console does not display `MONGO_URI` or auth tokens
 
 **Phase 4 (scheduler)**
+
 - [ ] `pause` sets `paused: true` in `admin_config`; `resume` reverts
 - [ ] Schedule change writes audit log entry
 - [ ] UI shows clear warning: Render cron schedule requires redeploy to change
