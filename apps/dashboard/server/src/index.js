@@ -23,6 +23,7 @@ import paymentRoutes, { stripeWebhookHandler } from './routes/payments.js';
 import enrichmentProxy from './routes/enrichmentProxy.js';
 import reportsRoutes from './routes/reports.js';
 import callQueueRoutes from './routes/callQueue.js';
+import adminIngestionRoutes from './routes/adminIngestion.js';
 import { requireAuth } from './middleware/auth.js';
 import { initQueues } from './jobs/index.js';
 
@@ -139,6 +140,7 @@ app.use('/api/payments', requireAuth, paymentRoutes);
 app.use('/api/enrichment', requireAuth, enrichmentProxy);
 app.use('/api/reports', requireAuth, reportsRoutes);
 app.use('/api/call-queue', requireAuth, callQueueRoutes);
+app.use('/api/admin/ingestion', requireAuth, adminIngestionRoutes);
 app.use('/api/metadata', metadataRoutes);
 app.use('/uploads', express.static(new URL('../uploads', import.meta.url).pathname));
 

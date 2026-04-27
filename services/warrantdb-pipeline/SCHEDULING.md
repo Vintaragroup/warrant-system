@@ -315,4 +315,150 @@ See `render.yaml` for commented-out v2 staging cron blocks.  Uncomment the
 | Brazoria network unreachable | Confirm a successful staging write on Render before scheduling |
 | Lookup scrapers not scheduled | Design enrichment-triggered invocation; lookups require a name query |
 
-````
+---
+
+## Mongo Scheduler Config (`admin_config` collection)
+
+The `scheduler/` Python package provides a runtime configuration layer that
+sits between the Render cron wake-up and the actual scraper execution.
+This allows pause/resume, skip-weekends, and interval tuning without
+requiring a `render.yaml` edit or redeployment.
+
+### How it works
+
+```
+Render cron (or crontab)  →  run_ingestion_v2.py --respect-schedule --trigger scheduled
+                                          ↓
+                              scheduler.should_run.should_run_source(db, source)
+                              reads admin_config document for the source
+                                          ↓
+                   skip?  →  write ingestion_runs record (status=skipped)  →  exit 0
+                   run?   →  create ingestion_runs record  →  execute scraper
+                                          ↓
+                              finish ingestion_runs record (status=success|failed)
+```
+
+Without `--respect-schedule`, the runner behaves exactly as before (no schedule
+check, no audit write).
+
+### Seeding default configs
+
+```bash
+# Seeds admin_config documents for all 5 sources (safe to run repeatedly)
+PYTHONPATH=$PWD MONGO_URI=... MONGO_DB=warrantdb python3 - <<'PY'
+from storage.mongo_client import get_db
+from scheduler.config import ensure_default_configs
+ensure_default_configs(get_db())
+PY
+```
+
+### Pausing and resuming a source
+
+```bash
+# Pause galveston (schedule checks will skip it)
+PYTHONPATH=$PWD MONGO_URI=... MONGO_DB=warrantdb python3 - <<'PY'
+from storage.mongo_client import get_db
+from scheduler.config import upsert_source_config
+upsert_source_config(get_db(), "galveston", {"schedule": {"paused": True}}, updated_by="ops")
+PY
+
+# Resume
+PYTHONPATH=$PWD MONGO_URI=... MONGO_DB=warrantdb python3 - <<'PY'
+from storage.mongo_client import get_db
+from scheduler.config import upsert_source_config
+upsert_source_config(get_db(), "galveston", {"schedule": {"paused": False}}, updated_by="ops")
+PY
+```
+
+Or via the Admin API (requires Admin/SuperUser role):
+
+```bash
+curl -X POST https://your-dashboard/api/admin/ingestion/schedules/galveston/pause \
+  -H "Authorization: Bearer $TOKEN"
+
+curl -X POST https://your-dashboard/api/admin/ingestion/schedules/galveston/resume \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+### Skipping weekends
+
+```bash
+PYTHONPATH=$PWD MONGO_URI=... MONGO_DB=warrantdb python3 - <<'PY'
+from storage.mongo_client import get_db
+from scheduler.config import upsert_source_config
+upsert_source_config(get_db(), "galveston", {"schedule": {"skip_weekends": True}}, updated_by="ops")
+PY
+```
+
+Via Admin API:
+
+```bash
+curl -X POST https://your-dashboard/api/admin/ingestion/config \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"source": "galveston", "patch": {"schedule": {"skip_weekends": true}}}'
+```
+
+### Setting multiple fixed run times per day (Harris-style)
+
+```bash
+PYTHONPATH=$PWD MONGO_URI=... MONGO_DB=warrantdb python3 - <<'PY'
+from storage.mongo_client import get_db
+from scheduler.config import upsert_source_config
+upsert_source_config(get_db(), "harris_reports", {
+    "schedule": {
+        "strategy": "run_times",
+        "run_times": ["01:00", "13:00"],
+        "max_runs_per_day": 2,
+    }
+}, updated_by="ops")
+PY
+```
+
+### Render cron invocation with schedule check
+
+When the v2 staging cron blocks in `render.yaml` are uncommented, change the
+`startCommand` to include `--respect-schedule --trigger scheduled`:
+
+```yaml
+startCommand: >
+  PYTHONPATH=$PWD
+  USE_V2_INGESTION=true ENABLE_V2_GALVESTON=true DRY_RUN=false
+  python3 scripts/run_ingestion_v2.py
+    --source galveston
+    --no-dry-run
+    --limit 250
+    --trigger scheduled
+    --respect-schedule
+```
+
+With this, the Render cron can fire frequently (e.g., every 5 min) and the
+application controls actual execution frequency via `interval_minutes` in
+`admin_config`.  Schedule changes take effect on the next cron tick with no
+redeployment.
+
+### Manually triggering a dry-run from the Admin API
+
+```bash
+curl -X POST https://your-dashboard/api/admin/ingestion/run \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source": "galveston",
+    "dry_run": true,
+    "limit": 5
+  }'
+```
+
+> **Warning:** Production writes from the Admin API are disabled by default.
+> To enable staging writes (not production), set `ALLOW_ADMIN_NON_DRY_RUN=true`
+> on the dashboard server AND ensure `PIPELINE_ROOT` points to the pipeline
+> directory.  Production collection writes remain blocked at the API layer.
+
+### Viewing recent run history
+
+```bash
+curl https://your-dashboard/api/admin/ingestion/runs?source=galveston&limit=20 \
+  -H "Authorization: Bearer $TOKEN"
+```
+

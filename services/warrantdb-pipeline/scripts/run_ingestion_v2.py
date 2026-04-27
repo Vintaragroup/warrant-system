@@ -417,6 +417,34 @@ def _parse_args() -> argparse.Namespace:
         default="",
         help="First name for lookup sources",
     )
+    # ── Scheduler integration flags ──────────────────────────────────────────
+    p.add_argument(
+        "--trigger",
+        choices=["manual", "scheduled", "health_check"],
+        default="manual",
+        help="What triggered this run (default: manual)",
+    )
+    p.add_argument(
+        "--force",
+        action="store_true",
+        default=False,
+        help="Force run even if source is disabled or schedule says skip",
+    )
+    p.add_argument(
+        "--created-by",
+        default="system",
+        help="Identity string recorded in the ingestion_runs audit document",
+    )
+    p.add_argument(
+        "--respect-schedule",
+        action="store_true",
+        default=False,
+        help=(
+            "Check admin_config schedule before running.  "
+            "If the schedule says skip, write a skipped ingestion_runs record "
+            "and exit 0.  Render cron jobs should pass this flag."
+        ),
+    )
     return p.parse_args()
 
 
@@ -431,34 +459,126 @@ def main() -> int:
 
     _check_feature_flags(args.source)
 
+    # ── Scheduler integration ─────────────────────────────────────────────────
+    # When --respect-schedule is passed, check admin_config before running.
+    # A real Mongo connection is always used for audit, even in dry-run mode.
+    # Audit writes happen regardless of whether scraper writes go to staging/null.
+    audit_db = None
+    run_id = None
+
+    if args.respect_schedule or args.trigger == "scheduled":
+        try:
+            from storage.mongo_client import get_db  # noqa: PLC0415
+            audit_db = get_db()
+        except Exception as exc:
+            print(
+                f"[v2] WARNING: could not connect to Mongo for scheduler check: {exc}\n"
+                "     Falling back to run-without-schedule-check.",
+                file=sys.stderr,
+            )
+            audit_db = None
+
+    if args.respect_schedule and audit_db is not None:
+        from scheduler.should_run import should_run_source  # noqa: PLC0415
+        from scheduler.audit import create_run, finish_run  # noqa: PLC0415
+
+        try:
+            should_run, skip_reason = should_run_source(
+                audit_db,
+                source=args.source,
+                trigger=args.trigger,
+                force=args.force,
+            )
+        except Exception as exc:
+            print(
+                f"[v2] WARNING: scheduler check failed: {exc}\n"
+                "     Falling back to run-without-schedule-check.",
+                file=sys.stderr,
+            )
+            audit_db = None
+            should_run = True
+            skip_reason = None
+
+        if not should_run:
+            print(f"[v2] SKIP source={args.source} reason={skip_reason!r}")
+            # Record the skip so the admin UI and daily monitor can show it
+            skip_run_id = create_run(
+                audit_db,
+                source=args.source,
+                trigger=args.trigger,
+                mode="staging",
+                dry_run=dry_run,
+                created_by=args.created_by,
+                command=f"run_ingestion_v2.py --source {args.source} --trigger {args.trigger}",
+            )
+            finish_run(audit_db, skip_run_id, status="skipped", skip_reason=skip_reason)
+            return 0
+
+        # Create audit record before execution (only if Mongo is still reachable)
+        if audit_db is not None:
+            run_id = create_run(
+                audit_db,
+                source=args.source,
+                trigger=args.trigger,
+                mode="staging",
+                dry_run=dry_run,
+                created_by=args.created_by,
+                command=f"run_ingestion_v2.py --source {args.source} --trigger {args.trigger} --limit {args.limit}",
+            )
+            print(f"[v2] run_id={run_id} source={args.source} trigger={args.trigger}")
+
+    # ── Scraper execution ─────────────────────────────────────────────────────
     if dry_run:
         db = _NullDb()
         print(f"[v2] dry-run mode — source={args.source} limit={args.limit}")
     else:
         from storage.mongo_client import get_db  # noqa: PLC0415
-        real_db = get_db()
+        real_db = audit_db if audit_db is not None else get_db()
         db = _StagingDb(real_db)
         print(f"[v2] staging-write mode — source={args.source} limit={args.limit}")
         print(f"[v2] staging map: {_STAGING_MAP}")
 
-    if args.source == "galveston":
-        return run_galveston(db, dry_run=dry_run, limit=args.limit)
-    elif args.source == "harris_reports":
-        return run_harris_reports(db, dry_run=dry_run, limit=args.limit)
-    else:
-        if not args.last_name:
-            print(
-                f"[v2] ERROR: --last-name is required for {args.source}",
-                file=sys.stderr,
-            )
-            return 1
-        return run_lookup(
-            source=args.source,
-            db=db,
-            dry_run=dry_run,
-            last_name=args.last_name,
-            first_name=args.first_name,
+    exit_code = 0
+    run_error: str | None = None
+
+    try:
+        if args.source == "galveston":
+            exit_code = run_galveston(db, dry_run=dry_run, limit=args.limit)
+        elif args.source == "harris_reports":
+            exit_code = run_harris_reports(db, dry_run=dry_run, limit=args.limit)
+        else:
+            if not args.last_name:
+                print(
+                    f"[v2] ERROR: --last-name is required for {args.source}",
+                    file=sys.stderr,
+                )
+                exit_code = 1
+            else:
+                exit_code = run_lookup(
+                    source=args.source,
+                    db=db,
+                    dry_run=dry_run,
+                    last_name=args.last_name,
+                    first_name=args.first_name,
+                )
+    except Exception as exc:
+        run_error = str(exc)
+        exit_code = 1
+        print(f"[v2] UNHANDLED ERROR: {exc}", file=sys.stderr)
+
+    # ── Finish audit record ───────────────────────────────────────────────────
+    if run_id is not None and audit_db is not None:
+        from scheduler.audit import finish_run  # noqa: PLC0415
+        status = "success" if exit_code == 0 else "failed"
+        finish_run(
+            audit_db,
+            run_id=run_id,
+            status=status,
+            error=run_error,
         )
+        print(f"[v2] audit record updated: run_id={run_id} status={status}")
+
+    return exit_code
 
 
 if __name__ == "__main__":

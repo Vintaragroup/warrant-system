@@ -127,6 +127,18 @@ def _source_id(detail_url: str) -> str:
     return sha1(_normalize_detail_url(detail_url).encode()).hexdigest()[:12]
 
 
+def _first_charge_desc(charges: list) -> Optional[str]:
+    """Return the description of the first charge as a plain string."""
+    for c in charges:
+        if isinstance(c, dict):
+            desc = c.get("description") or c.get("charge") or c.get("offense")
+            if desc:
+                return str(desc).strip()
+        elif isinstance(c, str) and c.strip():
+            return c.strip()
+    return None
+
+
 def _parse_date(s: Optional[str]) -> Optional[str]:
     if not s:
         return None
@@ -375,36 +387,50 @@ class GalvestonP2CEventFeed(EventFeedScraper):
                 "scraped_date": scraped_date,
             }
 
+        # Extract computed values used by both canonical and compat fields
+        booking_date = _parse_date(raw.get("arrest_date") or raw.get("booking_date"))
+        charges      = raw.get("charges") or []
+
         event = EventRecord({
             # ── Identity ──
-            "full_name": full_name,
-            "last_name": raw.get("last_name") or None,
-            "first_name": raw.get("first_name") or None,
-            "dob": raw.get("dob") or None,
-            "race": raw.get("race") or None,
-            "sex": raw.get("sex") or None,
-            "age": raw.get("age") or None,
+            "full_name":   full_name,
+            "last_name":   raw.get("last_name")  or None,
+            "first_name":  raw.get("first_name") or None,
+            "dob":         raw.get("dob")  or None,
+            "race":        raw.get("race") or None,
+            "sex":         raw.get("sex")  or None,
+            "age":         raw.get("age")  or None,
 
             # ── Booking ──
             "booking_number": booking_number,
-            "jacket_number": jacket_number,
-            "booking_date": _parse_date(raw.get("arrest_date") or raw.get("booking_date")),
-            "agency": raw.get("agency") or None,
+            "jacket_number":  jacket_number,
+            "booking_date":   booking_date,
+            "agency":         raw.get("agency") or None,
 
             # ── Legal ──
-            "charges": raw.get("charges") or [],
-            "bond_amount": raw.get("bond_amount") or raw.get("total_bond") or None,
+            "charges":           charges,
+            "bond_amount":       raw.get("bond_amount") or raw.get("total_bond") or None,
+            "charge_description": _first_charge_desc(charges),
 
             # ── Source ──
-            "county": self.COUNTY,
-            "source": self.SOURCE,
-            "source_id": source_id,
+            "county":     self.COUNTY,
+            "source":     self.SOURCE,
+            "source_id":  source_id,
             "source_url": norm_url,
 
             # ── Timestamps ──
-            "scraped_at": raw.get("_scraped_at") or self._scraped_at,
+            "scraped_at":  raw.get("_scraped_at") or self._scraped_at,
             "observed_at": _parse_date(raw.get("arrest_date")),  # best proxy for when event occurred
             # ingested_at set by store_event()
+
+            # ── Compatibility aliases (backward-compat for dashboard/API reads) ──
+            # Do NOT remove or rename v2-native fields above.
+            # These aliases allow dashboard queries written against legacy schema
+            # to work without modification during the read-path transition.
+            "booked_at":       booking_date,   # alias of booking_date (ISO string)
+            "event_date":      booking_date,   # alias of best available event date
+            "county_display":  "Galveston",    # title-case for UI display
+            "county_normalized": self.COUNTY,  # explicit lowercase alias (= county)
 
             # ── Dedup key (stable — never uses invid / sort-position) ──
             "_upsert_key": upsert_key,

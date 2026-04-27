@@ -121,25 +121,92 @@ def smoke_galveston() -> bool:
         "race":           "W",
         "sex":            "M",
         "age":            38,
-        "person_id":      "TEST-001",
+        "person_id":      "TEST-001",   # P2C invid — must NOT appear in _upsert_key
         "booking_number": "B20240001",
         "booking_date":   "2024-01-15",
         "arrest_date":    "2024-01-15",
         "agency":         "GCSO",
         "charges":        [{"description": "TEST CHARGE"}],
+        "bond_amount":    500.00,
     }
     try:
         event = feed.normalize_event(fake_raw)
         if event is None:
             ok = _check("galveston: normalize_event not None", False, "returned None")
         else:
-            required = ["county", "source", "full_name", "scraped_at", "source_id", "_upsert_key"]
-            ok = _validate_fields(dict(event), required, "galveston: normalize_event fields") and ok
+            d = dict(event)
+
+            # Canonical v2 fields
+            canonical = [
+                "county", "source", "full_name", "scraped_at",
+                "source_id", "_upsert_key", "booking_number", "booking_date",
+                "charges", "bond_amount",
+            ]
+            ok = _validate_fields(d, canonical, "galveston: canonical v2 fields") and ok
+
+            # Compatibility alias fields added for read-path transition
+            compat = [
+                "booked_at",          # alias of booking_date
+                "event_date",         # alias of best event date
+                "county_display",     # "Galveston" (title-case for UI)
+                "county_normalized",  # "galveston" (lowercase)
+                "charge_description", # first charge as plain string
+            ]
+            ok = _validate_fields(d, compat, "galveston: compatibility alias fields") and ok
+
+            # booked_at must equal booking_date (both ISO strings)
+            ok = _check(
+                "galveston: booked_at == booking_date",
+                d.get("booked_at") == d.get("booking_date"),
+                f"booked_at={d.get('booked_at')!r} booking_date={d.get('booking_date')!r}",
+            ) and ok
+
+            # county_display must be title-case
+            ok = _check(
+                "galveston: county_display == 'Galveston'",
+                d.get("county_display") == "Galveston",
+                repr(d.get("county_display")),
+            ) and ok
+
+            # county_normalized must be lowercase
+            ok = _check(
+                "galveston: county_normalized == 'galveston'",
+                d.get("county_normalized") == "galveston",
+                repr(d.get("county_normalized")),
+            ) and ok
+
+            # charge_description must be the first charge string
+            ok = _check(
+                "galveston: charge_description == 'TEST CHARGE'",
+                d.get("charge_description") == "TEST CHARGE",
+                repr(d.get("charge_description")),
+            ) and ok
+
+            # booking_number must be unchanged
+            ok = _check(
+                "galveston: booking_number unchanged",
+                d.get("booking_number") == "B20240001",
+                repr(d.get("booking_number")),
+            ) and ok
+
+            # _upsert_key must be a dict and must NOT reference person_id/invid
+            upsert_key = d.get("_upsert_key") or {}
             ok = _check(
                 "galveston: _upsert_key is dict",
-                isinstance(event.get("_upsert_key"), dict),
-                str(event.get("_upsert_key")),
+                isinstance(upsert_key, dict),
+                str(upsert_key),
             ) and ok
+            ok = _check(
+                "galveston: _upsert_key does not use invid/person_id",
+                "person_id" not in upsert_key and "invid" not in upsert_key,
+                f"keys: {list(upsert_key.keys())}",
+            ) and ok
+            ok = _check(
+                "galveston: _upsert_key uses booking_number (preferred key)",
+                "booking_number" in upsert_key,
+                f"keys: {list(upsert_key.keys())}",
+            ) and ok
+
     except Exception as exc:
         ok = _check("galveston: normalize_event", False, str(exc)) and ok
 
