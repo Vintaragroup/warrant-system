@@ -37,7 +37,7 @@ RUN npm ci
 # Use a venv to avoid PEP 668 system-package restrictions on newer Alpine images.
 COPY services/warrantdb-pipeline/requirements.txt /tmp/pipeline-requirements.txt
 RUN python3 -m venv /pipeline-venv \
- && /pipeline-venv/bin/pip install --no-cache-dir -r /tmp/pipeline-requirements.txt
+    && /pipeline-venv/bin/pip install --no-cache-dir -r /tmp/pipeline-requirements.txt
 
 # Put the venv's bin dir first so `python3` and `pip3` resolve to the venv.
 ENV PATH="/pipeline-venv/bin:$PATH"
