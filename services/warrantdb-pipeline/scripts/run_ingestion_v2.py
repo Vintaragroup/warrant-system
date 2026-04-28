@@ -172,11 +172,12 @@ def run_galveston(db, dry_run: bool, limit: int) -> int:
                 warn += 1
             else:
                 ok += 1
-            print(f"  [{status}] {json.dumps(
+            event_str = json.dumps(
                 {k: v for k, v in event.items() if k != '_upsert_key'},
                 default=str,
                 indent=2,
-            )}")
+            )
+            print(f"  [{status}] {event_str}")
         print(f"[galveston] dry-run summary: ok={ok} warn={warn} skip={skip}")
         return 0
 
@@ -232,11 +233,12 @@ def run_harris_reports(db, dry_run: bool, limit: int) -> int:
                     warn += 1
                 else:
                     ok += 1
-                print(f"  [{status}] {json.dumps(
+                record_str = json.dumps(
                     {k: v for k, v in record.items() if k not in ('_upsert_key', '_collection')},
                     default=str,
                     indent=2,
-                )}")
+                )
+                print(f"  [{status}] {record_str}")
             print(f"  sample: ok={ok} warn={warn}")
         return 0
 
@@ -328,11 +330,12 @@ def run_lookup(
         required = ["county", "source", "scraped_at", "full_name"]
         missing = [f for f in required if not r.get(f)]
         status = f"WARN missing={missing}" if missing else "OK"
-        print(f"  [{status}] result[{i}]: {json.dumps(
+        result_str = json.dumps(
             {k: v for k, v in r.items() if k not in ('raw', '_upsert_key')},
             default=str,
             indent=2,
-        )}")
+        )
+        print(f"  [{status}] result[{i}]: {result_str}")
     return 0
 
 

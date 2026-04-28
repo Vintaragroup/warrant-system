@@ -9,25 +9,25 @@
 
 ## Summary Table
 
-| Source | Status | Raw Rows | Normalized | Root Cause (if degraded/failed) | Priority Fix |
-|---|---|---|---|---|---|
-| `galveston` | ⚠️ DEGRADED | 0 | 0 | Playwright not installed in Docker image; P2C roster requires browser session cookie | HIGH |
-| `harris_reports` | ✅ HEALTHY | 240 (1 report) | 5 sampled OK | — | — |
-| `fortbend_lookup` | ✅ HEALTHY | 8 (RODRIGUEZ) | 8 OK | — | — |
-| `jefferson_lookup` | ⚠️ DEGRADED | 0 | 0 | Site migrated to Next.js SPA; old ASP.NET form-POST scraper can no longer parse results | HIGH |
-| `brazoria_lookup` | ❌ FAILED | 0 | 0 | `pubweb.brazoriacountytx.gov:443` connection refused (DNS resolves, port closed/firewalled) | CRITICAL |
+| Source             | Status      | Raw Rows       | Normalized   | Root Cause (if degraded/failed)                                                             | Priority Fix |
+| ------------------ | ----------- | -------------- | ------------ | ------------------------------------------------------------------------------------------- | ------------ |
+| `galveston`        | ✅ HEALTHY  | 1121           | 5 sampled OK | Fixed: base image switched to `node:20-slim`; Playwright + Chromium installed via `--with-deps` | —            |
+| `harris_reports`   | ✅ HEALTHY  | 240 (1 report) | 5 sampled OK | —                                                                                           | —            |
+| `fortbend_lookup`  | ✅ HEALTHY  | 8 (RODRIGUEZ)  | 8 OK         | —                                                                                           | —            |
+| `jefferson_lookup` | ⚠️ DEGRADED | 0              | 0            | Site migrated to Next.js SPA; old ASP.NET form-POST scraper can no longer parse results     | HIGH         |
+| `brazoria_lookup`  | ❌ FAILED   | 0              | 0            | `pubweb.brazoriacountytx.gov:443` connection refused (DNS resolves, port closed/firewalled) | CRITICAL     |
 
 ---
 
 ## Promotion Readiness
 
-| Source | Admin Manual Dry-Run | Staging Non-Dry-Run | Scheduled Staging | Production Promotion |
-|---|---|---|---|---|
-| `galveston` | ⚠️ Runs but 0 data | ❌ Not until Playwright fixed | ❌ | ❌ |
-| `harris_reports` | ✅ Ready | ✅ Ready | ✅ Ready | ✅ Ready |
-| `fortbend_lookup` | ✅ Ready | ✅ Ready | ❌ Lookup only — no full schedule | ❌ Not a scheduled source |
-| `jefferson_lookup` | ⚠️ Runs but 0 data | ❌ Not until scraper rewritten | ❌ | ❌ |
-| `brazoria_lookup` | ❌ Site down | ❌ Site down | ❌ | ❌ |
+| Source             | Admin Manual Dry-Run | Staging Non-Dry-Run            | Scheduled Staging                 | Production Promotion      |
+| ------------------ | -------------------- | ------------------------------ | --------------------------------- | ------------------------- |
+| `galveston`        | ✅ Ready             | ✅ Ready                       | ✅ Ready                          | ✅ Ready                  |
+| `harris_reports`   | ✅ Ready             | ✅ Ready                       | ✅ Ready                          | ✅ Ready                  |
+| `fortbend_lookup`  | ✅ Ready             | ✅ Ready                       | ❌ Lookup only — no full schedule | ❌ Not a scheduled source |
+| `jefferson_lookup` | ⚠️ Runs but 0 data   | ❌ Not until scraper rewritten | ❌                                | ❌                        |
+| `brazoria_lookup`  | ❌ Site down         | ❌ Site down                   | ❌                                | ❌                        |
 
 ---
 
@@ -37,19 +37,22 @@
 
 ### 1. `galveston`
 
-**Status:** ⚠️ DEGRADED — 0 rows, Playwright dependency missing
+**Status:** ✅ HEALTHY — 1121 rows fetched, 5 sampled OK (re-validated 2026-04-27 after Playwright fix)
 
 #### Command Run (Docker exec)
+
 ```
 PYTHONPATH=/pipeline python3 /pipeline/scripts/run_ingestion_v2.py \
   --source galveston --dry-run --limit 5 --trigger manual
 ```
 
 #### Admin UI Run
+
 Source: `galveston`, Limit: `5`, Dry-run: checked  
 Result: `success` badge — command executed, 0 rows
 
-#### Stdout
+#### Stdout (initial — Playwright missing)
+
 ```
 [v2] dry-run mode — source=galveston limit=5
 [galveston] dry-run — fetching events (limit=5)
@@ -63,8 +66,23 @@ Result: `success` badge — command executed, 0 rows
 [galveston] dry-run summary: ok=0 warn=0 skip=0
 ```
 
+#### Stdout (after fix — Playwright working)
+
+```
+[v2] dry-run mode — source=galveston limit=5
+[galveston] dry-run — fetching events (limit=5)
+[galv] discovering P2C endpoint via Playwright …
+[galv] fetching roster from https://p2c.galvestoncountytx.gov/jqHandler.ashx?op=s (rows=5000)
+[galv] roster: 1121 rows
+[galv] detail pages to fetch: 0
+[galveston] fetched 1121 raw rows
+[galveston] dry-run summary: ok=5 warn=0 skip=0
+```
+
 #### Network Diagnostic
+
 Direct HTTP probe of P2C endpoint from inside Docker (SSL verify disabled):
+
 ```
 status: 200  bytes: 48
 body: {"total":"0","page":"1","records":"0","rows":[]}
@@ -75,18 +93,21 @@ The endpoint is **reachable and returns HTTP 200**, but the `rows` array is empt
 Additionally, the standard SSL certificate chain is not trusted inside the Docker Alpine container (`SSL: CERTIFICATE_VERIFY_FAILED`), requiring `ssl._create_unverified_context()` to connect at all.
 
 #### Root Cause Analysis
+
 1. **Playwright not installed** — `ModuleNotFoundError: No module named 'playwright'` confirmed inside container
 2. **Browser binaries absent** — even if pip-installed, Chromium/Firefox would need system deps (not present in Alpine base)
 3. **Hardcoded fallback returns empty** — roster endpoint requires session cookie established by browser page load
 4. **SSL CA bundle incomplete** — Alpine container missing CA certificates for `galvestoncountytx.gov`
 
 #### Recommended Fix
+
 ```dockerfile
 # In services/warrantdb-pipeline/Dockerfile (or docker-compose build args)
 RUN pip install playwright && playwright install chromium --with-deps
 # OR: install system certs
 RUN apk add --no-cache ca-certificates && update-ca-certificates
 ```
+
 If Playwright is not feasible for the Docker image size/complexity, investigate whether P2C offers an API key or alternative unauthenticated endpoint.
 
 ---
@@ -96,16 +117,19 @@ If Playwright is not feasible for the Docker image size/complexity, investigate 
 **Status:** ✅ HEALTHY — 240 rows parsed from 1 CSV report
 
 #### Command Run (Docker exec)
+
 ```
 PYTHONPATH=/pipeline python3 /pipeline/scripts/run_ingestion_v2.py \
   --source harris_reports --dry-run --limit 1 --trigger manual
 ```
 
 #### Admin UI Run
+
 Source: `harris_reports`, Limit: `1`, Dry-run: checked  
 Result: `success` badge
 
 #### Stdout Summary
+
 ```
 [harris] found 7 CSV reports on datasets page
 [harris] downloading: 04-26-26-bond.txt (bond, Civil)
@@ -115,6 +139,7 @@ Result: `success` badge
 ```
 
 #### Sample Normalized Record
+
 ```json
 {
   "county": "harris",
@@ -131,6 +156,7 @@ Result: `success` badge
 ```
 
 #### Notes
+
 - 7 CSV reports available (bond, warrant, bail bond types across Criminal/Civil groups)
 - With `--limit 1` only the most recent bond report was downloaded
 - All fields normalize correctly including `bond_amount`, `needs_bond_help`, `offense`
@@ -144,16 +170,19 @@ Result: `success` badge
 **Status:** ✅ HEALTHY — 8 results for RODRIGUEZ, full charge detail
 
 #### Command Run (Docker exec)
+
 ```
 PYTHONPATH=/pipeline python3 /pipeline/scripts/run_ingestion_v2.py \
   --source fortbend_lookup --dry-run --last-name RODRIGUEZ --limit 5 --trigger manual
 ```
 
 #### Admin UI Run
+
 Source: `fortbend_lookup`, Last Name: `RODRIGUEZ`, Limit: `5`, Dry-run: checked  
 Result: `success` badge, stdout shows charge/bail JSON objects
 
 #### Stdout Summary
+
 ```
 [fortbend] dry-run — searching 'RODRIGUEZ, '
 [fortbend] searching: https://jailinq.fortbendcountytx.gov/?LastName=RODRIGUEZ&SearchButton=Search
@@ -162,14 +191,24 @@ Result: `success` badge, stdout shows charge/bail JSON objects
 ```
 
 #### Sample Normalized Record
+
 ```json
 {
   "full_name": "RODRIGUEZ, AUSTIN NICHOLAS",
   "booking_number": "2510556",
   "charges": [
     { "charge_description": "DWI", "lvl": "MB", "bail_amount": "$0.00" },
-    { "charge_description": "DWI BAC>=0.15 (B/R)", "bail_amount": "$8000.00", "bail_amount_int": 8000 },
-    { "charge_description": "STALKING", "lvl": "F3", "bail_amount": "$50000.00", "bail_amount_int": 50000 }
+    {
+      "charge_description": "DWI BAC>=0.15 (B/R)",
+      "bail_amount": "$8000.00",
+      "bail_amount_int": 8000
+    },
+    {
+      "charge_description": "STALKING",
+      "lvl": "F3",
+      "bail_amount": "$50000.00",
+      "bail_amount_int": 50000
+    }
   ],
   "bond_amount": 58000,
   "detail_url": "https://jailinq.fortbendcountytx.gov/Inmate/View_Inmate?VarJailID=P00241684",
@@ -179,6 +218,7 @@ Result: `success` badge, stdout shows charge/bail JSON objects
 ```
 
 #### Notes
+
 - Returns detail-page data including per-charge bail amounts, warrant numbers, JUS codes
 - `booking_date` and `dob` are null (not exposed on list page without additional detail fetch)
 - This is a **lookup-only source** — requires a last name to be supplied; cannot be run as a full scheduled county scrape
@@ -191,6 +231,7 @@ Result: `success` badge, stdout shows charge/bail JSON objects
 **Status:** ⚠️ DEGRADED — 0 results, site migrated to Next.js SPA
 
 #### Command Run (Docker exec)
+
 ```
 PYTHONPATH=/pipeline python3 /pipeline/scripts/run_ingestion_v2.py \
   --source jefferson_lookup --dry-run --last-name SMITH --limit 5 --trigger manual
@@ -199,10 +240,12 @@ PYTHONPATH=/pipeline python3 /pipeline/scripts/run_ingestion_v2.py \
 Also retried with `--last-name JOHNSON` — same result.
 
 #### Admin UI Run
+
 Source: `jefferson_lookup`, Last Name: `SMITH`, Limit: `5`, Dry-run: checked  
 Result: `success` badge (process exited clean), 0 results in stdout
 
 #### Stdout
+
 ```
 [v2] dry-run mode — source=jefferson_lookup limit=5
 [jefferson] dry-run — searching 'SMITH, '
@@ -213,7 +256,9 @@ Result: `success` badge (process exited clean), 0 results in stdout
 ```
 
 #### Network Diagnostic
+
 Direct probe of `https://jeffersoncountytx.gov/InmateSearch` from inside Docker:
+
 - HTTP 200, 159,060 bytes
 - Response body is a **Next.js SPA bundle** (`/_next/static/chunks/` paths)
 - No `LastName` input field found in HTML (page requires JavaScript execution)
@@ -222,11 +267,13 @@ Direct probe of `https://jeffersoncountytx.gov/InmateSearch` from inside Docker:
 The scraper was built against the previous **ASP.NET MVC** site which returned server-rendered HTML with a `<form method="get" action=".../Search/List">` element. The site has been rewritten as a client-side React/Next.js app. The scraper's `requests` + `BeautifulSoup` approach cannot execute JavaScript and will never find results.
 
 #### Root Cause
+
 Jefferson County migrated `jeffersoncountytx.gov/InmateSearch` to a Next.js application. The old scraper submits GET requests to `Search/List?LastName=SMITH` expecting server-rendered result rows (`clickable-row` class), but the server now returns only the JS bundle shell.
 
 The actual inmate data is now fetched via internal API calls triggered by the browser's JavaScript runtime — likely a JSON API under `/api/` or similar.
 
 #### Recommended Fix
+
 1. Inspect browser network tab on `https://jeffersoncountytx.gov/InmateSearch` to discover the underlying JSON API endpoint
 2. Rewrite `ingestion/jefferson_jail.py` to call the JSON API directly (no BeautifulSoup needed)
 3. Alternatively, use Playwright to render the page and extract results from the DOM after hydration
@@ -241,6 +288,7 @@ This is a **scraper rewrite**, not a configuration change.
 **Status:** ❌ FAILED — source host connection refused
 
 #### Command Run (Docker exec)
+
 ```
 PYTHONPATH=/pipeline python3 /pipeline/scripts/run_ingestion_v2.py \
   --source brazoria_lookup --dry-run --last-name SMITH --first-name JOHN \
@@ -248,10 +296,12 @@ PYTHONPATH=/pipeline python3 /pipeline/scripts/run_ingestion_v2.py \
 ```
 
 #### Admin UI Run
+
 Source: `brazoria_lookup`, Last Name: `SMITH`, First Name: `JOHN`, Limit: `5`, Dry-run: checked  
 Result: `success` badge (process exited clean), 0 results, error in stdout
 
 #### Stdout
+
 ```
 [v2] dry-run mode — source=brazoria_lookup limit=5
 [brazoria] dry-run — searching 'SMITH, JOHN'
@@ -263,22 +313,24 @@ Result: `success` badge (process exited clean), 0 results, error in stdout
 
 #### Network Diagnostic
 
-| Test | Result |
-|---|---|
-| DNS from Docker | ✅ Resolves — `50.172.191.110` |
-| DNS from host machine | ✅ Resolves — `50.172.191.110` |
-| TCP port 443 from host | ❌ `connect_ex() = 51` (ECONNREFUSED) |
-| TCP port 443 from Docker | ❌ `[Errno 111] Connection refused` |
+| Test                     | Result                                |
+| ------------------------ | ------------------------------------- |
+| DNS from Docker          | ✅ Resolves — `50.172.191.110`        |
+| DNS from host machine    | ✅ Resolves — `50.172.191.110`        |
+| TCP port 443 from host   | ❌ `connect_ex() = 51` (ECONNREFUSED) |
+| TCP port 443 from Docker | ❌ `[Errno 111] Connection refused`   |
 
 DNS resolves correctly to `50.172.191.110` but **nothing is listening on port 443** at that IP. This is not a local/Docker networking issue — the host machine also gets connection refused. The failure is **deployment-wide** (the server exists but HTTPS is not accepting connections).
 
 Possible causes:
+
 - `pubweb.brazoriacountytx.gov` is offline or undergoing maintenance
 - The site moved to a different URL/subdomain
 - Web server configuration change (port 80 only, or behind a load balancer at a new IP)
 - Firewall rule blocking inbound 443
 
 #### Recommended Actions
+
 1. **Check if the site has a new URL** — try `https://www.brazoriacountytx.gov/` or search for current public jail lookup URL
 2. **Monitor for recovery** — retry in 24–48h; may be temporary downtime
 3. **If site moved**, update the base URL in `ingestion/brazoria_ingest.py` / scraper config
@@ -288,24 +340,24 @@ Possible causes:
 
 ## Docker/API Issues Found
 
-| Issue | Impact | Fix |
-|---|---|---|
-| Playwright not installed in Docker image | Galveston returns 0 rows | Add `playwright install chromium --with-deps` to Dockerfile |
-| Alpine CA bundle incomplete | SSL verify fails for galvestoncountytx.gov without `verify=False` | `apk add ca-certificates && update-ca-certificates` |
-| Jefferson scraper incompatible with Next.js SPA | 0 results always | Rewrite scraper to use JSON API or Playwright |
-| Brazoria site connection refused | Source completely unavailable | Monitor/discover new URL |
+| Issue                                           | Impact                                                            | Fix                                                         |
+| ----------------------------------------------- | ----------------------------------------------------------------- | ----------------------------------------------------------- |
+| Playwright not installed in Docker image        | Galveston returns 0 rows                                          | Add `playwright install chromium --with-deps` to Dockerfile |
+| Alpine CA bundle incomplete                     | SSL verify fails for galvestoncountytx.gov without `verify=False` | `apk add ca-certificates && update-ca-certificates`         |
+| Jefferson scraper incompatible with Next.js SPA | 0 results always                                                  | Rewrite scraper to use JSON API or Playwright               |
+| Brazoria site connection refused                | Source completely unavailable                                     | Monitor/discover new URL                                    |
 
 ---
 
 ## Priority Ranking
 
-| Priority | Source | Action |
-|---|---|---|
-| 1 — CRITICAL | `brazoria_lookup` | Identify new site URL or confirm outage; update scraper config |
-| 2 — HIGH | `jefferson_lookup` | Discover Next.js JSON API endpoint; rewrite scraper |
-| 3 — HIGH | `galveston` | Install Playwright + browser deps in Docker image |
-| 4 — NONE | `harris_reports` | No action needed — fully operational |
-| 5 — NONE | `fortbend_lookup` | No action needed — fully operational |
+| Priority     | Source             | Action                                                         |
+| ------------ | ------------------ | -------------------------------------------------------------- |
+| 1 — CRITICAL | `brazoria_lookup`  | Identify new site URL or confirm outage; update scraper config |
+| 2 — HIGH     | `jefferson_lookup` | Discover Next.js JSON API endpoint; rewrite scraper            |
+| 3 — HIGH     | `galveston`        | Install Playwright + browser deps in Docker image              |
+| 4 — NONE     | `harris_reports`   | No action needed — fully operational                           |
+| 5 — NONE     | `fortbend_lookup`  | No action needed — fully operational                           |
 
 ---
 
@@ -313,15 +365,16 @@ Possible causes:
 
 All Admin UI Manual Run tests were executed from `http://localhost:5173/admin → Scraper Operations → Manual Run`.
 
-| Source | UI Fields Used | UI Result |
-|---|---|---|
-| `galveston` | Limit=5, dry-run=on | `success` badge, 0 rows (matches CLI) |
-| `harris_reports` | Limit=1, dry-run=on | `success` badge, stdout shows 240 parsed rows |
-| `fortbend_lookup` | Last Name=RODRIGUEZ, Limit=5, dry-run=on | `success` badge, charge JSON shown in output console |
-| `jefferson_lookup` | Last Name=SMITH, Limit=5, dry-run=on | `success` badge, 0 results (matches CLI — site SPA issue) |
-| `brazoria_lookup` | Last Name=SMITH, First Name=JOHN, Limit=5, dry-run=on | `success` badge, connection refused error in stdout |
+| Source             | UI Fields Used                                        | UI Result                                                 |
+| ------------------ | ----------------------------------------------------- | --------------------------------------------------------- |
+| `galveston`        | Limit=5, dry-run=on                                   | `success` badge, 0 rows (matches CLI)                     |
+| `harris_reports`   | Limit=1, dry-run=on                                   | `success` badge, stdout shows 240 parsed rows             |
+| `fortbend_lookup`  | Last Name=RODRIGUEZ, Limit=5, dry-run=on              | `success` badge, charge JSON shown in output console      |
+| `jefferson_lookup` | Last Name=SMITH, Limit=5, dry-run=on                  | `success` badge, 0 results (matches CLI — site SPA issue) |
+| `brazoria_lookup`  | Last Name=SMITH, First Name=JOHN, Limit=5, dry-run=on | `success` badge, connection refused error in stdout       |
 
 The Admin UI correctly:
+
 - Shows Last Name (required) and First Name (optional) fields only for lookup sources
 - Enforces last-name required validation (Run button disabled until field filled)
 - Accepts first name for `brazoria_lookup`
@@ -332,12 +385,12 @@ The Admin UI correctly:
 
 ## Lookup Source Classification
 
-| Source | Type | Requires Name | Full Scheduled Scrape? | Notes |
-|---|---|---|---|---|
-| `galveston` | Jail roster | No | ✅ Yes (full county) | Requires Playwright |
-| `harris_reports` | CSV report download | No | ✅ Yes (full county) | Fully automated |
-| `fortbend_lookup` | Inmate search by name | Yes — last name required | ❌ Lookup only | Returns current inmates matching name |
-| `jefferson_lookup` | Inmate search by name | Yes — last name required | ❌ Lookup only | Scraper broken — needs rewrite |
-| `brazoria_lookup` | Inmate search by name | Yes — both first+last | ❌ Lookup only | Site currently down |
+| Source             | Type                  | Requires Name            | Full Scheduled Scrape? | Notes                                 |
+| ------------------ | --------------------- | ------------------------ | ---------------------- | ------------------------------------- |
+| `galveston`        | Jail roster           | No                       | ✅ Yes (full county)   | Requires Playwright                   |
+| `harris_reports`   | CSV report download   | No                       | ✅ Yes (full county)   | Fully automated                       |
+| `fortbend_lookup`  | Inmate search by name | Yes — last name required | ❌ Lookup only         | Returns current inmates matching name |
+| `jefferson_lookup` | Inmate search by name | Yes — last name required | ❌ Lookup only         | Scraper broken — needs rewrite        |
+| `brazoria_lookup`  | Inmate search by name | Yes — both first+last    | ❌ Lookup only         | Site currently down                   |
 
 Lookup sources (`fortbend_lookup`, `jefferson_lookup`, `brazoria_lookup`) are **on-demand only**. They are not designed for full county coverage via scheduled runs. They return detail pages with bond/charge fields for named individuals. Do not treat them as scheduled scrapes.

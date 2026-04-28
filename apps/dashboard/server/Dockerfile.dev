@@ -11,20 +11,26 @@
 # Live reload: the compose file bind-mounts ./server/src over /app/src so
 # code changes take effect on the next request without a rebuild.
 
-FROM node:20-alpine
+FROM node:20-slim
 
 WORKDIR /app
 
 # ── System dependencies ────────────────────────────────────────────────────────
-# python3, pip, and build tools (some pip packages need C compiler on alpine).
-# Note: py3-venv is bundled with python3 on Alpine 3.21+; no separate package needed.
-RUN apk add --no-cache \
+# python3, pip, and build tools.
+# Chromium + its runtime deps are installed later by `playwright install --with-deps`
+# which auto-resolves all OS-level deps on Debian/Ubuntu.
+# Note: node:20-slim is Debian Bookworm — uses apt, not apk.
+# Alpine (musl) is NOT used because playwright has no musllinux wheel.
+RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
-    py3-pip \
+    python3-pip \
+    python3-venv \
     gcc \
-    musl-dev \
     python3-dev \
-    libffi-dev
+    libffi-dev \
+    ca-certificates \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
 # ── Node dependencies ─────────────────────────────────────────────────────────
 # Build context is repo root (set in docker-compose.admin-dev.yml).
@@ -37,10 +43,16 @@ RUN npm ci
 # Use a venv to avoid PEP 668 system-package restrictions on newer Alpine images.
 COPY services/warrantdb-pipeline/requirements.txt /tmp/pipeline-requirements.txt
 RUN python3 -m venv /pipeline-venv \
-    && /pipeline-venv/bin/pip install --no-cache-dir -r /tmp/pipeline-requirements.txt
+    && /pipeline-venv/bin/pip install --no-cache-dir -r /tmp/pipeline-requirements.txt \
+    && /pipeline-venv/bin/pip install --no-cache-dir playwright
 
 # Put the venv's bin dir first so `python3` and `pip3` resolve to the venv.
 ENV PATH="/pipeline-venv/bin:$PATH"
+
+# Install Chromium and all its OS-level runtime dependencies in one step.
+# --with-deps handles apt packages automatically on Debian/Ubuntu.
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN playwright install --with-deps chromium
 
 # ── Application source ────────────────────────────────────────────────────────
 COPY apps/dashboard/server/src ./src
