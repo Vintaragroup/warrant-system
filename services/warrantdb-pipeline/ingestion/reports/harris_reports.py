@@ -114,6 +114,22 @@ def _needs_bond_help(bond_amount: Optional[int], bond_note: Optional[str]) -> bo
     return True
 
 
+_HARRIS_CASE_RE = re.compile(r'^\d{7,}$')
+
+
+def _looks_like_harris_case_number(val: Optional[str]) -> bool:
+    """Harris District Clerk case numbers are 7+ consecutive digits.
+
+    Rejects short values like '002', '003', '42' that appear in some misfel
+    CSV variants where the court/sequence number occupies c[7] instead of
+    the real case number.  Real Harris case numbers are always >= 7 digits
+    (e.g. '1234567' or '261688301010').
+    """
+    if not val:
+        return False
+    return bool(_HARRIS_CASE_RE.match(val.strip()))
+
+
 def _parse_rows(text: str) -> List[List[str]]:
     """
     Parse Harris CSV text into a list of rows (list of string cells).
@@ -457,6 +473,7 @@ class HarrisReportIngestor(ReportIngestor):
         filing_flag = None
         aux_flag    = None
         needs_help  = False
+        case_number_parse_warning: Optional[str] = None
 
         if kind == "bond":
             court_group  = _c(0)
@@ -485,13 +502,33 @@ class HarrisReportIngestor(ReportIngestor):
             bond_note    = _c(4)
             case_date    = _parse_yymmdd(_c(5))
             court_group  = _c(6)
-            case_number  = _c(7)
-            offense      = _c(8)
-            address      = _addr_line([_c(i) for i in range(9, 12)])
-            city         = _c(12)
-            state_abbr   = _c(13)
-            zip_code     = _c(14)
-            phone        = _c(15)
+            _cn7         = _c(7)
+            case_number_parse_warning: Optional[str] = None
+            if _looks_like_harris_case_number(_cn7):
+                # Standard 16-column layout: c[7] = case_number
+                case_number  = _cn7
+                offense      = _c(8)
+                address      = _addr_line([_c(i) for i in range(9, 12)])
+                city         = _c(12)
+                state_abbr   = _c(13)
+                zip_code     = _c(14)
+                phone        = _c(15)
+            else:
+                # Variant 17-column layout: c[7] = court/sequence number,
+                # c[8] = real case_number, everything from c[9] onward shifted.
+                _cn8 = _c(8)
+                case_number  = _cn8 if _looks_like_harris_case_number(_cn8) else None
+                case_number_parse_warning = f"c7={_cn7!r};c8={_cn8!r}"
+                print(
+                    f"[harris] misfel variant layout: c[7]={_cn7!r} is not a valid "
+                    f"case number — using c[8]={case_number!r} instead"
+                )
+                offense      = _c(9)
+                address      = _addr_line([_c(i) for i in range(10, 13)])
+                city         = _c(13)
+                state_abbr   = _c(14)
+                zip_code     = _c(15)
+                phone        = _c(16)
             full_name    = raw_name
             if raw_name and "," in raw_name:
                 parts      = raw_name.split(",", 1)
@@ -574,6 +611,10 @@ class HarrisReportIngestor(ReportIngestor):
             # ── Extra (nafiling) ──
             "filing_flag":   filing_flag,
             "aux_flag":      aux_flag,
+            # ── Parse warnings ──
+            **(  {"case_number_parse_warning": case_number_parse_warning}
+                 if case_number_parse_warning else {}
+              ),
             # ── Routing ──
             "_upsert_key":   upsert_key,
             "_collection":   _COLLECTION_MAP.get(kind, "harris_bond"),

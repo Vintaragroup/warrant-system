@@ -139,6 +139,13 @@ def should_run_source(
             f"run_times={run_times} at {current_hhmm} {tz_name}"
         )
 
+    if strategy == "manual":
+        # This source requires an explicit trigger — never runs on a cron heartbeat.
+        return False, (
+            f"strategy=manual for source={source!r} — "
+            "run via CLI or Admin UI with --trigger manual"
+        )
+
     return False, f"unknown schedule strategy={strategy!r}"
 
 

@@ -28,13 +28,13 @@ Note: `DRY_RUN=true` is the container default for safety. The API route override
 
 ## API Run Results
 
-| Source | HTTP | exit_code | Request params | results returned | stderr | Notes |
-|---|---|---|---|---|---|---|
-| galveston | 200 ok | 0 | `limit=2 force=true` | `stored 2 events` | — | ✅ Wrote to `v2_galveston_events` |
-| harris_reports | 200 ok | 0 | `limit=1 force=true` | `total records stored: 0` | WARN (advisory only) | ✅ All 7 reports already ingested — idempotent skip |
-| fortbend_lookup | 200 ok | 0 | `limit=2 last_name=SMITH` | 2 records printed | — | ✅ Wrote to `v2_lookup_results` |
-| jefferson_lookup | 200 ok | 0 | `limit=2 last_name=SMITH` | 2 records printed | — | ✅ Wrote to `v2_lookup_results` |
-| brazoria_lookup | 200 ok | 0 | `limit=2 last_name=SMITH first_name=JOHN` | 2 records printed | — | ✅ Wrote to `v2_lookup_results` |
+| Source           | HTTP   | exit_code | Request params                            | results returned          | stderr               | Notes                                               |
+| ---------------- | ------ | --------- | ----------------------------------------- | ------------------------- | -------------------- | --------------------------------------------------- |
+| galveston        | 200 ok | 0         | `limit=2 force=true`                      | `stored 2 events`         | —                    | ✅ Wrote to `v2_galveston_events`                   |
+| harris_reports   | 200 ok | 0         | `limit=1 force=true`                      | `total records stored: 0` | WARN (advisory only) | ✅ All 7 reports already ingested — idempotent skip |
+| fortbend_lookup  | 200 ok | 0         | `limit=2 last_name=SMITH`                 | 2 records printed         | —                    | ✅ Wrote to `v2_lookup_results`                     |
+| jefferson_lookup | 200 ok | 0         | `limit=2 last_name=SMITH`                 | 2 records printed         | —                    | ✅ Wrote to `v2_lookup_results`                     |
+| brazoria_lookup  | 200 ok | 0         | `limit=2 last_name=SMITH first_name=JOHN` | 2 records printed         | —                    | ✅ Wrote to `v2_lookup_results`                     |
 
 All responses returned `"ok": true, "status": "success"`.
 
@@ -50,11 +50,11 @@ The advisory stderr warning `ENABLE_V2_HARRIS_REPORTS is not set — running in 
 
 ## MongoDB Counts — Before / After UI Runs
 
-| Collection | Before UI runs | After UI runs | Delta |
-|---|---|---|---|
-| `v2_galveston_events` | 5 | 5 | +0 (upserts of existing docs) |
-| `v2_harris_reports` | 508 | 508 | +0 (all reports already ingested) |
-| `v2_lookup_results` | 102 | 115 | **+13 new docs** |
+| Collection            | Before UI runs | After UI runs | Delta                             |
+| --------------------- | -------------- | ------------- | --------------------------------- |
+| `v2_galveston_events` | 5              | 5             | +0 (upserts of existing docs)     |
+| `v2_harris_reports`   | 508            | 508           | +0 (all reports already ingested) |
+| `v2_lookup_results`   | 102            | 115           | **+13 new docs**                  |
 
 The +13 in `v2_lookup_results` are new SMITH-name records from jefferson and brazoria that were not present from the prior CLI runs (which used different search terms).
 
@@ -101,8 +101,8 @@ The bypass must never be set in `.env.staging`, `.env.production`, or render.yam
 
 ## Files Changed During Validation Setup
 
-| File | Change |
-|---|---|
-| `apps/dashboard/server/src/middleware/auth.js` | Added `DEV_BYPASS_AUTH` bypass block at top of `requireAuth` |
-| `.env.admin-dev` | Added `DEV_BYPASS_AUTH=true`, `ENABLE_V2_GALVESTON=true`, `ENABLE_V2_HARRIS_REPORTS=true`, `ENABLE_V2_LOOKUPS=true` |
-| `docker-compose.admin-dev.yml` | Added `ENABLE_V2_HARRIS_REPORTS`, `ENABLE_V2_LOOKUPS` env passthrough to api service |
+| File                                           | Change                                                                                                              |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `apps/dashboard/server/src/middleware/auth.js` | Added `DEV_BYPASS_AUTH` bypass block at top of `requireAuth`                                                        |
+| `.env.admin-dev`                               | Added `DEV_BYPASS_AUTH=true`, `ENABLE_V2_GALVESTON=true`, `ENABLE_V2_HARRIS_REPORTS=true`, `ENABLE_V2_LOOKUPS=true` |
+| `docker-compose.admin-dev.yml`                 | Added `ENABLE_V2_HARRIS_REPORTS`, `ENABLE_V2_LOOKUPS` env passthrough to api service                                |

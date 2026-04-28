@@ -64,6 +64,22 @@ def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _resolve_booking_date(val: str) -> str:
+    """
+    Resolve "today" / "yesterday" to a YYYY-MM-DD date string in the
+    America/Chicago (CT) timezone.  Any other value is returned unchanged.
+    """
+    if val not in ("today", "yesterday"):
+        return val
+    from zoneinfo import ZoneInfo  # noqa: PLC0415
+    ct = ZoneInfo("America/Chicago")
+    local_date = datetime.now(ct).date()
+    if val == "yesterday":
+        from datetime import timedelta  # noqa: PLC0415
+        local_date = local_date - timedelta(days=1)
+    return local_date.isoformat()
+
+
 # ── Staging collection map ───────────────────────────────────────────────────
 
 # Maps every production collection name that v2 scrapers might write to → its
@@ -193,7 +209,7 @@ def run_galveston(db, dry_run: bool, limit: int) -> int:
     return 0
 
 
-def run_harris_reports(db, dry_run: bool, limit: int) -> int:
+def run_harris_reports(db, dry_run: bool, limit: int, force_reingest: bool = False) -> int:
     """
     Download, parse, and optionally store Harris District Clerk reports.
 
@@ -264,7 +280,7 @@ def run_harris_reports(db, dry_run: bool, limit: int) -> int:
 
     def _limited_detect(force: bool = False):  # type: ignore[override]
         count = 0
-        for meta in _orig_detect(force=force):
+        for meta in _orig_detect(force=force or force_reingest):
             if count >= limit:
                 break
             yield meta
@@ -319,6 +335,10 @@ def run_lookup(
         scraper.COLLECTION = "v2_lookup_results"
 
     county_label = source.replace("_lookup", "")
+
+    # Resolve "today" / "yesterday" to an actual CT date before passing to the scraper.
+    if booking_date in ("today", "yesterday"):
+        booking_date = _resolve_booking_date(booking_date)
 
     # Jefferson supports date-mode lookup (no last_name required)
     if source == "jefferson_lookup" and booking_date and not last_name:
@@ -465,6 +485,13 @@ def _parse_args() -> argparse.Namespace:
         help="Force run even if source is disabled or schedule says skip",
     )
     p.add_argument(
+        "--force-reingest",
+        action="store_true",
+        default=False,
+        dest="force_reingest",
+        help="(harris_reports only) Re-ingest reports already recorded in the manifest",
+    )
+    p.add_argument(
         "--created-by",
         default="system",
         help="Identity string recorded in the ingestion_runs audit document",
@@ -535,7 +562,7 @@ def main() -> int:
 
         if not should_run:
             print(f"[v2] SKIP source={args.source} reason={skip_reason!r}")
-            # Record the skip so the admin UI and daily monitor can show it
+            # Record the skip so the admin UI and daily monitor can show it.
             skip_run_id = create_run(
                 audit_db,
                 source=args.source,
@@ -561,20 +588,28 @@ def main() -> int:
             )
             print(f"[v2] run_id={run_id} source={args.source} trigger={args.trigger}")
 
+        # ── Resolve default_args from config for scheduled date-mode sources ──
+        # When --respect-schedule is active and the source config declares
+        # default_args.booking_date, use it if the caller didn't supply one.
+        if audit_db is not None and not args.booking_date:
+            try:
+                from scheduler.config import get_source_config  # noqa: PLC0415
+                src_cfg = get_source_config(audit_db, args.source)
+                if src_cfg:
+                    cfg_date = src_cfg.get("default_args", {}).get("booking_date", "")
+                    if cfg_date:
+                        args.booking_date = _resolve_booking_date(cfg_date)
+                        print(f"[v2] resolved booking_date={args.booking_date!r} "
+                              f"from config default_args (was {cfg_date!r})")
+            except Exception as exc:
+                print(f"[v2] WARNING: could not resolve default_args: {exc}",
+                      file=sys.stderr)
+
     # ── Scraper execution ─────────────────────────────────────────────────────
     if dry_run:
         db = _NullDb()
         print(f"[v2] dry-run mode — source={args.source} limit={args.limit}")
     else:
-        # Hard cap: non-dry-run writes are limited to 10 records per run
-        _MAX_NON_DRY_RUN = 10
-        if args.limit > _MAX_NON_DRY_RUN:
-            print(
-                f"[v2] SAFETY CAP: limit={args.limit} exceeds max={_MAX_NON_DRY_RUN} "
-                f"for non-dry-run — capping at {_MAX_NON_DRY_RUN}",
-                file=sys.stderr,
-            )
-            args.limit = _MAX_NON_DRY_RUN
         from storage.mongo_client import get_db  # noqa: PLC0415
         real_db = audit_db if audit_db is not None else get_db()
         db = _StagingDb(real_db)
@@ -598,7 +633,7 @@ def main() -> int:
         if args.source == "galveston":
             exit_code = run_galveston(db, dry_run=dry_run, limit=args.limit)
         elif args.source == "harris_reports":
-            exit_code = run_harris_reports(db, dry_run=dry_run, limit=args.limit)
+            exit_code = run_harris_reports(db, dry_run=dry_run, limit=args.limit, force_reingest=args.force_reingest)
         else:
             booking_date = getattr(args, "booking_date", "")
             # jefferson_lookup allows either last_name or booking_date

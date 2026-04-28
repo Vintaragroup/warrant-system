@@ -1,13 +1,89 @@
-# Scheduling the Warrant Pipeline (twice daily + idempotent writes)
+# Scheduling the Warrant Pipeline
 
-This repo already includes:
+This document covers both the **legacy pipeline** (twice-daily ingest + normalize) and the **v2 staged ingestion** system (conservative scheduled runs into `v2_*` staging collections).
 
-- `scripts/run_pipeline.py` orchestrating ingestion ➜ normalize ➜ delta report
-- Upserts for persons via `BaseScraper.upsert_person()`
-- Normalized \_simple\_\_ collections with stable `_upsert_key` (idempotent)
-- Optional audit logs in `scrape_audit`
+---
 
-Below are three production-ready scheduling options. All assume Python 3.11+ and a `.env` with `MONGO_URI` and `MONGO_DB`.
+## V2 Staged Ingestion (active — staging collections only)
+
+V2 ingestion runs continuously against `v2_*` staging collections and does not touch any legacy production collection.  All schedule enforcement is handled by `scheduler/should_run.py` which reads `admin_config` at runtime — Render cron jobs act as heartbeats.
+
+### Source schedule defaults (`scheduler/config.py`)
+
+| Source | Enabled | Strategy | Cadence (CT) | max/day | Limit | Notes |
+|---|---|---|---|---|---|---|
+| `galveston` | ✅ | interval | every 15 min | 64 | 250 | All-day; writes to `v2_galveston_events` |
+| `harris_reports` | ✅ | run_times | 01:30 CT | 1 | 4 | After nightly publish; writes to `v2_harris_reports` |
+| `jefferson_lookup` | ✅ | run_times | 06:15, 12:15, 18:15 CT | 3 | 100 | booking_date="today" auto-resolved; writes to `v2_lookup_results` |
+| `brazoria_lookup` | ❌ | run_times | 07:00, 19:00 CT | 2 | 100 | Disabled — network issue unresolved; do not enable yet |
+| `fortbend_lookup` | ❌ | manual | never (cron) | 0 | 10 | Trigger via CLI or Admin UI only |
+
+### Render cron jobs (`render.yaml`)
+
+Three jobs are active:
+
+```
+v2-galveston-staging    */15 * * * *   --respect-schedule --trigger scheduled --limit 250
+v2-harris-reports-staging  0 * * * *   --respect-schedule --trigger scheduled --limit 4
+v2-jefferson-staging      15 * * * *   --respect-schedule --trigger scheduled --limit 100
+```
+
+Required env vars for all cron jobs:
+```
+USE_V2_INGESTION=true
+ENABLE_V2_GALVESTON=true       (galveston job)
+ENABLE_V2_HARRIS_REPORTS=true  (harris job)
+ENABLE_V2_LOOKUPS=true         (jefferson job)
+DRY_RUN=false
+ALLOW_ADMIN_NON_DRY_RUN=false  (Admin API remains the only non-dry-run gate)
+```
+
+### How --respect-schedule works
+
+1. `run_ingestion_v2.py --respect-schedule` calls `should_run_source(db, source, trigger="scheduled")`.
+2. If the schedule says skip, a `skipped` record is written to `ingestion_runs` and the job exits 0.
+3. If it should run, a `running` record is created, the scraper executes, and the record is updated to `success` or `failed`.
+4. `_count_runs_today()` reads `ingestion_runs` to enforce `max_runs_per_day`.
+
+### Date-mode auto-resolution
+
+For `jefferson_lookup` and `brazoria_lookup`, `default_args.booking_date = "today"` in their config.  When `--respect-schedule` is active and no `--booking-date` is provided on the CLI, the script resolves the date using `America/Chicago` timezone automatically.  `"today"` and `"yesterday"` are always resolved to `YYYY-MM-DD` before being passed to the scraper.
+
+### Observability
+
+- All runs (including skips) are recorded in the `ingestion_runs` collection.
+- Health check: `PYTHONPATH=$PWD MONGO_URI=... python3 scripts/check_v2_staging_health.py`
+
+| Collection | Stale threshold |
+|---|---|
+| `v2_galveston_events` | > 1h |
+| `v2_harris_reports` | > 36h |
+| `v2_lookup_results` | > 12h |
+| `v2_report_manifest` | > 36h |
+
+### Promotion gates
+
+Do NOT promote v2 reads to production until:
+1. Each enabled source has ≥ 7 consecutive days of successful staged writes.
+2. `check_v2_staging_health.py` shows all collections healthy for that period.
+3. Schema contract review passes (see `SCHEMA_CONTRACT.md`).
+
+### Manual run (one-off, bypasses schedule)
+
+```bash
+# Dry-run any source
+PYTHONPATH=$PWD python3 scripts/run_ingestion_v2.py --source galveston --dry-run --limit 5
+
+# Forced staging write (overrides enabled=false)
+PYTHONPATH=$PWD USE_V2_INGESTION=true ENABLE_V2_GALVESTON=true DRY_RUN=false \
+  python3 scripts/run_ingestion_v2.py --source galveston --trigger manual --force --limit 10
+```
+
+---
+
+## Legacy Pipeline (Option A–C below)
+
+This repo also includes a legacy twice-daily pipeline for legacy production collections. All assume Python 3.11+ and a `.env` with `MONGO_URI` and `MONGO_DB`.
 
 ---
 

@@ -9,12 +9,12 @@
 
 ## Summary Table
 
-| Source             | Status     | Raw Rows       | Normalized   | Root Cause (if degraded/failed)                                                                       | Priority Fix |
-| ------------------ | ---------- | -------------- | ------------ | ----------------------------------------------------------------------------------------------------- | ------------ |
-| `galveston`        | ✅ HEALTHY | 1121           | 5 sampled OK | Fixed: base image switched to `node:20-slim`; Playwright + Chromium installed via `--with-deps`       | —            |
-| `harris_reports`   | ✅ HEALTHY | 240 (1 report) | 5 sampled OK | —                                                                                                     | —            |
-| `fortbend_lookup`  | ✅ HEALTHY | 8 (RODRIGUEZ)  | 8 OK         | —                                                                                                     | —            |
-| `jefferson_lookup` | ✅ HEALTHY | 14 (name)      | 1 (date)     | Rewritten to MyOCV JSON feed (`jefferson_sheriff_myocv`); supports `--last-name` and `--booking-date` | LOW          |
+| Source             | Status     | Raw Rows        | Normalized   | Root Cause (if degraded/failed)                                                                              | Priority Fix |
+| ------------------ | ---------- | --------------- | ------------ | ------------------------------------------------------------------------------------------------------------ | ------------ |
+| `galveston`        | ✅ HEALTHY | 1121            | 5 sampled OK | Fixed: base image switched to `node:20-slim`; Playwright + Chromium installed via `--with-deps`              | —            |
+| `harris_reports`   | ✅ HEALTHY | 240 (1 report)  | 5 sampled OK | —                                                                                                            | —            |
+| `fortbend_lookup`  | ✅ HEALTHY | 8 (RODRIGUEZ)   | 8 OK         | —                                                                                                            | —            |
+| `jefferson_lookup` | ✅ HEALTHY | 14 (name)       | 1 (date)     | Rewritten to MyOCV JSON feed (`jefferson_sheriff_myocv`); supports `--last-name` and `--booking-date`        | LOW          |
 | `brazoria_lookup`  | ✅ HEALTHY | 66 (SMITH/JOHN) | 5 sampled OK | Rewritten to Tyler PublicAccess cloud portal (`portal-txbrazoria.tylertech.cloud`); requires first+last name | —            |
 
 ---
@@ -27,7 +27,7 @@
 | `harris_reports`   | ✅ Ready                                            | ✅ Ready            | ✅ Ready                          | ✅ Ready                  |
 | `fortbend_lookup`  | ✅ Ready                                            | ✅ Ready            | ❌ Lookup only — no full schedule | ❌ Not a scheduled source |
 | `jefferson_lookup` | ✅ HEALTHY — name lookup + date lookup both working | ✅                  | ✅                                | ✅                        |
-| `brazoria_lookup`  | ✅ Ready (name lookup working, charges populated)    | ✅ Ready            | ❌ Lookup only — no full schedule | ❌ Not a scheduled source |
+| `brazoria_lookup`  | ✅ Ready (name lookup working, charges populated)   | ✅ Ready            | ❌ Lookup only — no full schedule | ❌ Not a scheduled source |
 
 ---
 
@@ -282,8 +282,9 @@ New scraper (`jefferson_sheriff_myocv`) fetches the MyOCV public JSON feed direc
 
 **Rewritten:** 2026-04-28 — Scraper fully rewritten to target Tyler PublicAccess cloud portal. Old URL (`pubweb.brazoriacountytx.gov`) was offline; new URL is `https://portal-txbrazoria.tylertech.cloud/PublicAccess/`.  
 **Key implementation notes:**
+
 - 2-step session init required: GET `default.aspx` first (establishes `AWSALB`, `ASP.NET_SessionId`, etc.), then GET `JailingSearch.aspx?ID=400` for fresh VIEWSTATE
-- JS-required hidden fields (`SearchType=PARTYNAME`, `NameTypeKy=ALIAS`) must be included manually in POST payload  
+- JS-required hidden fields (`SearchType=PARTYNAME`, `NameTypeKy=ALIAS`) must be included manually in POST payload
 - Tyler rejects searches without both `LastName` AND `FirstName` — date-only search is NOT supported
 - `booking_date` is an additive filter only (alongside names)
 - `SOURCE` updated to `brazoria_tyler_publicaccess`
@@ -320,35 +321,35 @@ Result: `brazoria] search 'SMITH, JOHN' booking_date=04/16/2026 -> 5 results` �
 
 #### Network Diagnostic (resolved)
 
-| Test                     | Result                                                        |
-| ------------------------ | ------------------------------------------------------------- |
-| Old URL `pubweb.brazoriacountytx.gov:443` | ❌ Connection refused (site retired)     |
+| Test                                        | Result                                 |
+| ------------------------------------------- | -------------------------------------- |
+| Old URL `pubweb.brazoriacountytx.gov:443`   | ❌ Connection refused (site retired)   |
 | New URL `portal-txbrazoria.tylertech.cloud` | ✅ HTTPS responding, Tyler portal live |
-| Search POST returns results | ✅ 66 rows for SMITH/JOHN                                 |
-| Detail page accessible via same session | ✅ Charges + bond amounts populated       |
+| Search POST returns results                 | ✅ 66 rows for SMITH/JOHN              |
+| Detail page accessible via same session     | ✅ Charges + bond amounts populated    |
 
 ---
 
 ## Docker/API Issues Found
 
-| Issue                                           | Impact                                                            | Fix                                                         |
-| ----------------------------------------------- | ----------------------------------------------------------------- | ----------------------------------------------------------- |
-| Playwright not installed in Docker image        | Galveston returns 0 rows                                          | Add `playwright install chromium --with-deps` to Dockerfile |
-| Alpine CA bundle incomplete                     | SSL verify fails for galvestoncountytx.gov without `verify=False` | `apk add ca-certificates && update-ca-certificates`         |
-| Jefferson scraper incompatible with Next.js SPA | 0 results always                                                  | Rewrite scraper to use JSON API or Playwright               |
+| Issue                                           | Impact                                                            | Fix                                                                                 |
+| ----------------------------------------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Playwright not installed in Docker image        | Galveston returns 0 rows                                          | Add `playwright install chromium --with-deps` to Dockerfile                         |
+| Alpine CA bundle incomplete                     | SSL verify fails for galvestoncountytx.gov without `verify=False` | `apk add ca-certificates && update-ca-certificates`                                 |
+| Jefferson scraper incompatible with Next.js SPA | 0 results always                                                  | Rewrite scraper to use JSON API or Playwright                                       |
 | Brazoria site connection refused                | Source completely unavailable                                     | ✅ RESOLVED — Rewritten to Tyler cloud portal (`portal-txbrazoria.tylertech.cloud`) |
 
 ---
 
 ## Priority Ranking
 
-| Priority     | Source             | Action                                                         |
-| ------------ | ------------------ | -------------------------------------------------------------- |
-| 1 — NONE     | `brazoria_lookup`  | ✅ RESOLVED — Rewritten to Tyler cloud portal; HEALTHY         |
-| 2 — HIGH     | `jefferson_lookup` | Discover Next.js JSON API endpoint; rewrite scraper            |
-| 3 — HIGH     | `galveston`        | Install Playwright + browser deps in Docker image              |
-| 4 — NONE     | `harris_reports`   | No action needed — fully operational                           |
-| 5 — NONE     | `fortbend_lookup`  | No action needed — fully operational                           |
+| Priority | Source             | Action                                                 |
+| -------- | ------------------ | ------------------------------------------------------ |
+| 1 — NONE | `brazoria_lookup`  | ✅ RESOLVED — Rewritten to Tyler cloud portal; HEALTHY |
+| 2 — HIGH | `jefferson_lookup` | Discover Next.js JSON API endpoint; rewrite scraper    |
+| 3 — HIGH | `galveston`        | Install Playwright + browser deps in Docker image      |
+| 4 — NONE | `harris_reports`   | No action needed — fully operational                   |
+| 5 — NONE | `fortbend_lookup`  | No action needed — fully operational                   |
 
 ---
 
@@ -356,12 +357,12 @@ Result: `brazoria] search 'SMITH, JOHN' booking_date=04/16/2026 -> 5 results` �
 
 All Admin UI Manual Run tests were executed from `http://localhost:5173/admin → Scraper Operations → Manual Run`.
 
-| Source             | UI Fields Used                                        | UI Result                                                 |
-| ------------------ | ----------------------------------------------------- | --------------------------------------------------------- |
-| `galveston`        | Limit=5, dry-run=on                                   | `success` badge, 0 rows (matches CLI)                     |
-| `harris_reports`   | Limit=1, dry-run=on                                   | `success` badge, stdout shows 240 parsed rows             |
-| `fortbend_lookup`  | Last Name=RODRIGUEZ, Limit=5, dry-run=on              | `success` badge, charge JSON shown in output console      |
-| `jefferson_lookup` | Last Name=SMITH, Limit=5, dry-run=on                  | `success` badge, 0 results (matches CLI — site SPA issue) |
+| Source             | UI Fields Used                                        | UI Result                                                             |
+| ------------------ | ----------------------------------------------------- | --------------------------------------------------------------------- |
+| `galveston`        | Limit=5, dry-run=on                                   | `success` badge, 0 rows (matches CLI)                                 |
+| `harris_reports`   | Limit=1, dry-run=on                                   | `success` badge, stdout shows 240 parsed rows                         |
+| `fortbend_lookup`  | Last Name=RODRIGUEZ, Limit=5, dry-run=on              | `success` badge, charge JSON shown in output console                  |
+| `jefferson_lookup` | Last Name=SMITH, Limit=5, dry-run=on                  | `success` badge, 0 results (matches CLI — site SPA issue)             |
 | `brazoria_lookup`  | Last Name=SMITH, First Name=JOHN, Limit=5, dry-run=on | ✅ 5 results, charges populated, `source=brazoria_tyler_publicaccess` |
 
 The Admin UI correctly:
@@ -376,12 +377,12 @@ The Admin UI correctly:
 
 ## Lookup Source Classification
 
-| Source             | Type                  | Requires Name            | Full Scheduled Scrape? | Notes                                 |
-| ------------------ | --------------------- | ------------------------ | ---------------------- | ------------------------------------- |
-| `galveston`        | Jail roster           | No                       | ✅ Yes (full county)   | Requires Playwright                   |
-| `harris_reports`   | CSV report download   | No                       | ✅ Yes (full county)   | Fully automated                       |
-| `fortbend_lookup`  | Inmate search by name | Yes — last name required | ❌ Lookup only         | Returns current inmates matching name |
-| `jefferson_lookup` | Inmate search by name | Yes — last name required | ❌ Lookup only         | Scraper broken — needs rewrite        |
-| `brazoria_lookup`  | Inmate search by name | Yes — both first+last (required) | ❌ Lookup only         | ✅ HEALTHY — Tyler cloud portal  |
+| Source             | Type                  | Requires Name                    | Full Scheduled Scrape? | Notes                                 |
+| ------------------ | --------------------- | -------------------------------- | ---------------------- | ------------------------------------- |
+| `galveston`        | Jail roster           | No                               | ✅ Yes (full county)   | Requires Playwright                   |
+| `harris_reports`   | CSV report download   | No                               | ✅ Yes (full county)   | Fully automated                       |
+| `fortbend_lookup`  | Inmate search by name | Yes — last name required         | ❌ Lookup only         | Returns current inmates matching name |
+| `jefferson_lookup` | Inmate search by name | Yes — last name required         | ❌ Lookup only         | Scraper broken — needs rewrite        |
+| `brazoria_lookup`  | Inmate search by name | Yes — both first+last (required) | ❌ Lookup only         | ✅ HEALTHY — Tyler cloud portal       |
 
 Lookup sources (`fortbend_lookup`, `jefferson_lookup`, `brazoria_lookup`) are **on-demand only**. They are not designed for full county coverage via scheduled runs. They return detail pages with bond/charge fields for named individuals. Do not treat them as scheduled scrapes.

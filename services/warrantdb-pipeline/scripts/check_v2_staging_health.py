@@ -40,13 +40,12 @@ from typing import Any, Dict, List, Optional, Tuple
 # ── Collection definitions ─────────────────────────────────────────────────────
 
 # (collection_name, expected_source, stale_after_hours)
-# stale_after_hours=None means no staleness check (e.g. lookup collections
-# are populated on-demand, not on a fixed schedule).
+# stale_after_hours=None means no staleness check for that collection.
 _COLLECTIONS: List[Tuple[str, Optional[str], Optional[int]]] = [
-    ("v2_galveston_events",       "galveston_p2c",         1),     # expected every 10–15 min
-    ("v2_harris_reports",         "harris_district_clerk", 26),    # expected daily (~24h + buffer)
-    ("v2_lookup_results",         None,                    None),  # on-demand; no staleness check
-    ("v2_report_manifest",        "harris_district_clerk", 26),    # follows harris cadence
+    ("v2_galveston_events",       "galveston_p2c",         1),     # 15-min interval; stale if > 1h
+    ("v2_harris_reports",         "harris_district_clerk", 36),    # nightly at 01:30 CT; stale if > 36h
+    ("v2_lookup_results",         None,                    12),    # jefferson 3x/day; stale if > 12h
+    ("v2_report_manifest",        "harris_district_clerk", 36),    # follows harris cadence
     ("v2_galveston_p2c_endpoint", None,                    None),  # endpoint cache; rarely changes
 ]
 

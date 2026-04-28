@@ -34,16 +34,16 @@ DEFAULT_SOURCE_CONFIGS: Dict[str, Dict[str, Any]] = {
     "galveston": {
         "type": "ingestion_source",
         "source": "galveston",
-        "enabled": False,
+        "enabled": True,
         "mode": "staging",
-        "dry_run_default": True,
+        "dry_run_default": False,
         "schedule": {
             "strategy": "interval",
             "interval_minutes": 15,
             "run_times": [],
-            "timezone": "America/New_York",
+            "timezone": "America/Chicago",
             "skip_weekends": False,
-            "max_runs_per_day": 96,
+            "max_runs_per_day": 64,
             "allowed_days": [1, 2, 3, 4, 5, 6, 7],
         },
         "limits": {
@@ -59,16 +59,16 @@ DEFAULT_SOURCE_CONFIGS: Dict[str, Dict[str, Any]] = {
     "harris_reports": {
         "type": "ingestion_source",
         "source": "harris_reports",
-        "enabled": False,
+        "enabled": True,
         "mode": "staging",
-        "dry_run_default": True,
+        "dry_run_default": False,
         "schedule": {
             "strategy": "run_times",
             "interval_minutes": None,
-            "run_times": ["01:00"],
-            "timezone": "America/New_York",
+            "run_times": ["01:30"],
+            "timezone": "America/Chicago",
             "skip_weekends": False,
-            "max_runs_per_day": 2,
+            "max_runs_per_day": 1,
             "allowed_days": [1, 2, 3, 4, 5, 6, 7],
         },
         "limits": {
@@ -86,17 +86,19 @@ DEFAULT_SOURCE_CONFIGS: Dict[str, Dict[str, Any]] = {
         "mode": "staging",
         "dry_run_default": True,
         "schedule": {
-            "strategy": "interval",
+            # strategy=manual: only runs when explicitly triggered via CLI or Admin UI.
+            # Do NOT add to Render cron until a confirmed staging write succeeds.
+            "strategy": "manual",
             "interval_minutes": None,
             "run_times": [],
-            "timezone": "America/New_York",
+            "timezone": "America/Chicago",
             "skip_weekends": False,
             "max_runs_per_day": 0,
             "allowed_days": [1, 2, 3, 4, 5, 6, 7],
         },
         "limits": {
             "default_limit": 10,
-            "max_limit": 100,
+            "max_limit": 50,
         },
         "read_flags": {},
         "updated_at": None,
@@ -105,21 +107,26 @@ DEFAULT_SOURCE_CONFIGS: Dict[str, Dict[str, Any]] = {
     "jefferson_lookup": {
         "type": "ingestion_source",
         "source": "jefferson_lookup",
-        "enabled": False,
+        "enabled": True,
         "mode": "staging",
-        "dry_run_default": True,
+        "dry_run_default": False,
         "schedule": {
-            "strategy": "interval",
+            "strategy": "run_times",
             "interval_minutes": None,
-            "run_times": [],
-            "timezone": "America/New_York",
+            "run_times": ["06:15", "12:15", "18:15"],
+            "timezone": "America/Chicago",
             "skip_weekends": False,
-            "max_runs_per_day": 0,
+            "max_runs_per_day": 3,
             "allowed_days": [1, 2, 3, 4, 5, 6, 7],
         },
         "limits": {
-            "default_limit": 10,
-            "max_limit": 100,
+            "default_limit": 100,
+            "max_limit": 250,
+        },
+        # default_args: resolved automatically when --respect-schedule is active.
+        # booking_date="today" resolves to current CT date (America/Chicago).
+        "default_args": {
+            "booking_date": "today",
         },
         "read_flags": {},
         "updated_at": None,
@@ -128,21 +135,26 @@ DEFAULT_SOURCE_CONFIGS: Dict[str, Dict[str, Any]] = {
     "brazoria_lookup": {
         "type": "ingestion_source",
         "source": "brazoria_lookup",
+        # Disabled: keep commented out of Render cron until a successful staging
+        # write is confirmed outside the local network.
         "enabled": False,
         "mode": "staging",
-        "dry_run_default": True,
+        "dry_run_default": False,
         "schedule": {
-            "strategy": "interval",
+            "strategy": "run_times",
             "interval_minutes": None,
-            "run_times": [],
-            "timezone": "America/New_York",
+            "run_times": ["07:00", "19:00"],
+            "timezone": "America/Chicago",
             "skip_weekends": False,
-            "max_runs_per_day": 0,
+            "max_runs_per_day": 2,
             "allowed_days": [1, 2, 3, 4, 5, 6, 7],
         },
         "limits": {
-            "default_limit": 10,
-            "max_limit": 100,
+            "default_limit": 100,
+            "max_limit": 250,
+        },
+        "default_args": {
+            "booking_date": "today",
         },
         "read_flags": {},
         "updated_at": None,
