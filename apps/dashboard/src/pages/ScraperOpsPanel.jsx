@@ -268,13 +268,15 @@ function ManualRunTab() {
   const [limit, setLimit] = useState(20);
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
+  const [bookingDate, setBookingDate] = useState('');
   const [output, setOutput] = useState(null);
   const [awaitConfirm, setAwaitConfirm] = useState(false);
 
   const { mutate, isPending } = useTriggerRun();
 
   const isLookup = LOOKUP_SOURCES.has(source);
-  const missingLastName = isLookup && !lastName.trim();
+  const isJefferson = source === 'jefferson_lookup';
+  const missingLastName = isLookup && !lastName.trim() && !(isJefferson && bookingDate.trim());
 
   // Reset confirmation + output when key inputs change
   function handleSourceChange(val) {
@@ -283,6 +285,7 @@ function ManualRunTab() {
     setOutput(null);
     setLastName('');
     setFirstName('');
+    setBookingDate('');
   }
 
   function handleDryRunChange(checked) {
@@ -306,6 +309,7 @@ function ManualRunTab() {
         limit,
         first_name: firstName,
         last_name: lastName,
+        booking_date: bookingDate,
       },
       {
         onSuccess: (data) => setOutput(data),
@@ -367,7 +371,8 @@ function ManualRunTab() {
           <>
             <div>
               <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Last name <span className="text-rose-500">*</span>
+                Last name{!isJefferson && <span className="text-rose-500"> *</span>}
+                {isJefferson && <span className="text-slate-400"> (or use date)</span>}
               </label>
               <input
                 type="text"
@@ -389,6 +394,19 @@ function ManualRunTab() {
                 className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 focus:border-blue-400 focus:outline-none"
               />
             </div>
+            {isJefferson && (
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Booking date <span className="text-slate-400">(or use name)</span>
+                </label>
+                <input
+                  type="date"
+                  value={bookingDate}
+                  onChange={(e) => setBookingDate(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 focus:border-blue-400 focus:outline-none"
+                />
+              </div>
+            )}
           </>
         )}
       </div>
@@ -439,7 +457,11 @@ function ManualRunTab() {
         )}
 
         {missingLastName && (
-          <span className="text-xs text-rose-500">Last name is required for lookup sources</span>
+          <span className="text-xs text-rose-500">
+            {source === 'jefferson_lookup'
+              ? 'Provide a last name or booking date'
+              : 'Last name is required for lookup sources'}
+          </span>
         )}
       </div>
 

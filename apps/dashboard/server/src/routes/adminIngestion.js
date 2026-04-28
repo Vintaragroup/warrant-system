@@ -412,6 +412,7 @@ r.post('/run', async (req, res) => {
     limit: limitParam = 20,
     first_name: firstName = '',
     last_name: lastName = '',
+    booking_date: bookingDate = '',
     force = false,
   } = req.body || {};
 
@@ -435,13 +436,16 @@ r.post('/run', async (req, res) => {
     });
   }
 
-  // Lookup sources require last_name
+  // Lookup sources require last_name OR (jefferson only) booking_date
   const isLookup = source.endsWith('_lookup');
-  if (isLookup && !lastName) {
+  const jeffersonDateMode = source === 'jefferson_lookup' && !!bookingDate;
+  if (isLookup && !lastName && !jeffersonDateMode) {
     return res.status(400).json({
       ok: false,
       error: 'MISSING_LAST_NAME',
-      message: `last_name is required for lookup sources (source=${source})`,
+      message: source === 'jefferson_lookup'
+        ? `jefferson_lookup requires last_name or booking_date (source=${source})`
+        : `last_name is required for lookup sources (source=${source})`,
     });
   }
 
@@ -485,6 +489,7 @@ r.post('/run', async (req, res) => {
   if (force) pyArgs.push('--force');
   if (firstName) { pyArgs.push('--first-name', firstName); }
   if (lastName) { pyArgs.push('--last-name', lastName); }
+  if (bookingDate) { pyArgs.push('--booking-date', bookingDate); }
 
   // Redacted command for logging (never include secrets)
   const redactedCmd = `python3 scripts/run_ingestion_v2.py --source ${source} --limit ${limit} --trigger manual${dryRun ? ' --dry-run' : ' --no-dry-run'}`;

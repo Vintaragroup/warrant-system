@@ -287,12 +287,15 @@ def run_lookup(
     dry_run: bool,
     last_name: str,
     first_name: str,
+    booking_date: str = "",
 ) -> int:
     """
     Run a county lookup scraper (Brazoria / Fort Bend / Jefferson).
 
     dry_run=True  → lookup(store=False), print normalized results
     dry_run=False → lookup(store=True) into v2_lookup_results staging collection
+
+    Jefferson supports booking_date instead of last_name.
     """
     _LOOKUP_CLASSES = {
         "brazoria_lookup":  ("ingestion.lookups.brazoria_lookup",  "BrazoriaLookup"),
@@ -315,15 +318,31 @@ def run_lookup(
         scraper.COLLECTION = "v2_lookup_results"
 
     county_label = source.replace("_lookup", "")
-    print(f"[{county_label}] {'dry-run' if dry_run else 'staging-write'} — "
-          f"searching '{last_name}, {first_name}'")
 
-    results = scraper.lookup(
-        last_name=last_name,
-        first_name=first_name,
-        fetch_details=True,
-        store=not dry_run,
-    )
+    # Jefferson supports date-mode lookup (no last_name required)
+    if source == "jefferson_lookup" and booking_date and not last_name:
+        print(f"[{county_label}] {'dry-run' if dry_run else 'staging-write'} — "
+              f"date filter '{booking_date}'")
+        results = scraper.lookup_by_date(
+            booking_date,
+            store=not dry_run,
+        )
+    else:
+        search_desc = last_name + (f", {first_name}" if first_name else "")
+        if booking_date:
+            search_desc += f" (booking_date={booking_date})"
+        print(f"[{county_label}] {'dry-run' if dry_run else 'staging-write'} — "
+              f"searching '{search_desc}'")
+        kwargs: Dict[str, Any] = {}
+        if booking_date:
+            kwargs["booking_date"] = booking_date
+        results = scraper.lookup(
+            last_name=last_name,
+            first_name=first_name,
+            fetch_details=True,
+            store=not dry_run,
+            **kwargs,
+        )
 
     print(f"[{county_label}] lookup() returned {len(results)} results")
     for i, r in enumerate(results):
@@ -419,6 +438,11 @@ def _parse_args() -> argparse.Namespace:
         "--first-name",
         default="",
         help="First name for lookup sources",
+    )
+    p.add_argument(
+        "--booking-date",
+        default="",
+        help="Booking date filter for jefferson_lookup: today / yesterday / YYYY-MM-DD",
     )
     # ── Scheduler integration flags ──────────────────────────────────────────
     p.add_argument(
@@ -550,7 +574,10 @@ def main() -> int:
         elif args.source == "harris_reports":
             exit_code = run_harris_reports(db, dry_run=dry_run, limit=args.limit)
         else:
-            if not args.last_name:
+            booking_date = getattr(args, "booking_date", "")
+            # jefferson_lookup allows either last_name or booking_date
+            need_last_name = not (args.source == "jefferson_lookup" and booking_date)
+            if need_last_name and not args.last_name:
                 print(
                     f"[v2] ERROR: --last-name is required for {args.source}",
                     file=sys.stderr,
@@ -563,6 +590,7 @@ def main() -> int:
                     dry_run=dry_run,
                     last_name=args.last_name,
                     first_name=args.first_name,
+                    booking_date=booking_date,
                 )
     except Exception as exc:
         run_error = str(exc)

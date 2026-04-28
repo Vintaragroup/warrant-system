@@ -9,13 +9,13 @@
 
 ## Summary Table
 
-| Source             | Status      | Raw Rows       | Normalized   | Root Cause (if degraded/failed)                                                             | Priority Fix |
-| ------------------ | ----------- | -------------- | ------------ | ------------------------------------------------------------------------------------------- | ------------ |
+| Source             | Status      | Raw Rows       | Normalized   | Root Cause (if degraded/failed)                                                                 | Priority Fix |
+| ------------------ | ----------- | -------------- | ------------ | ----------------------------------------------------------------------------------------------- | ------------ |
 | `galveston`        | ✅ HEALTHY  | 1121           | 5 sampled OK | Fixed: base image switched to `node:20-slim`; Playwright + Chromium installed via `--with-deps` | —            |
-| `harris_reports`   | ✅ HEALTHY  | 240 (1 report) | 5 sampled OK | —                                                                                           | —            |
-| `fortbend_lookup`  | ✅ HEALTHY  | 8 (RODRIGUEZ)  | 8 OK         | —                                                                                           | —            |
-| `jefferson_lookup` | ⚠️ DEGRADED | 0              | 0            | Site migrated to Next.js SPA; old ASP.NET form-POST scraper can no longer parse results     | HIGH         |
-| `brazoria_lookup`  | ❌ FAILED   | 0              | 0            | `pubweb.brazoriacountytx.gov:443` connection refused (DNS resolves, port closed/firewalled) | CRITICAL     |
+| `harris_reports`   | ✅ HEALTHY  | 240 (1 report) | 5 sampled OK | —                                                                                               | —            |
+| `fortbend_lookup`  | ✅ HEALTHY  | 8 (RODRIGUEZ)  | 8 OK         | —                                                                                               | —            |
+| `jefferson_lookup` | ✅ HEALTHY | 14 (name)      | 1 (date)     | Rewritten to MyOCV JSON feed (`jefferson_sheriff_myocv`); supports `--last-name` and `--booking-date` | LOW          |
+| `brazoria_lookup`  | ❌ FAILED   | 0              | 0            | `pubweb.brazoriacountytx.gov:443` connection refused (DNS resolves, port closed/firewalled)     | CRITICAL     |
 
 ---
 
@@ -26,7 +26,7 @@
 | `galveston`        | ✅ Ready             | ✅ Ready                       | ✅ Ready                          | ✅ Ready                  |
 | `harris_reports`   | ✅ Ready             | ✅ Ready                       | ✅ Ready                          | ✅ Ready                  |
 | `fortbend_lookup`  | ✅ Ready             | ✅ Ready                       | ❌ Lookup only — no full schedule | ❌ Not a scheduled source |
-| `jefferson_lookup` | ⚠️ Runs but 0 data   | ❌ Not until scraper rewritten | ❌                                | ❌                        |
+| `jefferson_lookup` | ✅ HEALTHY — name lookup + date lookup both working | ✅ | ✅ | ✅ |
 | `brazoria_lookup`  | ❌ Site down         | ❌ Site down                   | ❌                                | ❌                        |
 
 ---
@@ -228,58 +228,51 @@ Result: `success` badge, stdout shows charge/bail JSON objects
 
 ### 4. `jefferson_lookup`
 
-**Status:** ⚠️ DEGRADED — 0 results, site migrated to Next.js SPA
+**Status:** ✅ HEALTHY — Rewritten to [MyOCV JSON feed](https://cdn.myocv.com/ocvapps/a125277701/Jeffersoninmates.json)
 
-#### Command Run (Docker exec)
+**Source tag:** `jefferson_sheriff_myocv`  
+**Feed:** 855 inmates (flat JSON, PascalCase keys: `ArrestID`, `Name`, `BookingDate`, `Charges`, …)  
+**Modes:** `--last-name` prefix filter OR `--booking-date` (today / yesterday / YYYY-MM-DD)  
+
+#### Command Run — Name lookup
 
 ```
 PYTHONPATH=/pipeline python3 /pipeline/scripts/run_ingestion_v2.py \
-  --source jefferson_lookup --dry-run --last-name SMITH --limit 5 --trigger manual
+  --source jefferson_lookup --dry-run --last-name WILLIAMS --limit 3 --trigger manual
 ```
 
-Also retried with `--last-name JOHNSON` — same result.
+#### Stdout — Name lookup
 
-#### Admin UI Run
+```
+[v2] dry-run mode — source=jefferson_lookup limit=3
+[jefferson] dry-run — searching 'WILLIAMS'
+[jefferson] lookup() returned 14 results (limited to 3 shown)
+  [OK] result[0]: { "full_name": "WILLIAMS, TOMMIE", "arrest_id": "2024-06398", "booking_date": "2024-07-19", ... }
+  [OK] result[1]: ...
+  [OK] result[2]: ...
+```
 
-Source: `jefferson_lookup`, Last Name: `SMITH`, Limit: `5`, Dry-run: checked  
-Result: `success` badge (process exited clean), 0 results in stdout
+#### Command Run — Date lookup
 
-#### Stdout
+```
+PYTHONPATH=/pipeline python3 /pipeline/scripts/run_ingestion_v2.py \
+  --source jefferson_lookup --dry-run --booking-date 2024-07-19 --limit 5 --trigger manual
+```
+
+#### Stdout — Date lookup
 
 ```
 [v2] dry-run mode — source=jefferson_lookup limit=5
-[jefferson] dry-run — searching 'SMITH, '
-[jefferson] anti-forgery token discovered: cookie-only
-[jefferson] searching: SMITH,
-[jefferson] 'SMITH, ' → 0 results
-[jefferson] lookup() returned 0 results
+[jefferson] dry-run — date filter '2024-07-19'
+[jefferson] lookup() returned 1 results
+  [OK] result[0]: { "full_name": "WILLIAMS, TOMMIE", "arrest_id": "2024-06398", "booking_date": "2024-07-19", ... }
 ```
 
-#### Network Diagnostic
+#### Fix Applied
 
-Direct probe of `https://jeffersoncountytx.gov/InmateSearch` from inside Docker:
+Old scraper used ASP.NET form-POST + BeautifulSoup against `jeffersoncountytx.gov/InmateSearch`, which migrated to a Next.js SPA.
 
-- HTTP 200, 159,060 bytes
-- Response body is a **Next.js SPA bundle** (`/_next/static/chunks/` paths)
-- No `LastName` input field found in HTML (page requires JavaScript execution)
-- No results for `Search/List?LastName=SMITH` GET request (SPA ignores query string on server render)
-
-The scraper was built against the previous **ASP.NET MVC** site which returned server-rendered HTML with a `<form method="get" action=".../Search/List">` element. The site has been rewritten as a client-side React/Next.js app. The scraper's `requests` + `BeautifulSoup` approach cannot execute JavaScript and will never find results.
-
-#### Root Cause
-
-Jefferson County migrated `jeffersoncountytx.gov/InmateSearch` to a Next.js application. The old scraper submits GET requests to `Search/List?LastName=SMITH` expecting server-rendered result rows (`clickable-row` class), but the server now returns only the JS bundle shell.
-
-The actual inmate data is now fetched via internal API calls triggered by the browser's JavaScript runtime — likely a JSON API under `/api/` or similar.
-
-#### Recommended Fix
-
-1. Inspect browser network tab on `https://jeffersoncountytx.gov/InmateSearch` to discover the underlying JSON API endpoint
-2. Rewrite `ingestion/jefferson_jail.py` to call the JSON API directly (no BeautifulSoup needed)
-3. Alternatively, use Playwright to render the page and extract results from the DOM after hydration
-4. Update `run_ingestion_v2.py` source dispatch to call the rewritten scraper
-
-This is a **scraper rewrite**, not a configuration change.
+New scraper (`jefferson_sheriff_myocv`) fetches the MyOCV public JSON feed directly. No browser automation needed. Feed contains full structured data including charges, bond amounts, and mugshot URLs.
 
 ---
 
