@@ -288,6 +288,7 @@ def run_lookup(
     last_name: str,
     first_name: str,
     booking_date: str = "",
+    limit: int = 0,
 ) -> int:
     """
     Run a county lookup scraper (Brazoria / Fort Bend / Jefferson).
@@ -344,6 +345,8 @@ def run_lookup(
             **kwargs,
         )
 
+    if limit and len(results) > limit:
+        results = results[:limit]
     print(f"[{county_label}] lookup() returned {len(results)} results")
     for i, r in enumerate(results):
         required = ["county", "source", "scraped_at", "full_name"]
@@ -442,7 +445,11 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument(
         "--booking-date",
         default="",
-        help="Booking date filter for jefferson_lookup: today / yesterday / YYYY-MM-DD",
+        help=(
+            "Booking date filter (YYYY-MM-DD, 'today', or 'yesterday'). "
+            "jefferson_lookup: supports date-only mode (no --last-name required). "
+            "brazoria_lookup: additive filter — --last-name and --first-name still required."
+        ),
     )
     # ── Scheduler integration flags ──────────────────────────────────────────
     p.add_argument(
@@ -559,11 +566,30 @@ def main() -> int:
         db = _NullDb()
         print(f"[v2] dry-run mode — source={args.source} limit={args.limit}")
     else:
+        # Hard cap: non-dry-run writes are limited to 10 records per run
+        _MAX_NON_DRY_RUN = 10
+        if args.limit > _MAX_NON_DRY_RUN:
+            print(
+                f"[v2] SAFETY CAP: limit={args.limit} exceeds max={_MAX_NON_DRY_RUN} "
+                f"for non-dry-run — capping at {_MAX_NON_DRY_RUN}",
+                file=sys.stderr,
+            )
+            args.limit = _MAX_NON_DRY_RUN
         from storage.mongo_client import get_db  # noqa: PLC0415
         real_db = audit_db if audit_db is not None else get_db()
         db = _StagingDb(real_db)
-        print(f"[v2] staging-write mode — source={args.source} limit={args.limit}")
-        print(f"[v2] staging map: {_STAGING_MAP}")
+        target_coll = _STAGING_MAP.get(
+            {"galveston": "galveston_events",
+             "harris_reports": "harris_bond",
+             "brazoria_lookup": "brazoria_inmates",
+             "fortbend_lookup": "fortbend_inmates",
+             "jefferson_lookup": "jefferson_events"}.get(args.source, args.source),
+            "v2_lookup_results",
+        )
+        print(f"[v2] *** NON-DRY-RUN: staging-write mode ***")
+        print(f"[v2] source={args.source} limit={args.limit}")
+        print(f"[v2] target collection: {target_coll}")
+        print(f"[v2] full staging map: {_STAGING_MAP}")
 
     exit_code = 0
     run_error: str | None = None
@@ -583,6 +609,14 @@ def main() -> int:
                     file=sys.stderr,
                 )
                 exit_code = 1
+            # brazoria_lookup requires first_name (Tyler rejects searches without it)
+            elif args.source == "brazoria_lookup" and not args.first_name:
+                print(
+                    "[v2] ERROR: --first-name is required for brazoria_lookup "
+                    "(Tyler PublicAccess rejects name searches without a first name)",
+                    file=sys.stderr,
+                )
+                exit_code = 1
             else:
                 exit_code = run_lookup(
                     source=args.source,
@@ -591,6 +625,7 @@ def main() -> int:
                     last_name=args.last_name,
                     first_name=args.first_name,
                     booking_date=booking_date,
+                    limit=args.limit,
                 )
     except Exception as exc:
         run_error = str(exc)

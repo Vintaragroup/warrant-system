@@ -276,7 +276,10 @@ function ManualRunTab() {
 
   const isLookup = LOOKUP_SOURCES.has(source);
   const isJefferson = source === 'jefferson_lookup';
+  const isBrazoria = source === 'brazoria_lookup';
+  const supportsBookingDate = isJefferson || isBrazoria;
   const missingLastName = isLookup && !lastName.trim() && !(isJefferson && bookingDate.trim());
+  const missingFirstName = isBrazoria && !firstName.trim();
 
   // Reset confirmation + output when key inputs change
   function handleSourceChange(val) {
@@ -334,7 +337,7 @@ function ManualRunTab() {
       ? 'Confirm — write to staging'
       : 'Run scraper';
 
-  const buttonClass = isPending || missingLastName
+  const buttonClass = isPending || missingLastName || missingFirstName
     ? 'cursor-not-allowed opacity-50 rounded-lg px-4 py-2 text-sm font-semibold border border-slate-300 bg-slate-100 text-slate-400'
     : awaitConfirm
       ? 'rounded-lg border border-amber-400 bg-amber-100 px-4 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-200'
@@ -373,6 +376,7 @@ function ManualRunTab() {
               <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
                 Last name{!isJefferson && <span className="text-rose-500"> *</span>}
                 {isJefferson && <span className="text-slate-400"> (or use date)</span>}
+                {isBrazoria && <span className="text-rose-500"> *</span>}
               </label>
               <input
                 type="text"
@@ -384,20 +388,23 @@ function ManualRunTab() {
             </div>
             <div>
               <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                First name
+                First name{isBrazoria && <span className="text-rose-500"> *</span>}
               </label>
               <input
                 type="text"
                 value={firstName}
                 onChange={(e) => setFirstName(e.target.value)}
-                placeholder="Optional"
+                placeholder={isBrazoria ? 'JOHN' : 'Optional'}
                 className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 focus:border-blue-400 focus:outline-none"
               />
             </div>
-            {isJefferson && (
+            {supportsBookingDate && (
               <div>
                 <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Booking date <span className="text-slate-400">(or use name)</span>
+                  Booking date{' '}
+                  {isJefferson
+                    ? <span className="text-slate-400">(or use name)</span>
+                    : <span className="text-slate-400">(additive filter)</span>}
                 </label>
                 <input
                   type="date"
@@ -461,6 +468,11 @@ function ManualRunTab() {
             {source === 'jefferson_lookup'
               ? 'Provide a last name or booking date'
               : 'Last name is required for lookup sources'}
+          </span>
+        )}
+        {missingFirstName && (
+          <span className="text-xs text-rose-500">
+            First name is required for brazoria_lookup
           </span>
         )}
       </div>

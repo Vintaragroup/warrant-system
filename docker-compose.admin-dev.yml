@@ -46,8 +46,11 @@ services:
       # Ingestion safety defaults
       - DRY_RUN=true
       - ALLOW_ADMIN_NON_DRY_RUN=${ALLOW_ADMIN_NON_DRY_RUN:-false}
+      - DEV_BYPASS_AUTH=${DEV_BYPASS_AUTH:-false}
       - USE_V2_INGESTION=true
-      - ENABLE_V2_GALVESTON=true
+      - ENABLE_V2_GALVESTON=${ENABLE_V2_GALVESTON:-true}
+      - ENABLE_V2_HARRIS_REPORTS=${ENABLE_V2_HARRIS_REPORTS:-false}
+      - ENABLE_V2_LOOKUPS=${ENABLE_V2_LOOKUPS:-false}
       # Firebase credentials
       - GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/firebase
       # Optional Redis (skip gracefully if not set)

@@ -1,6 +1,6 @@
 # All-Source Dry-Run Validation Report
 
-**Date:** 2026-04-27  
+**Date:** 2026-04-28 (brazoria_lookup revalidated after Tyler cloud portal rewrite)  
 **Executed by:** Admin Scraper Operations panel + Docker exec  
 **Environment:** `docker-compose.admin-dev.yml` — `warrant-admin-dev-api-1` (healthy, port 3001) + `warrant-admin-dev-frontend-1` (port 5173)  
 **Constraint:** Dry-run only throughout. No database writes performed.
@@ -9,25 +9,25 @@
 
 ## Summary Table
 
-| Source             | Status      | Raw Rows       | Normalized   | Root Cause (if degraded/failed)                                                                 | Priority Fix |
-| ------------------ | ----------- | -------------- | ------------ | ----------------------------------------------------------------------------------------------- | ------------ |
-| `galveston`        | ✅ HEALTHY  | 1121           | 5 sampled OK | Fixed: base image switched to `node:20-slim`; Playwright + Chromium installed via `--with-deps` | —            |
-| `harris_reports`   | ✅ HEALTHY  | 240 (1 report) | 5 sampled OK | —                                                                                               | —            |
-| `fortbend_lookup`  | ✅ HEALTHY  | 8 (RODRIGUEZ)  | 8 OK         | —                                                                                               | —            |
+| Source             | Status     | Raw Rows       | Normalized   | Root Cause (if degraded/failed)                                                                       | Priority Fix |
+| ------------------ | ---------- | -------------- | ------------ | ----------------------------------------------------------------------------------------------------- | ------------ |
+| `galveston`        | ✅ HEALTHY | 1121           | 5 sampled OK | Fixed: base image switched to `node:20-slim`; Playwright + Chromium installed via `--with-deps`       | —            |
+| `harris_reports`   | ✅ HEALTHY | 240 (1 report) | 5 sampled OK | —                                                                                                     | —            |
+| `fortbend_lookup`  | ✅ HEALTHY | 8 (RODRIGUEZ)  | 8 OK         | —                                                                                                     | —            |
 | `jefferson_lookup` | ✅ HEALTHY | 14 (name)      | 1 (date)     | Rewritten to MyOCV JSON feed (`jefferson_sheriff_myocv`); supports `--last-name` and `--booking-date` | LOW          |
-| `brazoria_lookup`  | ❌ FAILED   | 0              | 0            | `pubweb.brazoriacountytx.gov:443` connection refused (DNS resolves, port closed/firewalled)     | CRITICAL     |
+| `brazoria_lookup`  | ✅ HEALTHY | 66 (SMITH/JOHN) | 5 sampled OK | Rewritten to Tyler PublicAccess cloud portal (`portal-txbrazoria.tylertech.cloud`); requires first+last name | —            |
 
 ---
 
 ## Promotion Readiness
 
-| Source             | Admin Manual Dry-Run | Staging Non-Dry-Run            | Scheduled Staging                 | Production Promotion      |
-| ------------------ | -------------------- | ------------------------------ | --------------------------------- | ------------------------- |
-| `galveston`        | ✅ Ready             | ✅ Ready                       | ✅ Ready                          | ✅ Ready                  |
-| `harris_reports`   | ✅ Ready             | ✅ Ready                       | ✅ Ready                          | ✅ Ready                  |
-| `fortbend_lookup`  | ✅ Ready             | ✅ Ready                       | ❌ Lookup only — no full schedule | ❌ Not a scheduled source |
-| `jefferson_lookup` | ✅ HEALTHY — name lookup + date lookup both working | ✅ | ✅ | ✅ |
-| `brazoria_lookup`  | ❌ Site down         | ❌ Site down                   | ❌                                | ❌                        |
+| Source             | Admin Manual Dry-Run                                | Staging Non-Dry-Run | Scheduled Staging                 | Production Promotion      |
+| ------------------ | --------------------------------------------------- | ------------------- | --------------------------------- | ------------------------- |
+| `galveston`        | ✅ Ready                                            | ✅ Ready            | ✅ Ready                          | ✅ Ready                  |
+| `harris_reports`   | ✅ Ready                                            | ✅ Ready            | ✅ Ready                          | ✅ Ready                  |
+| `fortbend_lookup`  | ✅ Ready                                            | ✅ Ready            | ❌ Lookup only — no full schedule | ❌ Not a scheduled source |
+| `jefferson_lookup` | ✅ HEALTHY — name lookup + date lookup both working | ✅                  | ✅                                | ✅                        |
+| `brazoria_lookup`  | ✅ Ready (name lookup working, charges populated)    | ✅ Ready            | ❌ Lookup only — no full schedule | ❌ Not a scheduled source |
 
 ---
 
@@ -232,7 +232,7 @@ Result: `success` badge, stdout shows charge/bail JSON objects
 
 **Source tag:** `jefferson_sheriff_myocv`  
 **Feed:** 855 inmates (flat JSON, PascalCase keys: `ArrestID`, `Name`, `BookingDate`, `Charges`, …)  
-**Modes:** `--last-name` prefix filter OR `--booking-date` (today / yesterday / YYYY-MM-DD)  
+**Modes:** `--last-name` prefix filter OR `--booking-date` (today / yesterday / YYYY-MM-DD)
 
 #### Command Run — Name lookup
 
@@ -278,7 +278,16 @@ New scraper (`jefferson_sheriff_myocv`) fetches the MyOCV public JSON feed direc
 
 ### 5. `brazoria_lookup`
 
-**Status:** ❌ FAILED — source host connection refused
+**Status:** ✅ HEALTHY — 66 rows returned for SMITH/JOHN, 5 sampled OK, charges and bond amounts populated
+
+**Rewritten:** 2026-04-28 — Scraper fully rewritten to target Tyler PublicAccess cloud portal. Old URL (`pubweb.brazoriacountytx.gov`) was offline; new URL is `https://portal-txbrazoria.tylertech.cloud/PublicAccess/`.  
+**Key implementation notes:**
+- 2-step session init required: GET `default.aspx` first (establishes `AWSALB`, `ASP.NET_SessionId`, etc.), then GET `JailingSearch.aspx?ID=400` for fresh VIEWSTATE
+- JS-required hidden fields (`SearchType=PARTYNAME`, `NameTypeKy=ALIAS`) must be included manually in POST payload  
+- Tyler rejects searches without both `LastName` AND `FirstName` — date-only search is NOT supported
+- `booking_date` is an additive filter only (alongside names)
+- `SOURCE` updated to `brazoria_tyler_publicaccess`
+- Detail pages require same session as search; `self._sess` preserved across `search_person()` → `fetch_detail()` calls
 
 #### Command Run (Docker exec)
 
@@ -288,46 +297,35 @@ PYTHONPATH=/pipeline python3 /pipeline/scripts/run_ingestion_v2.py \
   --limit 5 --trigger manual
 ```
 
-#### Admin UI Run
-
-Source: `brazoria_lookup`, Last Name: `SMITH`, First Name: `JOHN`, Limit: `5`, Dry-run: checked  
-Result: `success` badge (process exited clean), 0 results, error in stdout
-
 #### Stdout
 
 ```
 [v2] dry-run mode — source=brazoria_lookup limit=5
 [brazoria] dry-run — searching 'SMITH, JOHN'
-[brazoria] form load failed: HTTPSConnectionPool(host='pubweb.brazoriacountytx.gov', port=443):
-  Max retries exceeded with url: /PublicAccess/JailingSearch.aspx?ID=400
-  (Caused by NewConnectionError: Failed to establish a new connection: [Errno 111] Connection refused)
-[brazoria] lookup() returned 0 results
+[brazoria] search 'SMITH, JOHN' -> 66 results
+[brazoria] lookup() returned 5 results (limit applied)
+  [OK] result[0]: { ... "county": "brazoria", "source": "brazoria_tyler_publicaccess", "charges": [...], ... }
+  ...
 ```
 
-#### Network Diagnostic
+#### Date-Filter Dry-Run
 
-| Test                     | Result                                |
-| ------------------------ | ------------------------------------- |
-| DNS from Docker          | ✅ Resolves — `50.172.191.110`        |
-| DNS from host machine    | ✅ Resolves — `50.172.191.110`        |
-| TCP port 443 from host   | ❌ `connect_ex() = 51` (ECONNREFUSED) |
-| TCP port 443 from Docker | ❌ `[Errno 111] Connection refused`   |
+```
+PYTHONPATH=/pipeline python3 /pipeline/scripts/run_ingestion_v2.py \
+  --source brazoria_lookup --dry-run --last-name SMITH --first-name JOHN \
+  --booking-date 2026-04-16 --limit 5 --trigger manual
+```
 
-DNS resolves correctly to `50.172.191.110` but **nothing is listening on port 443** at that IP. This is not a local/Docker networking issue — the host machine also gets connection refused. The failure is **deployment-wide** (the server exists but HTTPS is not accepting connections).
+Result: `brazoria] search 'SMITH, JOHN' booking_date=04/16/2026 -> 5 results` — date filter is additive; names still required.
 
-Possible causes:
+#### Network Diagnostic (resolved)
 
-- `pubweb.brazoriacountytx.gov` is offline or undergoing maintenance
-- The site moved to a different URL/subdomain
-- Web server configuration change (port 80 only, or behind a load balancer at a new IP)
-- Firewall rule blocking inbound 443
-
-#### Recommended Actions
-
-1. **Check if the site has a new URL** — try `https://www.brazoriacountytx.gov/` or search for current public jail lookup URL
-2. **Monitor for recovery** — retry in 24–48h; may be temporary downtime
-3. **If site moved**, update the base URL in `ingestion/brazoria_ingest.py` / scraper config
-4. **Note:** Brazoria also requires both first AND last name — it cannot do last-name-only lookups. A surname iteration loop would be needed for any bulk coverage.
+| Test                     | Result                                                        |
+| ------------------------ | ------------------------------------------------------------- |
+| Old URL `pubweb.brazoriacountytx.gov:443` | ❌ Connection refused (site retired)     |
+| New URL `portal-txbrazoria.tylertech.cloud` | ✅ HTTPS responding, Tyler portal live |
+| Search POST returns results | ✅ 66 rows for SMITH/JOHN                                 |
+| Detail page accessible via same session | ✅ Charges + bond amounts populated       |
 
 ---
 
@@ -338,7 +336,7 @@ Possible causes:
 | Playwright not installed in Docker image        | Galveston returns 0 rows                                          | Add `playwright install chromium --with-deps` to Dockerfile |
 | Alpine CA bundle incomplete                     | SSL verify fails for galvestoncountytx.gov without `verify=False` | `apk add ca-certificates && update-ca-certificates`         |
 | Jefferson scraper incompatible with Next.js SPA | 0 results always                                                  | Rewrite scraper to use JSON API or Playwright               |
-| Brazoria site connection refused                | Source completely unavailable                                     | Monitor/discover new URL                                    |
+| Brazoria site connection refused                | Source completely unavailable                                     | ✅ RESOLVED — Rewritten to Tyler cloud portal (`portal-txbrazoria.tylertech.cloud`) |
 
 ---
 
@@ -346,7 +344,7 @@ Possible causes:
 
 | Priority     | Source             | Action                                                         |
 | ------------ | ------------------ | -------------------------------------------------------------- |
-| 1 — CRITICAL | `brazoria_lookup`  | Identify new site URL or confirm outage; update scraper config |
+| 1 — NONE     | `brazoria_lookup`  | ✅ RESOLVED — Rewritten to Tyler cloud portal; HEALTHY         |
 | 2 — HIGH     | `jefferson_lookup` | Discover Next.js JSON API endpoint; rewrite scraper            |
 | 3 — HIGH     | `galveston`        | Install Playwright + browser deps in Docker image              |
 | 4 — NONE     | `harris_reports`   | No action needed — fully operational                           |
@@ -364,7 +362,7 @@ All Admin UI Manual Run tests were executed from `http://localhost:5173/admin �
 | `harris_reports`   | Limit=1, dry-run=on                                   | `success` badge, stdout shows 240 parsed rows             |
 | `fortbend_lookup`  | Last Name=RODRIGUEZ, Limit=5, dry-run=on              | `success` badge, charge JSON shown in output console      |
 | `jefferson_lookup` | Last Name=SMITH, Limit=5, dry-run=on                  | `success` badge, 0 results (matches CLI — site SPA issue) |
-| `brazoria_lookup`  | Last Name=SMITH, First Name=JOHN, Limit=5, dry-run=on | `success` badge, connection refused error in stdout       |
+| `brazoria_lookup`  | Last Name=SMITH, First Name=JOHN, Limit=5, dry-run=on | ✅ 5 results, charges populated, `source=brazoria_tyler_publicaccess` |
 
 The Admin UI correctly:
 
@@ -384,6 +382,6 @@ The Admin UI correctly:
 | `harris_reports`   | CSV report download   | No                       | ✅ Yes (full county)   | Fully automated                       |
 | `fortbend_lookup`  | Inmate search by name | Yes — last name required | ❌ Lookup only         | Returns current inmates matching name |
 | `jefferson_lookup` | Inmate search by name | Yes — last name required | ❌ Lookup only         | Scraper broken — needs rewrite        |
-| `brazoria_lookup`  | Inmate search by name | Yes — both first+last    | ❌ Lookup only         | Site currently down                   |
+| `brazoria_lookup`  | Inmate search by name | Yes — both first+last (required) | ❌ Lookup only         | ✅ HEALTHY — Tyler cloud portal  |
 
 Lookup sources (`fortbend_lookup`, `jefferson_lookup`, `brazoria_lookup`) are **on-demand only**. They are not designed for full county coverage via scheduled runs. They return detail pages with bond/charge fields for named individuals. Do not treat them as scheduled scrapes.

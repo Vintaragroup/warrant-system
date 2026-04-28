@@ -449,6 +449,15 @@ r.post('/run', async (req, res) => {
     });
   }
 
+  // brazoria_lookup also requires first_name — Tyler's server rejects name-only searches
+  if (source === 'brazoria_lookup' && !firstName) {
+    return res.status(400).json({
+      ok: false,
+      error: 'MISSING_FIRST_NAME',
+      message: 'brazoria_lookup requires both last_name and first_name (Tyler PublicAccess rejects searches without a first name)',
+    });
+  }
+
   const limit = clampLimit(source, limitParam);
   const createdBy = req.user?.uid || req.user?.email || 'admin';
 

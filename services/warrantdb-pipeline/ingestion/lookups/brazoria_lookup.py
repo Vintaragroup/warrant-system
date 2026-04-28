@@ -3,41 +3,44 @@ ingestion/lookups/brazoria_lookup.py
 ─────────────────────────────────────────────────────────────────────────────
 Brazoria County jail roster lookup — LookupScraper.
 
-Source:    https://pubweb.brazoriacountytx.gov/PublicAccess/
-Platform:  Tyler Technologies PublicAccess
+Source:    https://portal-txbrazoria.tylertech.cloud/PublicAccess/
+Platform:  Tyler Technologies PublicAccess (ASP.NET WebForms)
 Type:      ENRICHMENT ONLY — requires both first AND last name.
 
 Tyler's PublicAccess requires both last_name AND first_name.
-Calling search_person() with only a last name will raise ValueError.
+Date-only searches are NOT supported — Tyler rejects POSTs without names.
+booking_date is an optional additive filter that narrows results by booking date.
 
-Existing logic
-──────────────
-Full parsing is in the legacy ingestion/brazoria_jail.py file.
-This class is a structured wrapper — parse_results() and fetch_detail()
-contain TODO stubs pointing to the corresponding legacy functions.
+Session requirements
+────────────────────
+Two-step session init per search:
+  1. GET default.aspx  → sets AWSALB, ASP.NET_SessionId, .ASPXFORMSPUBLICACCESS cookies
+  2. GET JailingSearch.aspx?ID=400  → fresh __VIEWSTATE / __EVENTVALIDATION tokens
+
+Critical: JavaScript function ValidateSearchParameters() normally sets
+  SearchType="PARTYNAME" and NameTypeKy="ALIAS" before form submission.
+  Without these values the server returns ErrorOccured.aspx.
 
 Environment variables
 ─────────────────────
-BRAZORIA_BASE_URL    base URL for the Tyler portal   (default: Tyler public URL)
-BRAZORIA_DUMP_DIR    debug HTML dump directory        (default: debug_dumps/brazoria)
-BRAZORIA_MAX_DEBUG   max debug files to keep          (default: 20)
+BRAZORIA_BASE_URL    base URL for the Tyler portal   (default: Tyler cloud URL)
 """
 from __future__ import annotations
 
 import os
 import re
-import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
-from urllib.parse import urljoin
-
 import requests
 from bs4 import BeautifulSoup
 
 from ingestion.lookups.base import LookupResult, LookupScraper
 
-BASE = os.getenv("BRAZORIA_BASE_URL", "https://pubweb.brazoriacountytx.gov/PublicAccess/")
-SEARCH_PATH = "JailingSearch.aspx"
+BASE = os.getenv(
+    "BRAZORIA_BASE_URL",
+    "https://portal-txbrazoria.tylertech.cloud/PublicAccess/",
+)
+SEARCH_URL = BASE + "JailingSearch.aspx?ID=400"
 
 _UA = {
     "User-Agent": (
@@ -45,7 +48,6 @@ _UA = {
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36"
     ),
     "Accept": "text/html,application/xhtml+xml",
-    "Referer": urljoin(BASE, SEARCH_PATH) + "?ID=400",
     "Accept-Language": "en-US,en;q=0.9",
 }
 
@@ -70,19 +72,30 @@ def _session() -> requests.Session:
     return sess
 
 
+def _to_mmddyyyy(date_str: str) -> str:
+    """Convert YYYY-MM-DD to MM/DD/YYYY.  Passes through if already MM/DD/YYYY."""
+    if re.match(r"^\d{4}-\d{2}-\d{2}$", date_str):
+        y, mo, d = date_str.split("-")
+        return f"{mo}/{d}/{y}"
+    return date_str
+
+
 class BrazoriaLookup(LookupScraper):
     """
     Brazoria County Tyler PublicAccess lookup.
-    Requires both first_name and last_name — Tyler's search rejects partial names.
+
+    Requires both first_name and last_name — Tyler's server rejects searches
+    that omit either.  booking_date is an optional additive filter (MM/DD/YYYY
+    or YYYY-MM-DD); it does NOT replace the name requirement.
     """
 
     COLLECTION = "brazoria_inmates"
     COUNTY = "brazoria"
-    SOURCE = "brazoria_tyler"
+    SOURCE = "brazoria_tyler_publicaccess"
 
     def __init__(self, db):
         super().__init__(db)
-        self._session: Optional[requests.Session] = None
+        self._sess: Optional[requests.Session] = None  # reused across detail fetches
 
     # ── search_person() ──────────────────────────────────────────────────────
 
@@ -95,55 +108,108 @@ class BrazoriaLookup(LookupScraper):
         """
         Search the Brazoria Tyler portal for a specific person.
 
-        Both last_name AND first_name are required.
-        Raises ValueError if first_name is empty.
+        Both last_name AND first_name are required — Tyler rejects name-only
+        searches without a first name.
+
+        Optional kwargs
+        ───────────────
+        booking_date : str
+            Narrow results to a specific booking date (YYYY-MM-DD or MM/DD/YYYY).
+            Sets both DateBookingOnAfter and DateBookingOnBefore to the same value.
+            NOTE: date-only searches are NOT supported; names are always required.
         """
         if not first_name or not first_name.strip():
             raise ValueError(
                 "BrazoriaLookup requires both first_name and last_name. "
-                "Tyler PublicAccess will return no results without a first name."
+                "Tyler PublicAccess rejects searches without a first name."
             )
+
+        booking_date_raw = kwargs.get("booking_date", "")
+        date_filter = _to_mmddyyyy(booking_date_raw.strip()) if booking_date_raw else ""
 
         scraped_at = _utcnow_iso()
         sess = _session()
 
-        # Step 1: Load the search form to get cookies / VIEWSTATE
-        form_url = urljoin(BASE, SEARCH_PATH) + "?ID=400"
+        # Step 1: Visit default.aspx to establish session cookies
         try:
-            init_resp = sess.get(form_url, timeout=30)
-            init_resp.raise_for_status()
+            sess.get(BASE + "default.aspx", timeout=30)
+        except Exception as exc:
+            print(f"[brazoria] session init failed: {exc}")
+            return []
+
+        # Step 2: GET the search form for fresh VIEWSTATE tokens
+        try:
+            form_resp = sess.get(SEARCH_URL, timeout=30)
+            form_resp.raise_for_status()
         except Exception as exc:
             print(f"[brazoria] form load failed: {exc}")
             return []
 
-        soup = BeautifulSoup(init_resp.text, "lxml")
+        soup = BeautifulSoup(form_resp.text, "html.parser")
 
-        # Extract ASP.NET form state tokens
         def _hidden(name: str) -> str:
             tag = soup.find("input", {"name": name})
             return tag["value"] if tag and tag.get("value") else ""
 
-        # Step 2: POST search form
+        # Step 3: POST the search form with JS-required fields included
         payload = {
-            "__VIEWSTATE":          _hidden("__VIEWSTATE"),
-            "__VIEWSTATEGENERATOR": _hidden("__VIEWSTATEGENERATOR"),
-            "__EVENTVALIDATION":    _hidden("__EVENTVALIDATION"),
-            "cboState":             "AA",  # All agencies
-            "txtLastName":          last_name.strip().upper(),
-            "txtFirstName":         first_name.strip().upper(),
-            "btnSearch":            "Search",
+            "__EVENTTARGET":          "",
+            "__EVENTARGUMENT":        "",
+            "__VIEWSTATE":            _hidden("__VIEWSTATE"),
+            "__VIEWSTATEGENERATOR":   _hidden("__VIEWSTATEGENERATOR"),
+            "__EVENTVALIDATION":      _hidden("__EVENTVALIDATION"),
+            "RadioSearchType":        "1",           # 1 = PartyNameOption
+            "BookingNumber":          "",
+            "LastName":               last_name.strip().upper(),
+            "FirstName":              first_name.strip().upper(),
+            "MiddleName":             "",
+            "DateOfBirth":            "",
+            "DateBookingOnAfter":     date_filter,
+            "DateBookingOnBefore":    date_filter,
+            "DateReleasedOnAfter":    "",
+            "DateReleasedOnBefore":   "",
+            "BondStatusType":         "0",           # 0 = AllOption
+            "DatePostedOnAfter":      "",
+            "DatePostedOnBefore":     "",
+            "SearchSubmit":           "Search",
+            # Values normally set by JavaScript ValidateSearchParameters()
+            "SearchType":             "PARTYNAME",
+            "NameTypeKy":             "ALIAS",
+            "BaseConnKy":             "",
+            "ShowInactive":           "",
+            "StatusType":             "",
+            "AllStatusTypes":         "",
+            "BondCompany":            "",
+            "NodeID":                 _hidden("NodeID"),
+            "ProductType":            "",
+            "SearchParams":           "",
+        }
+
+        headers = {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Origin": "https://portal-txbrazoria.tylertech.cloud",
+            "Referer": SEARCH_URL,
         }
 
         try:
-            search_resp = sess.post(form_url, data=payload, timeout=30)
+            search_resp = sess.post(SEARCH_URL, data=payload, headers=headers, timeout=30)
             search_resp.raise_for_status()
         except Exception as exc:
             print(f"[brazoria] search POST failed: {exc}")
             return []
 
-        # Step 3: Parse results table
-        results = self._parse_results(search_resp.text, scraped_at)
-        print(f"[brazoria] search '{last_name}, {first_name}' → {len(results)} results")
+        # Abort if Tyler bounced us to an error page
+        if "ErrorOccured" in search_resp.url or self._is_error_page(search_resp.text):
+            print(f"[brazoria] server returned error page for '{last_name}, {first_name}'")
+            return []
+
+        self._sess = sess  # preserve session for subsequent fetch_detail() calls
+        results = self._parse_results(search_resp.text, scraped_at, sess)
+        date_note = f" booking_date={date_filter}" if date_filter else ""
+        print(
+            f"[brazoria] search '{last_name}, {first_name}'{date_note}"
+            f" -> {len(results)} results"
+        )
         return results
 
     # ── fetch_detail() ───────────────────────────────────────────────────────
@@ -151,44 +217,84 @@ class BrazoriaLookup(LookupScraper):
     def fetch_detail(self, detail_url: str) -> Dict[str, Any]:
         """
         Fetch and parse a Brazoria Tyler detail page.
-        Returns a raw dict with charges, bond amounts, and additional booking info.
-        Ported from fetch_brazoria_detail() in ingestion/brazoria_jail.py.
+
+        Page structure (confirmed live):
+          Table 4 : booking # / other agency / facility / booked / released dates
+          Table 5 : name, description (race/sex/height/weight), alias, hair/eyes, address
+          Table 7 : charges — headers: Warrant #, Charge, Issuing Auth, Offense Date,
+                              Bond/Type, Fine/Crt Costs, Disposition
         """
         scraped_at = _utcnow_iso()
-        sess = _session()
+
+        # Reuse the session from search_person() if available — Tyler requires it.
+        # Fall back to a fresh session only when fetch_detail() is called standalone.
+        sess = self._sess if self._sess is not None else _session()
+        if self._sess is None:
+            try:
+                sess.get(BASE + "default.aspx", timeout=30)
+            except Exception:
+                pass
 
         try:
             resp = sess.get(detail_url, timeout=30)
             resp.raise_for_status()
         except Exception as exc:
-            raise RuntimeError(f"[brazoria] detail fetch failed for {detail_url}: {exc}") from exc
+            raise RuntimeError(
+                f"[brazoria] detail fetch failed for {detail_url}: {exc}"
+            ) from exc
 
-        soup = BeautifulSoup(resp.text, "lxml")
+        soup = BeautifulSoup(resp.text, "html.parser")
         result: Dict[str, Any] = {
-            "detail_url":       detail_url,
+            "detail_url":        detail_url,
             "detail_fetched_at": scraped_at,
-            "charges":          [],
-            "bond_amount":      None,
+            "charges":           [],
+            "bond_amount":       None,
         }
 
-        # TODO: Port full charge table parsing from brazoria_jail.py
-        # Legacy reference: BrazoriaScraper._parse_booking_detail()
+        tables = soup.find_all("table")
 
-        # Charge table: any table with header containing "charge" or "offense"
-        # (ported from fetch_brazoria_detail in brazoria_jail.py)
+        # ── Booking info (Table 4 area) ──────────────────────────────────────
+        # Look for any table whose text contains "Booking #:"
+        booking_text = ""
+        for tbl in tables:
+            txt = tbl.get_text(" ", strip=True)
+            if re.search(r"Booking\s*#:", txt, re.I):
+                booking_text = txt
+                break
+
+        if booking_text:
+            m = re.search(r"Booking\s*#:\s*([\w-]+)", booking_text, re.I)
+            if m:
+                result["booking_number"] = m.group(1).strip()
+            m = re.search(r"Booked:\s*([\d/]+)", booking_text, re.I)
+            if m:
+                result["booking_date"] = m.group(1).strip()
+            m = re.search(r"Released:\s*([\d/]+)", booking_text, re.I)
+            if m:
+                result["release_date"] = m.group(1).strip()
+
+        # ── Charge table ─────────────────────────────────────────────────────
+        # Tyler detail page charge table has these headers (case-insensitive):
+        #   Warrant #, Charge, Issuing Auth, Offense Date, Bond/Type,
+        #   Fine/Crt Costs, Disposition
         charges: List[Dict[str, Any]] = []
-        bond_values: List[int] = []
+        bond_values: List[float] = []
 
-        for tbl in soup.select("table"):
-            heads = [th.get_text(strip=True) for th in tbl.select("thead th")]
+        for tbl in tables:
+            # Gather headers from either <th> or first-row <td>
+            heads: List[str] = [
+                th.get_text(strip=True).lower() for th in tbl.select("th")
+            ]
             if not heads:
-                first = tbl.select_one("tr")
-                if first:
-                    heads = [c.get_text(strip=True) for c in first.select("th,td")]
-            norm_heads = [h.strip().lower() for h in heads]
-            if not norm_heads:
-                continue
-            if not any("charge" in h or "offense" in h for h in norm_heads):
+                first_tr = tbl.select_one("tr")
+                if first_tr:
+                    heads = [
+                        c.get_text(strip=True).lower()
+                        for c in first_tr.select("th,td")
+                    ]
+
+            norm = [h.strip() for h in heads]
+            if not any("charge" in h for h in norm):
                 continue
 
             data_rows = tbl.select("tbody tr") or tbl.select("tr")[1:]
@@ -196,34 +302,34 @@ class BrazoriaLookup(LookupScraper):
                 cells = [td.get_text(strip=True) for td in tr.select("td")]
                 if not cells:
                     continue
-                charge: Dict[str, Any] = {}
-                for i, h in enumerate(norm_heads):
-                    charge[h] = cells[i] if i < len(cells) else None
-                charges.append(charge)
-                for key in ("bond amount", "bond", "bail amount", "amount", "set bond"):
-                    if key in charge:
-                        v = _to_int_money(charge.get(key))
-                        if v:
-                            bond_values.append(v)
+                row_dict: Dict[str, Any] = {}
+                for i, h in enumerate(norm):
+                    row_dict[h] = cells[i] if i < len(cells) else ""
 
-        # Text fallback: look for "Total Bond $X" anywhere on the page
-        if not bond_values:
-            txt = soup.get_text(" ", strip=True)
-            m2 = re.search(
-                r"total\s+bond[^$0-9]*\$?\s*([0-9][0-9,]*)", txt, flags=re.I
-            )
-            if m2:
-                v = _to_int_money(m2.group(1))
-                if v:
-                    bond_values.append(v)
+                charge_entry: Dict[str, Any] = {
+                    "warrant_number":  row_dict.get("warrant #") or row_dict.get("warrant#") or "",
+                    "description":     row_dict.get("charge", ""),
+                    "issuing_auth":    row_dict.get("issuing auth", ""),
+                    "offense_date":    row_dict.get("offense date", ""),
+                    "bond_type_raw":   row_dict.get("bond/type", ""),
+                    "fine":            row_dict.get("fine/crt costs", ""),
+                    "disposition":     row_dict.get("disposition", ""),
+                }
+                charges.append(charge_entry)
 
-        bond_total = (
-            sum(bond_values) if len(bond_values) > 1 else (bond_values[0] if bond_values else None)
-        )
+                # Extract bond amount from "Bond/Type" cell, e.g. "200.00 Bail Bond"
+                bond_raw = charge_entry["bond_type_raw"]
+                if bond_raw:
+                    m = re.match(r"^\s*([0-9][0-9,]*\.?\d*)", bond_raw.replace(",", ""))
+                    if m:
+                        try:
+                            bond_values.append(float(m.group(1)))
+                        except ValueError:
+                            pass
 
         result["charges"] = charges
-        if bond_total is not None:
-            result["bond_amount"] = int(bond_total)
+        if bond_values:
+            result["bond_amount"] = int(sum(bond_values))
 
         return result
 
@@ -297,37 +403,38 @@ class BrazoriaLookup(LookupScraper):
             return True
         return False
 
-    def _parse_results(self, html: str, scraped_at: str) -> List[Dict[str, Any]]:
+    def _parse_results(
+        self,
+        html: str,
+        scraped_at: str,
+        sess: Optional[requests.Session] = None,
+    ) -> List[Dict[str, Any]]:
         """
         Parse the Tyler PublicAccess search results table.
 
-        Ported from brazoria_jail.py: _pick_results_table() + search_brazoria() row loop.
-        Tyler's table always has both "booking number" and "defendant name" headers.
-        Positional column mapping (Tyler layout):
-          tds[0] = booking_number
-          tds[1] = name (LAST, FIRST)
-          tds[2] = booking_date
-          tds[3] = release_date
-          tds[4] = arresting_agency
-          tds[5] = charges_summary
+        Tyler results table headers: booking number, defendant name, booked,
+        released, arresting agency (colspan=2), charge(s)
+
+        Each data row identified by presence of a JailingDetail link.
+        Nested table in td[4] contains (agency, charge) pairs per count.
         """
         if self._is_error_page(html) or self._is_search_form(html):
             return []
 
-        soup = BeautifulSoup(html, "lxml")
+        soup = BeautifulSoup(html, "html.parser")
         rows: List[Dict[str, Any]] = []
 
-        # Tyler results table must have BOTH headers
+        # Find the results table by headers
         results_tbl = None
-        for tbl in soup.select("table"):
-            hdrs = [
-                th.get_text(strip=True).lower()
-                for th in tbl.select("thead th") or tbl.select("tr:first-child th")
-            ]
-            if not hdrs:  # some Tyler pages put headers in first <tr> as <td>
-                first_tr = tbl.select_one("tr")
+        for tbl in soup.find_all("table"):
+            hdrs = [th.get_text(strip=True).lower() for th in tbl.find_all("th")]
+            if not hdrs:
+                first_tr = tbl.find("tr")
                 if first_tr:
-                    hdrs = [c.get_text(strip=True).lower() for c in first_tr.select("th, td")]
+                    hdrs = [
+                        c.get_text(strip=True).lower()
+                        for c in first_tr.find_all(["th", "td"])
+                    ]
             if "booking number" in hdrs and "defendant name" in hdrs:
                 results_tbl = tbl
                 break
@@ -335,47 +442,66 @@ class BrazoriaLookup(LookupScraper):
         if not results_tbl:
             return rows
 
-        data_rows = results_tbl.select("tbody tr") or [
-            tr for tr in results_tbl.select("tr") if tr.find_all("td")
-        ]
-
-        for tr in data_rows:
-            tds = tr.find_all("td")
-            if len(tds) < 6:
+        for tr in results_tbl.find_all("tr"):
+            # Skip rows without a JailingDetail link — these are headers / spacers
+            detail_link = tr.find("a", href=re.compile(r"JailingDetail", re.I))
+            if not detail_link:
                 continue
 
-            vals = [td.get_text(" ", strip=True) for td in tds]
+            # Use recursive=False to get only the top-level <td> cells
+            # (avoids inflating cell count from the nested charge table)
+            tds = tr.find_all("td", recursive=False)
+            if len(tds) < 4:
+                continue
 
-            name_link = tr.select_one("a[href]")
-            detail_href = name_link["href"] if name_link else None
-            detail_url = urljoin(BASE, detail_href) if detail_href else None
+            booking_number = tds[0].get_text(strip=True) or None
+            detail_href = detail_link.get("href", "")
+            if detail_href:
+                detail_url = BASE.rstrip("/") + "/" + detail_href.lstrip("/")
+            else:
+                detail_url = None
 
-            name = vals[1] if len(vals) > 1 else ""
+            name = tds[1].get_text(" ", strip=True)
             last_name = first_name = None
             if "," in name:
                 parts = name.split(",", 1)
-                last_name  = parts[0].strip().upper()
-                first_name = parts[1].strip().upper()
+                last_name  = parts[0].strip().upper() or None
+                first_name = parts[1].strip().upper() or None
             else:
                 last_name = name.strip().upper() or None
 
+            booked   = tds[2].get_text(strip=True) or None  # MM/DD/YYYY
+            released = tds[3].get_text(strip=True) or None  # MM/DD/YYYY or empty
+
+            # td[4]: nested table with (agency, charge) rows
+            charges: List[Dict[str, str]] = []
+            if len(tds) > 4:
+                nested_tbl = tds[4].find("table")
+                if nested_tbl:
+                    for ntr in nested_tbl.find_all("tr"):
+                        ntds = ntr.find_all("td")
+                        if len(ntds) >= 2:
+                            charges.append({
+                                "arresting_agency": ntds[0].get_text(strip=True),
+                                "description":      ntds[1].get_text(strip=True),
+                            })
+
             rows.append({
-                "scraped_at":       scraped_at,
-                "booking_number":   vals[0] or None,
-                "last_name":        last_name,
-                "first_name":       first_name,
-                "booking_date":     vals[2] or None,
-                "release_date":     vals[3] or None,
-                "arresting_agency": vals[4] or None,
-                "charges_summary":  vals[5] or None,
-                "detail_url":       detail_url,
+                "scraped_at":     scraped_at,
+                "booking_number": booking_number,
+                "last_name":      last_name,
+                "first_name":     first_name,
+                "booking_date":   booked,
+                "release_date":   released,
+                "charges":        charges,
+                "detail_url":     detail_url,
             })
 
         return rows
 
 
 # ── Dry-run entry point ──────────────────────────────────────────────────────
-# Usage: python3 -m ingestion.lookups.brazoria_lookup --dry-run --last-name SMITH [--first-name JOHN]
+# Usage: python3 -m ingestion.lookups.brazoria_lookup --last-name SMITH --first-name JOHN
 
 if __name__ == "__main__":
     import argparse
@@ -384,20 +510,38 @@ if __name__ == "__main__":
 
     class _NullDb:
         class _NullColl:
-            def find_one(self, *a, **kw):          return None
-            def insert_one(self, *a, **kw):         return type("R", (), {"inserted_id": None})()
-            def update_one(self, *a, **kw):         return type("R", (), {"upserted_id": None, "matched_count": 0, "modified_count": 0})()
-            def find(self, *a, **kw):               return []
-        def __getitem__(self, name):                return self._NullColl()
-        def __getattr__(self, name):                return self._NullColl()
+            def find_one(self, *a, **kw):
+                return None
+            def insert_one(self, *a, **kw):
+                return type("R", (), {"inserted_id": None})()
+            def update_one(self, *a, **kw):
+                return type("R", (), {"upserted_id": None, "matched_count": 0, "modified_count": 0})()
+            def find(self, *a, **kw):
+                return []
+        def __getitem__(self, name):
+            return self._NullColl()
+        def __getattr__(self, name):
+            return self._NullColl()
 
     ap = argparse.ArgumentParser(description="Brazoria lookup dry-run")
-    ap.add_argument("--dry-run",    action="store_true", default=True)
-    ap.add_argument("--last-name",  required=True, help="Last name to search")
-    ap.add_argument("--first-name", default="",    help="First name to search")
+    ap.add_argument("--last-name",    required=True, help="Last name to search")
+    ap.add_argument("--first-name",   default="",    help="First name to search")
+    ap.add_argument("--booking-date", default="",    help="Optional booking date (YYYY-MM-DD)")
     args = ap.parse_args()
 
-    print(f"[brazoria] dry-run — searching '{args.last_name}, {args.first_name}' (no MongoDB writes)")
+    kwargs = {}
+    if args.booking_date:
+        kwargs["booking_date"] = args.booking_date
+
+    date_note = f" booking_date={args.booking_date}" if args.booking_date else ""
+    print(
+        "[brazoria] dry-run"
+        " — searching '{}{}'{} (no MongoDB writes)".format(
+            args.last_name,
+            (", " + args.first_name) if args.first_name else "",
+            date_note,
+        )
+    )
     scraper = BrazoriaLookup(_NullDb())
 
     results = scraper.lookup(
@@ -405,11 +549,22 @@ if __name__ == "__main__":
         first_name=args.first_name,
         fetch_details=True,
         store=False,
+        **kwargs,
     )
-    print(f"[brazoria] lookup() returned {len(results)} results")
+    print("[brazoria] lookup() returned {} results".format(len(results)))
     for i, r in enumerate(results):
         required = ["county", "source", "scraped_at", "full_name", "booking_number"]
         missing  = [f for f in required if not r.get(f)]
         status   = "WARN missing: " + str(missing) if missing else "OK"
-        print(f"  [{status}] result[{i}]: {json.dumps({k: v for k, v in r.items() if k not in ('raw', '_upsert_key')}, default=str, indent=2)}")
+        print(
+            "  [{}] result[{}]: {}".format(
+                status,
+                i,
+                json.dumps(
+                    {k: v for k, v in r.items() if k not in ("raw", "_upsert_key")},
+                    default=str,
+                    indent=2,
+                ),
+            )
+        )
     sys.exit(0)

@@ -67,6 +67,25 @@ async function upsertUserProfile(decoded) {
 }
 
 export async function requireAuth(req, res, next) {
+  // DEV_BYPASS_AUTH — inject a synthetic admin user for integration testing.
+  // MUST NOT be set in production (NODE_ENV=production blocks it entirely).
+  if (
+    String(process.env.DEV_BYPASS_AUTH || '').toLowerCase() === 'true' &&
+    String(process.env.NODE_ENV || '').toLowerCase() !== 'production'
+  ) {
+    req.user = {
+      uid: 'dev-bypass-admin',
+      email: 'dev-bypass@localhost',
+      roles: ['Admin'],
+      departments: [],
+      counties: [],
+      status: 'active',
+      mfaEnforced: false,
+    };
+    req.firebase = { decoded: { uid: 'dev-bypass-admin' } };
+    return next();
+  }
+
   console.log('[AUTH] ============ requireAuth middleware called ==============');
   try {
     console.log('[AUTH] attempting verifyFirebaseSession');
