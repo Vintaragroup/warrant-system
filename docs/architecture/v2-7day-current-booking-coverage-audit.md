@@ -221,14 +221,14 @@ The previous scraper attempted GET-based detail-page fetching via URLs, but the 
 
 **MongoDB post-ingest audit (`v2_galveston_events`):**
 
-| Metric | Value |
-|---|---|
-| Total docs | 1114 |
-| `bond_amount > 0` | 890 (80%) |
-| `detail_fetch_status = ok` | 1111 |
-| `detail_fetch_status = failed` | 0 |
-| Last-7d docs with bond | 92 |
-| Last-7d bond total | $8,993,643.70 |
+| Metric                         | Value         |
+| ------------------------------ | ------------- |
+| Total docs                     | 1114          |
+| `bond_amount > 0`              | 890 (80%)     |
+| `detail_fetch_status = ok`     | 1111          |
+| `detail_fetch_status = failed` | 0             |
+| Last-7d docs with bond         | 92            |
+| Last-7d bond total             | $8,993,643.70 |
 
 ### Dashboard Impact
 
@@ -254,28 +254,28 @@ The previous scraper attempted GET-based detail-page fetching via URLs, but the 
 
 **Tyler portal** (`https://portal-txbrazoria.tylertech.cloud/PublicAccess/`):
 
-| Test Case | Result | Evidence |
-|---|---|---|
-| Last-name-only search | `ErrorOccured.aspx` | Server-side enforcement, no JS intercept needed |
-| Empty first+last names | `ErrorOccured.aspx` | Confirmed |
-| Single-letter first+last (`S`/`J`) | 200 OK, 0 results | Tyler returns empty results for too-short terms |
-| Booking-number-only search (`RadioSearchType=2`) | `ErrorOccured.aspx` | Booking number mode also requires name |
-| Booking-number + date range, no names | `ErrorOccured.aspx` | Confirmed |
-| AJAX/XHR/fetch patterns in page JS | None found | No scripts had URL patterns |
-| `JailRoster.aspx` | `ErrorOccured.aspx` (302→200) | Path exists but not accessible |
-| `InmateSearch.aspx` | `ErrorOccured.aspx` (302→200) | Same |
-| `JailSearch.aspx` | `ErrorOccured.aspx` (302→200) | Same |
-| `api/jail`, `api/inmates` | 404 | No REST API |
-| `jqHandler.ashx`, `handler.ashx` | 404 | No jqGrid/AJAX handler |
+| Test Case                                        | Result                        | Evidence                                        |
+| ------------------------------------------------ | ----------------------------- | ----------------------------------------------- |
+| Last-name-only search                            | `ErrorOccured.aspx`           | Server-side enforcement, no JS intercept needed |
+| Empty first+last names                           | `ErrorOccured.aspx`           | Confirmed                                       |
+| Single-letter first+last (`S`/`J`)               | 200 OK, 0 results             | Tyler returns empty results for too-short terms |
+| Booking-number-only search (`RadioSearchType=2`) | `ErrorOccured.aspx`           | Booking number mode also requires name          |
+| Booking-number + date range, no names            | `ErrorOccured.aspx`           | Confirmed                                       |
+| AJAX/XHR/fetch patterns in page JS               | None found                    | No scripts had URL patterns                     |
+| `JailRoster.aspx`                                | `ErrorOccured.aspx` (302→200) | Path exists but not accessible                  |
+| `InmateSearch.aspx`                              | `ErrorOccured.aspx` (302→200) | Same                                            |
+| `JailSearch.aspx`                                | `ErrorOccured.aspx` (302→200) | Same                                            |
+| `api/jail`, `api/inmates`                        | 404                           | No REST API                                     |
+| `jqHandler.ashx`, `handler.ashx`                 | 404                           | No jqGrid/AJAX handler                          |
 
 **Other Brazoria domains:**
 
-| Domain | Result |
-|---|---|
-| `pubweb.brazoriacountytx.gov` | Connection refused — offline |
-| `brazoriacounty.net/sheriff/jail` | JS SPA, redirects to `/lander`, no links |
-| `brazoriacountytx.gov/departments/sheriff/jail-information` | 404 |
-| `brazoriacountytx.gov/government/elected-officials/sheriff/jail` | 404 |
+| Domain                                                           | Result                                   |
+| ---------------------------------------------------------------- | ---------------------------------------- |
+| `pubweb.brazoriacountytx.gov`                                    | Connection refused — offline             |
+| `brazoriacounty.net/sheriff/jail`                                | JS SPA, redirects to `/lander`, no links |
+| `brazoriacountytx.gov/departments/sheriff/jail-information`      | 404                                      |
+| `brazoriacountytx.gov/government/elected-officials/sheriff/jail` | 404                                      |
 
 ### Conclusion
 
@@ -293,7 +293,7 @@ The previous scraper attempted GET-based detail-page fetching via URLs, but the 
 
 | Issue                               | Status      | Notes                                                                                           |
 | ----------------------------------- | ----------- | ----------------------------------------------------------------------------------------------- |
-| Brazoria 7-day coverage             | Won't fix   | Tyler portal requires names; no date-sweep possible — **confirmed by live probe 2026-04-29**   |
+| Brazoria 7-day coverage             | Won't fix   | Tyler portal requires names; no date-sweep possible — **confirmed by live probe 2026-04-29**    |
 | Fort Bend booking_date = None       | Known issue | Portal may not expose booking date in results list; field parsing may need column-detection fix |
 | Galveston roster-only               | Accepted    | Live jail roster; released inmates from earlier in the week are absent                          |
 | Harris no per-record booking_date   | Accepted    | Report-based source; `observed_at` = report date is the best available proxy                    |
@@ -327,12 +327,12 @@ docker exec warrant-admin-dev-api-1 python3 /pipeline/scripts/audit_v2_7day_cove
 
 Fails (exit code 1) if bond enrichment has regressed. Thresholds:
 
-| Check | Threshold |
-|---|---|
-| Records ingested within 48h | ≥ 1 |
-| `detail_fetch_status = ok` | ≥ 70% of total docs |
-| `bond_amount > 0` | ≥ 50% of total docs |
-| 7-day bond total | > $0 |
+| Check                       | Threshold           |
+| --------------------------- | ------------------- |
+| Records ingested within 48h | ≥ 1                 |
+| `detail_fetch_status = ok`  | ≥ 70% of total docs |
+| `bond_amount > 0`           | ≥ 50% of total docs |
+| 7-day bond total            | > $0                |
 
 **Usage:**
 
