@@ -306,3 +306,15 @@ export function usePerCounty(window = 'rolling72', options = {}) {
     ...options,
   });
 }
+
+export function useChargeBonds({ window = '7d', county = 'all', limit = 20 } = {}, options = {}) {
+  const params = new URLSearchParams({ window, limit: String(limit) });
+  if (county && county !== 'all') params.set('county', county);
+  return useQuery({
+    queryKey: ['chargeBonds', window, county, limit],
+    queryFn: async () => getJSON(`/dashboard/charge-bonds?${params.toString()}`),
+    staleTime: 60_000,
+    placeholderData: (previous) => previous,
+    ...options,
+  });
+}

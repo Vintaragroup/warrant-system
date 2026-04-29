@@ -33,6 +33,7 @@ const r = Router();
 const SUPPORTED_SOURCES = [
   'galveston',
   'harris_reports',
+  'wharton',
   'fortbend_lookup',
   'jefferson_lookup',
   'brazoria_lookup',
@@ -42,6 +43,7 @@ const SUPPORTED_SOURCES = [
 const SOURCE_MAX_LIMITS = {
   galveston: 500,
   harris_reports: 4,
+  wharton: 500,
   fortbend_lookup: 100,
   jefferson_lookup: 100,
   brazoria_lookup: 100,
@@ -51,6 +53,7 @@ const SOURCE_MAX_LIMITS = {
 const SOURCE_STAGING_COLLECTIONS = {
   galveston: 'v2_galveston_events',
   harris_reports: 'v2_harris_reports',
+  wharton: 'v2_wharton_events',
   fortbend_lookup: 'v2_lookup_results',
   jefferson_lookup: 'v2_lookup_results',
   brazoria_lookup: 'v2_lookup_results',
@@ -59,6 +62,7 @@ const SOURCE_STAGING_COLLECTIONS = {
 const SOURCE_LIVE_COLLECTIONS = {
   galveston: 'simple_galveston',
   harris_reports: 'simple_harris',
+  wharton: 'simple_wharton',
   fortbend_lookup: 'simple_fortbend',
   jefferson_lookup: 'simple_jefferson',
   brazoria_lookup: 'simple_brazoria',
@@ -269,8 +273,9 @@ r.get('/errors', async (req, res) => {
 
     if (source) validateSource(source);
 
+    // Only real failures — skip/dry-run entries belong in Run History, not Errors
     const query = {
-      status: { $in: ['failed', 'skipped'] },
+      status: 'failed',
       ...(source ? { source } : {}),
     };
     const errors = await db.collection(INGESTION_RUNS_COLLECTION)
@@ -576,6 +581,148 @@ r.post('/run', async (req, res) => {
   });
 });
 
+// ── POST /api/admin/ingestion/run-all ────────────────────────────────────────
+
+/**
+ * Run all non-lookup sources sequentially. Lookup sources (fortbend, jefferson,
+ * brazoria) require name params that aren't available in bulk mode, so they are
+ * skipped and marked as such in the results unless the Python script can handle
+ * no-name invocations.
+ *
+ * Body: { limit?: number, dryRun?: boolean }
+ * Returns: { ok, results: [{ source, status, seen, written, error }] }
+ */
+r.post('/run-all', async (req, res) => {
+  const { limit: limitParam = 100, dryRun: dryRunParam = false } = req.body || {};
+
+  const dryRun = dryRunParam === true || dryRunParam === 'true';
+
+  // Block non-dry-run unless explicitly allowed by env
+  const allowNonDryRun = String(process.env.ALLOW_ADMIN_NON_DRY_RUN || 'false').toLowerCase() === 'true';
+  if (!dryRun && !allowNonDryRun) {
+    return res.status(403).json({
+      ok: false,
+      error: 'NON_DRY_RUN_BLOCKED',
+      message: 'Non-dry-run is disabled. Set ALLOW_ADMIN_NON_DRY_RUN=true to enable staging writes from the admin UI.',
+    });
+  }
+
+  // Verify pipeline runner exists once before looping
+  try {
+    const { existsSync } = await import('node:fs');
+    const runnerPath = path.join(PIPELINE_ROOT, 'scripts', 'run_ingestion_v2.py');
+    if (!existsSync(runnerPath)) {
+      return res.status(503).json({
+        ok: false,
+        error: 'PIPELINE_NOT_FOUND',
+        message: `Pipeline runner not found at ${runnerPath}. Set PIPELINE_ROOT env var.`,
+      });
+    }
+  } catch (err) {
+    return res.status(503).json({ ok: false, error: 'PIPELINE_CHECK_FAILED', message: err.message });
+  }
+
+  const createdBy = req.user?.uid || req.user?.email || 'admin';
+  const results = [];
+
+  // Run non-lookup sources; skip lookup sources in bulk mode (require name params)
+  const bulkSources = ['galveston', 'harris_reports', 'wharton'];
+  const skippedLookup = ['fortbend_lookup', 'jefferson_lookup', 'brazoria_lookup'];
+
+  for (const source of bulkSources) {
+    const limit = clampLimit(source, limitParam);
+    const pyArgs = [
+      path.join(PIPELINE_ROOT, 'scripts', 'run_ingestion_v2.py'),
+      '--source', source,
+      '--limit', String(limit),
+      '--trigger', 'manual',
+      '--created-by', createdBy,
+      dryRun ? '--dry-run' : '--no-dry-run',
+    ];
+    const childEnv = {
+      ...process.env,
+      PYTHONPATH: PIPELINE_ROOT,
+      USE_V2_INGESTION: dryRun ? 'false' : 'true',
+      DRY_RUN: dryRun ? 'true' : 'false',
+    };
+
+    let stdout = '';
+    let stdoutHead = ''; // First 2000 chars — for count-line parsing (not truncated)
+    let stderr = '';
+    let exitCode = null;
+
+    try {
+      await new Promise((resolve, reject) => {
+        const child = spawn('python3', pyArgs, {
+          cwd: PIPELINE_ROOT,
+          env: childEnv,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        child.stdout.on('data', (chunk) => {
+          const s = chunk.toString();
+          if (stdoutHead.length < 2000) stdoutHead += s.slice(0, 2000 - stdoutHead.length);
+          stdout += s;
+          if (stdout.length > OUTPUT_TAIL_CHARS * 2) stdout = stdout.slice(-OUTPUT_TAIL_CHARS * 2);
+        });
+        child.stderr.on('data', (chunk) => { stderr += chunk.toString(); if (stderr.length > OUTPUT_TAIL_CHARS * 2) stderr = stderr.slice(-OUTPUT_TAIL_CHARS * 2); });
+        child.on('close', (code) => { exitCode = code; resolve(); });
+        child.on('error', reject);
+        const timer = setTimeout(() => { child.kill('SIGTERM'); reject(new Error('Run timed out after 5 minutes')); }, 5 * 60 * 1000);
+        child.on('close', () => clearTimeout(timer));
+      });
+
+      // Parse seen/written counts from actual script output formats:
+      //   galveston dry-run:  "[galveston] dry-run summary: ok=N warn=N skip=N"  (appears at end → use stdout)
+      //   galveston live:     "[galveston] stored N events"                       (appears at end → use stdout)
+      //   harris dry-run:     "[harris] found N reports on datasets page"         (appears at START — use stdoutHead, gets truncated from stdout)
+      //   harris live:        "[harris] total records stored: N"                  (appears at end → use stdout)
+      let seen = null;
+      let written = null;
+
+      const dryRunSummaryMatch  = stdout.match(/dry-run summary: ok=(\d+)/i);
+      const harrisFoundMatch    = stdoutHead.match(/found (\d+) reports on datasets page/i);
+      const storedEventsMatch   = stdout.match(/stored (\d+) events/i);
+      const harrisStoredMatch   = stdout.match(/total records stored[: ]+(\d+)/i);
+
+      if (dryRun) {
+        if (dryRunSummaryMatch) seen = parseInt(dryRunSummaryMatch[1], 10);
+        else if (harrisFoundMatch) seen = parseInt(harrisFoundMatch[1], 10);
+        written = 0; // dry-run never writes
+      } else {
+        if (storedEventsMatch)  { seen = parseInt(storedEventsMatch[1], 10);  written = seen; }
+        if (harrisStoredMatch)  { seen = parseInt(harrisStoredMatch[1], 10);  written = seen; }
+      }
+
+      results.push({
+        source,
+        status: exitCode === 0 ? 'completed' : 'failed',
+        seen,
+        written,
+        error: exitCode !== 0 ? tailOutput(redactSecrets(stderr || stdout)).slice(0, 300) : null,
+      });
+    } catch (err) {
+      results.push({ source, status: 'failed', seen: null, written: null, error: err.message });
+    }
+  }
+
+  // Lookup sources cannot run in bulk mode — report as skipped
+  for (const source of skippedLookup) {
+    results.push({
+      source,
+      status: 'skipped',
+      seen: null,
+      written: null,
+      error: 'Lookup sources require a name/date parameter — use Run Individual Source.',
+    });
+  }
+
+  return res.json({
+    ok: results.some((r) => r.status === 'completed'),
+    dry_run: dryRun,
+    results,
+  });
+});
+
 // ── GET /api/admin/ingestion/readiness ───────────────────────────────────────
 
 /**
@@ -599,6 +746,7 @@ r.post('/run', async (req, res) => {
 const READINESS_RULES = {
   galveston:        { staleHours: 1,  minSuccessRate: 0.95, minDays: 3, required: true },
   harris_reports:   { staleHours: 36, minSuccessRate: 0.95, minDays: 3, required: true },
+  wharton:          { staleHours: 4,  minSuccessRate: 0.90, minDays: 3, required: false, alwaysWatch: true },
   jefferson_lookup: { staleHours: 12, minSuccessRate: 0.90, minDays: 3, required: true },
   brazoria_lookup:  { staleHours: 12, minSuccessRate: 0.90, minDays: 3, required: false, alwaysWatch: true },
   fortbend_lookup:  { required: false, manualOnly: true },

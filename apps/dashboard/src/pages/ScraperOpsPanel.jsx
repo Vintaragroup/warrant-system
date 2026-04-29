@@ -7,6 +7,7 @@ import {
   useIngestionConfig,
   useUpdateIngestionConfig,
   useTriggerRun,
+  useRunAll,
   usePauseSource,
   useResumeSource,
   useIngestionReadiness,
@@ -51,6 +52,7 @@ class ScraperOpsBoundary extends Component {
 const SOURCES = [
   'galveston',
   'harris_reports',
+  'wharton',
   'fortbend_lookup',
   'jefferson_lookup',
   'brazoria_lookup',
@@ -60,11 +62,11 @@ const LOOKUP_SOURCES = new Set(['fortbend_lookup', 'jefferson_lookup', 'brazoria
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
-  { id: 'run', label: 'Manual Run' },
+  { id: 'run', label: 'Run Now' },
   { id: 'scheduler', label: 'Scheduler' },
   { id: 'runs', label: 'Run History' },
   { id: 'errors', label: 'Errors' },
-  { id: 'readiness', label: 'Readiness' },
+  { id: 'readiness', label: 'Data Health' },
 ];
 
 // ── Shared helpers ─────────────────────────────────────────────────────────────
@@ -100,8 +102,10 @@ function StatusBadge({ value }) {
     failed: 'bg-rose-50 text-rose-700',
     running: 'bg-blue-50 text-blue-700',
     skipped: 'bg-slate-100 text-slate-500',
+    completed: 'bg-emerald-50 text-emerald-700',
     enabled: 'bg-emerald-50 text-emerald-700',
     disabled: 'bg-slate-100 text-slate-500',
+    'not scheduled': 'bg-slate-100 text-slate-500',
     paused: 'bg-amber-50 text-amber-700',
   };
   return (
@@ -186,7 +190,7 @@ function OverviewTab() {
                 ? 'paused'
                 : s.enabled
                   ? 'enabled'
-                  : 'disabled';
+                  : 'not scheduled';
 
               return (
                 <tr key={s.source} className="hover:bg-slate-50">
@@ -275,6 +279,25 @@ function ManualRunTab() {
   const [awaitConfirm, setAwaitConfirm] = useState(false);
 
   const { mutate, isPending } = useTriggerRun();
+  const { mutate: runAll, isPending: runAllPending } = useRunAll();
+  const [runAllResult, setRunAllResult] = useState(null);
+  const [runAllError, setRunAllError] = useState(null);
+
+  function handleRunAll() {
+    setRunAllResult(null);
+    setRunAllError(null);
+    runAll(
+      { limit: 100, dryRun },
+      {
+        onSuccess: (data) => setRunAllResult(data),
+        onError: (err) => {
+          let msg = err.message;
+          try { const b = JSON.parse(err.message.replace(/^Request failed \d+: /, '')); if (b?.message) msg = b.message; } catch { /* raw */ }
+          setRunAllError(msg);
+        },
+      },
+    );
+  }
 
   const isLookup = LOOKUP_SOURCES.has(source);
   const isJefferson = source === 'jefferson_lookup';
@@ -337,7 +360,7 @@ function ManualRunTab() {
     ? 'Running…'
     : awaitConfirm
       ? 'Confirm — write to staging'
-      : 'Run scraper';
+      : 'Run Selected Source';
 
   const buttonClass = isPending || missingLastName || missingFirstName
     ? 'cursor-not-allowed opacity-50 rounded-lg px-4 py-2 text-sm font-semibold border border-slate-300 bg-slate-100 text-slate-400'
@@ -348,8 +371,115 @@ function ManualRunTab() {
         : 'rounded-lg border border-amber-500 bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700';
 
   return (
-    <div className="space-y-5">
-      {/* Form fields */}
+    <div className="space-y-6">
+
+      {/* ─ Run All Counties Now ──────────────────────────────── */}
+      <div className="rounded-xl border border-blue-200 bg-blue-50 p-5 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-blue-800">Run All Counties Now</p>
+            <p className="text-xs text-blue-600 mt-0.5">
+              Runs bulk county scrapers (galveston + harris_reports) sequentially.
+              Lookup sources (fortbend, jefferson, brazoria) require name/date parameters
+              and must be run individually below.
+              {dryRun
+                ? ' Dry run ON — no records will be written.'
+                : ' Writes to staging collections.'}
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled={runAllPending}
+            onClick={handleRunAll}
+            className={`rounded-lg px-5 py-2.5 text-sm font-semibold ${
+              runAllPending
+                ? 'bg-blue-400 text-white cursor-not-allowed opacity-70'
+                : dryRun
+                  ? 'border border-blue-400 bg-blue-600 text-white hover:bg-blue-700'
+                  : 'border border-blue-600 bg-blue-700 text-white hover:bg-blue-800'
+            }`}
+          >
+            {runAllPending ? 'Running…' : 'Run Bulk Scrapers Now'}
+          </button>
+        </div>
+
+        {/* Run-all results */}
+        {runAllError && (
+          <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
+            {runAllError}
+          </div>
+        )}
+        {runAllResult && (
+          <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-2">
+            {(() => {
+              const completed = (runAllResult.results || []).filter((r) => r.status === 'completed').length;
+              const failed    = (runAllResult.results || []).filter((r) => r.status === 'failed').length;
+              const skipped   = (runAllResult.results || []).filter((r) => r.status === 'skipped').length;
+              const totalWritten = (runAllResult.results || [])
+                .filter((r) => r.status === 'completed')
+                .reduce((s, r) => s + (r.written ?? 0), 0);
+              const headline = failed > 0
+                ? 'Run finished with errors'
+                : skipped > 0 && completed === 0
+                  ? 'Run finished — no bulk sources completed'
+                  : 'Run complete';
+              return (
+                <>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      {headline}{runAllResult.dry_run ? ' (dry run)' : ''}
+                    </p>
+                    <span className="text-xs text-slate-400">
+                      Completed: {completed} · Failed: {failed} · Skipped: {skipped}
+                      {!runAllResult.dry_run && totalWritten > 0 && <> · Written: {totalWritten}</>}
+                    </span>
+                  </div>
+                </>
+              );
+            })()}
+            {(runAllResult.results || []).map((r) => (
+              <div key={r.source} className="flex items-start gap-2 text-sm">
+                <StatusBadge value={r.status} />
+                <span className="font-mono text-xs text-slate-700">{r.source}</span>
+                {r.status === 'completed' && (
+                  <span className="text-xs text-slate-500">
+                    seen {r.seen ?? '?'}, written {r.written ?? '?'}
+                  </span>
+                )}
+                {r.status === 'failed' && r.error && (
+                  <span className="text-xs text-rose-600 truncate max-w-xs" title={r.error}>{r.error}</span>
+                )}
+                {r.status === 'skipped' && (
+                  <span className="text-xs text-slate-400">{r.error}</span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ─ Dry-run toggle (shared between run-all and individual) ─ */}
+      <div className="space-y-2">
+        <label className="flex cursor-pointer select-none items-center gap-3">
+          <input
+            type="checkbox"
+            checked={dryRun}
+            onChange={(e) => handleDryRunChange(e.target.checked)}
+            className="h-4 w-4 rounded border-slate-300 accent-blue-600"
+          />
+          <span className="text-sm text-slate-700">
+            Dry run only — <span className="text-slate-400">test scraper without saving records</span>
+          </span>
+        </label>
+        {dryRun && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+            Dry run is ON. No database records will be written.
+          </div>
+        )}
+      </div>
+
+      {/* ─ Run Individual Source ───────────────────────────────── */}
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Run Individual Source</p>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div>
           <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -419,19 +549,6 @@ function ManualRunTab() {
           </>
         )}
       </div>
-
-      {/* Dry-run toggle */}
-      <label className="flex cursor-pointer select-none items-center gap-3">
-        <input
-          type="checkbox"
-          checked={dryRun}
-          onChange={(e) => handleDryRunChange(e.target.checked)}
-          className="h-4 w-4 rounded border-slate-300 accent-blue-600"
-        />
-        <span className="text-sm text-slate-700">
-          Dry-run mode <span className="text-slate-400">(no database writes — recommended)</span>
-        </span>
-      </label>
 
       {/* Non-dry-run warning */}
       {!dryRun && (
@@ -903,6 +1020,12 @@ function RunsTab({ mode }) {
         </div>
       )}
 
+      {isErrors && !isLoading && (
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-2 text-xs text-slate-500">
+          Only scraper failures and exceptions are shown here. Normal skips (not scheduled, dry run, no records) appear in Run History.
+        </div>
+      )}
+
       {!isLoading && (
         <DataTable
           columns={[
@@ -939,7 +1062,7 @@ function RunsTab({ mode }) {
             },
           ]}
           rows={items.map((r, i) => ({ ...r, id: r.run_id || String(i) }))}
-          empty={`No ${isErrors ? 'errors' : 'runs'} recorded yet.`}
+          empty={isErrors ? 'No scraper errors found.' : 'No runs recorded yet.'}
         />
       )}
     </div>
@@ -949,32 +1072,35 @@ function RunsTab({ mode }) {
 // ── Readiness tab ─────────────────────────────────────────────────────────────
 
 const READINESS_STYLES = {
-  ready:          'bg-emerald-50 text-emerald-700 border-emerald-200',
-  watch:          'bg-amber-50  text-amber-700  border-amber-200',
-  blocked:        'bg-rose-50   text-rose-700   border-rose-200',
-  'manual-only':  'bg-slate-100 text-slate-500  border-slate-200',
+  ready:            'bg-emerald-50 text-emerald-700 border-emerald-200',
+  watch:            'bg-amber-50  text-amber-700  border-amber-200',
+  blocked:          'bg-rose-50   text-rose-700   border-rose-200',
+  'needs-attention':'bg-amber-50  text-amber-700  border-amber-200',
+  'manual-only':    'bg-slate-100 text-slate-500  border-slate-200',
   ready_to_promote: 'bg-emerald-50 text-emerald-700 border-emerald-200',
 };
 
 const READINESS_ICON = {
-  ready:          '✓',
-  watch:          '⚠',
-  blocked:        '✗',
-  'manual-only':  '—',
+  ready:            '✓',
+  watch:            '⚠',
+  blocked:          '✗',
+  'needs-attention':'⚠',
+  'manual-only':    '—',
   ready_to_promote: '✓',
 };
 
 function ReadinessBadge({ value }) {
   const cls = READINESS_STYLES[value] ?? 'bg-slate-100 text-slate-600 border-slate-200';
   const icon = READINESS_ICON[value] ?? '?';
+  const displayText = value === 'blocked' ? 'needs attention' : value;
   return (
     <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-semibold ${cls}`}>
-      {icon} {value}
+      {icon} {displayText}
     </span>
   );
 }
 
-function ReadinessTab() {
+function DataHealthTab() {
   const [days, setDays] = useState(3);
   const { data, isLoading, error, refetch, isFetching } = useIngestionReadiness({ days });
 
@@ -1010,23 +1136,33 @@ function ReadinessTab() {
       </div>
 
       {isLoading && (
-        <div className="py-8 text-center text-sm text-slate-500">Loading readiness data…</div>
+        <div className="py-8 text-center text-sm text-slate-500">Loading data health…</div>
       )}
 
       {error && (
         <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-          Failed to load readiness: {error.message}
+          Failed to load data health: {error.message}
         </div>
       )}
 
       {/* Global status */}
       {global && (
         <div className={`rounded-xl border p-4 ${READINESS_STYLES[global.overall] ?? 'border-slate-200 bg-white'}`}>
-          <div className="flex flex-wrap items-center gap-3">
+          <div className={`flex flex-wrap items-center gap-3`}>
             <span className="text-sm font-semibold uppercase tracking-wide">Overall:</span>
-            <ReadinessBadge value={global.overall} />
+            <ReadinessBadge value={global.overall === 'blocked' ? 'needs-attention' : global.overall} />
           </div>
-          <p className="mt-2 text-sm">{global.recommendation}</p>
+          <p className="mt-2 text-sm">
+            {global.overall === 'blocked'
+              ? (() => {
+                  // If any source has at least one successful run, this is "needs observation" not "no runs"
+                  const anySuccess = (sources || []).some((s) => s.latest_success);
+                  return anySuccess
+                    ? `Needs more observation \u2014 a successful run was detected, but ${days} day${days !== 1 ? 's' : ''} of consistent runs are required before marking healthy.`
+                    : 'No recent successful scraper runs found. Run bulk scrapers now or enable scheduled runs.';
+                })()
+              : global.recommendation}
+          </p>
           {data?.evaluated_at && (
             <p className="mt-1 text-xs opacity-70">
               Evaluated {fmtTime(data.evaluated_at)} · last {days} day{days !== 1 ? 's' : ''}
@@ -1113,9 +1249,9 @@ function ReadinessTab() {
               {/* Staleness */}
               {s.stale && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                  ⚠ Stale: {s.stale_reason}
+                  ⚠ Data may be stale: {s.stale_reason}
                 </div>
-              )}
+              )}                
 
               {/* Blockers */}
               {s.blockers?.length > 0 && (
@@ -1137,14 +1273,40 @@ function ReadinessTab() {
 
       {!isLoading && sources.length === 0 && !error && (
         <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-400">
-          No readiness data available. Ensure scheduled runs have been active for at least {days} day{days !== 1 ? 's' : ''}.
+          No health data available. Ensure scheduled runs have been active for at least {days} day{days !== 1 ? 's' : ''}.
         </div>
       )}
 
       <p className="text-xs text-slate-400">
-        Readiness evaluates non-dry-run scheduled runs only. No production reads or writes are
+        Data health evaluates non-dry-run scheduled runs only. No production reads or writes are
         performed by this check. Promotion requires manual sign-off.
       </p>
+    </div>
+  );
+}
+
+// ── Admin status banner ───────────────────────────────────────────────
+
+function AdminStatusBanner() {
+  const { data, isLoading } = useIngestionReadiness({ days: 1 });
+  if (isLoading || !data) return null;
+
+  const overall = data?.global?.overall;
+  const isHealthy = overall === 'ready_to_promote' || overall === 'ready';
+
+  if (isHealthy) {
+    return (
+      <div className="mb-4 flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-700">
+        <span>✅</span>
+        <span>Data is up to date.</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mb-4 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
+      <span>⚠</span>
+      <span>No recent successful scraper runs — run scrapers to refresh dashboard data.</span>
     </div>
   );
 }
@@ -1159,6 +1321,8 @@ function ScraperOpsPanelInner() {
       title="Scraper Operations"
       subtitle="Monitor and control the v2 ingestion pipeline"
     >
+      <AdminStatusBanner />
+
       {/* Tab bar */}
       <div className="mb-5 flex flex-wrap border-b border-slate-200">
         {TABS.map((t) => (
@@ -1182,7 +1346,7 @@ function ScraperOpsPanelInner() {
       {tab === 'scheduler' && <SchedulerTab />}
       {tab === 'runs' && <RunsTab mode="runs" />}
       {tab === 'errors' && <RunsTab mode="errors" />}
-      {tab === 'readiness' && <ReadinessTab />}
+      {tab === 'readiness' && <DataHealthTab />}
     </SectionCard>
   );
 }

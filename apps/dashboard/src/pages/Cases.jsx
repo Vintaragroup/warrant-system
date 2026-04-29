@@ -8,7 +8,7 @@ import { stageLabel } from '../lib/stage';
 import CaseActionsPopover from '../components/CaseActionsPopover';
 import { useCases, useCaseMeta, useCaseStats } from '../hooks/cases';
 
-const COUNTIES = ['all', 'harris', 'brazoria', 'galveston', 'fortbend', 'jefferson'];
+const COUNTIES = ['all', 'harris', 'brazoria', 'galveston', 'fortbend', 'jefferson', 'wharton'];
 const STATUSES = ['All', 'Active', 'Needs Review', 'Closed'];
 const RESULT_LIMIT = 25;
 const WINDOW_OPTIONS = [

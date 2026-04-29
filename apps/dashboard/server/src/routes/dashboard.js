@@ -137,10 +137,11 @@ const COUNTY_COLLECTIONS = [
   'v2_galveston_events',
   'v2_harris_reports',
   'v2_lookup_results',
+  'v2_wharton_events',
 ];
 
 // Canonical county names exposed by the v2 collections (independent of collection structure).
-const ALL_COUNTY_NAMES = ['brazoria', 'fortbend', 'galveston', 'harris', 'jefferson'];
+const ALL_COUNTY_NAMES = ['brazoria', 'fortbend', 'galveston', 'harris', 'jefferson', 'wharton'];
 
 // Use the first collection only as an entry point for $unionWith
 const BASE_COLLECTION = COUNTY_COLLECTIONS[0];
@@ -1752,6 +1753,283 @@ r.get('/per-county', withMetrics('per-county', async (req, res) => {
     res.json(data);
   } catch (err) {
     console.error('per-county error:', err);
+    res.status(500).json({ error: String(err?.message || err) });
+  }
+}));
+
+// ===== CHARGE BONDS =====
+// GET /api/dashboard/charge-bonds?window=7d&county=optional&limit=20
+// Returns top charge types by total bond value for the given date window.
+// Handles two source formats:
+//   1) charges[] array with { description, bond_amount } entries (Galveston enriched)
+//   2) top-level charge_description + bond_amount (Harris, lookup_results, older records)
+r.get('/charge-bonds', withMetrics('charge-bonds', async (req, res) => {
+  ensurePermission(req, 'dashboard:read');
+  try {
+    const db = ensureDb(res); if (!db) return;
+    const win = (req.query.window || '7d').toLowerCase();
+    const county = req.query.county ? String(req.query.county).toLowerCase().trim() : null;
+    const limit = Math.min(Math.max(1, parseInt(req.query.limit || '20', 10)), 100);
+
+    const cacheKey = `chargeBonds:${win}:${county || 'all'}:${limit}`;
+    const { fromCache, data } = await withCache(cacheKey, async () => {
+      const now = new Date();
+      const dayMs = 24 * 3600000;
+      const ymdAgo = (n) => ymdInTZ(new Date(now.getTime() - n * dayMs));
+
+      const todayYmd     = ymdAgo(0);
+      const yesterdayYmd = ymdAgo(1);
+      const twoDaysYmd   = ymdAgo(2);
+      const since3Ymd    = ymdAgo(3);
+      const since7Ymd    = ymdAgo(6);
+      const since31Ymd   = ymdAgo(30);
+
+      // Coarse pre-filter passed to unionAllFast (covers booking_date string rewrite)
+      const coarseMatch = { booking_date: { $gte: since31Ymd } };
+
+      // Precise window match applied after normalization (booking_date is YYYY-MM-DD string)
+      const winMatch = (() => {
+        switch (win) {
+          case '24h':   return { booking_date: todayYmd };
+          case '48h':   return { booking_date: yesterdayYmd };
+          case '72h':   return { booking_date: twoDaysYmd };
+          case '3d_7d': return { booking_date: { $gte: since7Ymd, $lte: since3Ymd } };
+          case '7d':    return { booking_date: { $gte: since7Ymd } };
+          default:      return { booking_date: todayYmd };
+        }
+      })();
+
+      const pipeline = [
+        // Normalize booking_date + bond_amount across all v2 collections
+        ...unionAllFast(
+          coarseMatch,
+          { county: 1, bond_amount: 1, booking_date: 1, charges: 1, charge_description: 1, full_name: 1 },
+          { needBond: true, needBooking: true }
+        ),
+        // Apply precise window filter (post-normalization)
+        { $match: winMatch },
+      ];
+
+      // Optional county filter
+      if (county && county !== 'all') {
+        pipeline.push({ $match: { county } });
+      }
+
+      // Expand charge rows: prefer structured charges[], fall back to charge_description
+      // Field shape varies by collection:
+      //   v2_galveston_events:  charges[].charge (desc), charges[].bond (text: "CASH OR SURETY $60,000.00")
+      //   v2_lookup_results:    charges[].charge_description (desc), charges[].bail_amount_int (numeric)
+      //   v2_harris_reports:    no charges[], uses top-level charge_description + bond_amount
+      pipeline.push({
+        $addFields: {
+          _chargeRows: {
+            $cond: [
+              {
+                $and: [
+                  { $isArray: '$charges' },
+                  { $gt: [{ $size: { $ifNull: ['$charges', []] } }, 0] },
+                ]
+              },
+              // Structured charges[] — handles both Galveston and lookup_results formats
+              {
+                $map: {
+                  input: '$charges',
+                  as: 'c',
+                  in: {
+                    // description: try description → charge → charge_description (in that order)
+                    description: {
+                      $trim: {
+                        input: {
+                          $toUpper: {
+                            $ifNull: [
+                              '$$c.description',
+                              { $ifNull: ['$$c.charge', { $ifNull: ['$$c.charge_description', ''] }] }
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    // bond: try numeric bond_amount → bail_amount_int → parse bond string
+                    bond: {
+                      $let: {
+                        vars: {
+                          ba:  { $cond: [{ $isNumber: '$$c.bond_amount'    }, '$$c.bond_amount',    null] },
+                          bai: { $cond: [{ $isNumber: '$$c.bail_amount_int'}, '$$c.bail_amount_int', null] },
+                          bStr: { $toString: { $ifNull: ['$$c.bond', ''] } },
+                        },
+                        in: {
+                          $cond: [
+                            { $ne: ['$$ba', null] },
+                            '$$ba',
+                            {
+                              $cond: [
+                                { $ne: ['$$bai', null] },
+                                '$$bai',
+                                // Parse "$X,XXX.XX" from Galveston bond strings e.g. "CASH OR SURETY $60,000.00"
+                                {
+                                  $let: {
+                                    vars: {
+                                      m: { $regexFind: { input: '$$bStr', regex: /\$[\d,]+(?:\.\d+)?/ } }
+                                    },
+                                    in: {
+                                      $cond: [
+                                        { $ne: ['$$m', null] },
+                                        {
+                                          $convert: {
+                                            input: {
+                                              $reduce: {
+                                                input: { $split: [{ $substr: ['$$m.match', 1, -1] }, ','] },
+                                                initialValue: '',
+                                                in: { $concat: ['$$value', '$$this'] }
+                                              }
+                                            },
+                                            to: 'double',
+                                            onError: 0,
+                                            onNull: 0
+                                          }
+                                        },
+                                        0
+                                      ]
+                                    }
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              // Fallback: single charge_description with top-level bond_amount
+              {
+                $cond: [
+                  {
+                    $and: [
+                      { $ne: ['$charge_description', null] },
+                      { $gt: [{ $strLenCP: { $ifNull: ['$charge_description', ''] } }, 0] }
+                    ]
+                  },
+                  [{
+                    description: { $trim: { input: { $toUpper: { $ifNull: ['$charge_description', ''] } } } },
+                    bond: { $ifNull: ['$bond_amount', 0] }
+                  }],
+                  []
+                ]
+              }
+            ]
+          }
+        }
+      });
+
+      pipeline.push({ $unwind: '$_chargeRows' });
+
+      // Skip rows with empty/null charge descriptions
+      pipeline.push({
+        $match: {
+          '_chargeRows.description': { $nin: ['', null] }
+        }
+      });
+
+      // Group by normalized charge description
+      pipeline.push({
+        $group: {
+          _id: '$_chargeRows.description',
+          totalBond:       { $sum: { $ifNull: ['$_chargeRows.bond', 0] } },
+          count:           { $sum: 1 },
+          cntBrazoria:     { $sum: { $cond: [{ $eq: ['$county', 'brazoria'] },  1, 0] } },
+          cntFortbend:     { $sum: { $cond: [{ $eq: ['$county', 'fortbend'] },  1, 0] } },
+          cntGalveston:    { $sum: { $cond: [{ $eq: ['$county', 'galveston'] }, 1, 0] } },
+          cntHarris:       { $sum: { $cond: [{ $eq: ['$county', 'harris'] },    1, 0] } },
+          cntJefferson:    { $sum: { $cond: [{ $eq: ['$county', 'jefferson'] }, 1, 0] } },
+          bondBrazoria:    { $sum: { $cond: [{ $eq: ['$county', 'brazoria'] },  { $ifNull: ['$_chargeRows.bond', 0] }, 0] } },
+          bondFortbend:    { $sum: { $cond: [{ $eq: ['$county', 'fortbend'] },  { $ifNull: ['$_chargeRows.bond', 0] }, 0] } },
+          bondGalveston:   { $sum: { $cond: [{ $eq: ['$county', 'galveston'] }, { $ifNull: ['$_chargeRows.bond', 0] }, 0] } },
+          bondHarris:      { $sum: { $cond: [{ $eq: ['$county', 'harris'] },    { $ifNull: ['$_chargeRows.bond', 0] }, 0] } },
+          bondJefferson:   { $sum: { $cond: [{ $eq: ['$county', 'jefferson'] }, { $ifNull: ['$_chargeRows.bond', 0] }, 0] } },
+          // Raw sample records — post-processed in JS to pick top 5 by bond
+          rawSamples: {
+            $push: {
+              full_name:    '$full_name',
+              county:       '$county',
+              booking_date: '$booking_date',
+              bond:         '$_chargeRows.bond',
+            }
+          },
+        }
+      });
+
+      pipeline.push({ $sort: { totalBond: -1 } });
+      pipeline.push({ $limit: limit });
+
+      pipeline.push({
+        $project: {
+          _id:           0,
+          charge:        '$_id',
+          totalBond:     1,
+          count:         1,
+          cntBrazoria:   1, cntFortbend: 1, cntGalveston: 1, cntHarris: 1, cntJefferson: 1,
+          bondBrazoria:  1, bondFortbend: 1, bondGalveston: 1, bondHarris: 1, bondJefferson: 1,
+          rawSamples:    1,
+        }
+      });
+
+      const agg = baseColl(db).aggregate(pipeline, { allowDiskUse: true });
+      const rows = await withTimeout(
+        (agg.maxTimeMS ? agg.maxTimeMS(MAX_DB_MS) : agg).toArray(),
+        MAX_DB_MS,
+        'charge-bonds'
+      ).catch(() => []);
+
+      const COUNTY_NAMES = ['brazoria', 'fortbend', 'galveston', 'harris', 'jefferson'];
+      const cntKey   = (c) => `cnt${c.charAt(0).toUpperCase()}${c.slice(1)}`;
+      const bondKey  = (c) => `bond${c.charAt(0).toUpperCase()}${c.slice(1)}`;
+
+      // Compute avgBond, countyBreakdown (backward compat), countyDetails, samples
+      const items = rows.map((r) => {
+        // Per-county enriched breakdown
+        const countyDetails = COUNTY_NAMES
+          .map((c) => {
+            const cnt   = r[cntKey(c)]  || 0;
+            const total = r[bondKey(c)] || 0;
+            return { county: c, count: cnt, totalBond: total, avgBond: cnt > 0 ? Math.round(total / cnt) : 0 };
+          })
+          .filter((c) => c.count > 0)
+          .sort((a, b) => b.totalBond - a.totalBond);
+
+        // Backward-compat flat countyBreakdown (count only)
+        const countyBreakdown = Object.fromEntries(COUNTY_NAMES.map((c) => [c, r[cntKey(c)] || 0]));
+
+        // Top-5 sample records by bond desc
+        const samples = (r.rawSamples || [])
+          .sort((a, b) => (b.bond || 0) - (a.bond || 0))
+          .slice(0, 5)
+          .map((s) => ({
+            full_name:    s.full_name || null,
+            county:       s.county   || null,
+            booking_date: s.booking_date || null,
+            bond_amount:  s.bond || 0,
+          }));
+
+        return {
+          charge:          r.charge,
+          totalBond:       r.totalBond,
+          avgBond:         r.count > 0 ? Math.round(r.totalBond / r.count) : 0,
+          count:           r.count,
+          countyBreakdown,
+          countyDetails,
+          samples,
+        };
+      });
+
+      return { window: win, county: county || 'all', items };
+    });
+
+    res.set('X-Cache', fromCache ? 'HIT' : 'MISS');
+    res.json(data);
+  } catch (err) {
+    console.error('charge-bonds error:', err);
     res.status(500).json({ error: String(err?.message || err) });
   }
 }));

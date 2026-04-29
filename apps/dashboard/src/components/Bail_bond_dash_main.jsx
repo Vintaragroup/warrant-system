@@ -9,6 +9,7 @@ import {
   useNewToday,
   useRecent48to72,
   useRecent,
+  useChargeBonds,
 } from '../hooks/dashboard';
 import { legacyWindowForBucket, bucketClasses } from '../lib/buckets';
 import { useCaseStats, useCases } from '../hooks/cases';
@@ -365,6 +366,10 @@ export default function DashboardScreen() {
   }, []);
   // Window used for Top10 and Bond Value panel
   const [valueWindow, setValueWindow] = useState('24h');
+  const [chargeWindow, setChargeWindow] = useState('7d');
+  const [chargeCounty, setChargeCounty] = useState('all');
+  const [showAllCharges, setShowAllCharges] = useState(false);
+  const [expandedCharge, setExpandedCharge] = useState(null);
   const forceRefresh = useCallback(() => {
     try {
       // Invalidate and refetch all dashboard-related queries
@@ -390,6 +395,7 @@ export default function DashboardScreen() {
   const { data: kpiData, isLoading: _kpisLoading } = useKpis();
   const { data: top10, isLoading: _topLoading } = useTopByValue(valueWindow, 10);
   const { data: perCounty, isLoading: _perCountyLoading } = usePerCounty(valueWindow);
+  const { data: chargeBondsData } = useChargeBonds({ window: chargeWindow, county: chargeCounty, limit: 20 });
   const { data: countyTrends, isLoading: _trendsLoading } = useCountyTrends(7);
   const { data: new24h, isLoading: _new24Loading } = useNewToday('all');
   // Recent window toggle (default 48–72h); options: '48-72h' | '3-7d'
@@ -500,6 +506,12 @@ export default function DashboardScreen() {
     })();
     return () => { alive = false; };
   }, [prioritizePhone, snapshotTab, top10Raw, contactMeta]);
+
+  // Reset accordion and "show all" when charge filters change
+  useEffect(() => {
+    setExpandedCharge(null);
+    setShowAllCharges(false);
+  }, [chargeWindow, chargeCounty]);
 
   const top10Prioritized = useMemo(() => {
     if (!prioritizePhone || snapshotTab !== 'top') return top10List;
@@ -832,7 +844,13 @@ export default function DashboardScreen() {
       }
 
       const arr = seriesByCounty[key] || [];
-      if (trendIndex == null || trendIndex < 0 || trendIndex >= arr.length) return 0;
+      if (trendIndex == null || trendIndex < 0 || trendIndex >= arr.length) {
+        // '7d' / '30d' windows aren't in the trend-index map; use the per-county
+        // API bondValue which is already scoped to the requested window.
+        const pc = perCountyMap.get(key);
+        const v = Number(pc?.bondValue ?? 0);
+        return Number.isFinite(v) ? v : 0;
+      }
       const v = Number(arr[trendIndex] || 0);
       return Number.isFinite(v) ? v : 0;
     },
@@ -1120,6 +1138,191 @@ export default function DashboardScreen() {
             </div>
           </Panel>
         </div>
+
+        {/* Top Charges by Bond Value */}
+        {(() => {
+          const chargeItems = Array.isArray(chargeBondsData?.items) ? chargeBondsData.items : [];
+          const displayItems = showAllCharges ? chargeItems : chargeItems.slice(0, 10);
+          const maxBond = chargeItems.length > 0 ? chargeItems[0].totalBond : 1;
+          const chargeWindowBtn =
+            'px-2 py-1 text-xs rounded-md border bg-white hover:bg-gray-50 data-[active=true]:bg-blue-50 data-[active=true]:border-blue-300 data-[active=true]:text-blue-700';
+          return (
+            <Panel
+              title="Top Charges by Bond Value"
+              subtitle={`Charge types driving total bond across all counties — ${chargeBondsData?.county === 'all' ? 'all counties' : prettyCounty(chargeBondsData?.county || '')} • ${chargeBondsData?.window || chargeWindow}`}
+              right={
+                <div className="flex items-center gap-2">
+                  <select
+                    value={chargeCounty}
+                    onChange={(e) => setChargeCounty(e.target.value)}
+                    className="text-xs border rounded-md px-2 py-1 bg-white"
+                  >
+                    <option value="all">All Counties</option>
+                    {['brazoria', 'fortbend', 'galveston', 'harris', 'jefferson'].map((c) => (
+                      <option key={c} value={c}>{prettyCounty(c)}</option>
+                    ))}
+                  </select>
+                  <div className="inline-flex gap-1">
+                    {['24h', '48h', '72h', '7d'].map((w) => (
+                      <button
+                        key={w}
+                        type="button"
+                        className={chargeWindowBtn}
+                        data-active={chargeWindow === w}
+                        onClick={() => setChargeWindow(w)}
+                      >
+                        {w}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              }
+            >
+              {displayItems.length === 0 ? (
+                <p className="text-sm text-slate-400 py-4 text-center">No charge data for this window</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-left text-slate-500 border-b">
+                        <th className="py-2 pr-3 font-semibold w-5"></th>
+                        <th className="py-2 pr-4 font-semibold">Charge</th>
+                        <th className="py-2 pr-4 font-semibold">Counties</th>
+                        <th className="py-2 pr-4 text-right font-semibold">Total Bond</th>
+                        <th className="py-2 pr-4 text-right font-semibold">Avg Bond</th>
+                        <th className="py-2 text-right font-semibold">Count</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {displayItems.map((item) => {
+                        const barPct = maxBond > 0 ? Math.round((item.totalBond / maxBond) * 100) : 0;
+                        const isOpen = expandedCharge === item.charge;
+                        const details = Array.isArray(item.countyDetails) ? item.countyDetails : [];
+                        const samples = Array.isArray(item.samples) ? item.samples : [];
+
+                        // Compact county cell: show top county + overflow count
+                        const countyLabel = (() => {
+                          if (details.length === 0) return '—';
+                          if (details.length === 1) return prettyCounty(details[0].county);
+                          return `${prettyCounty(details[0].county)} +${details.length - 1}`;
+                        })();
+                        const countyTitle = details.map((d) => prettyCounty(d.county)).join(', ');
+
+                        return (
+                          <>
+                            <tr
+                              key={item.charge}
+                              className={`border-b last:border-0 hover:bg-slate-50 cursor-pointer select-none${isOpen ? ' bg-slate-50' : ''}`}
+                              onClick={() => setExpandedCharge(isOpen ? null : item.charge)}
+                            >
+                              <td className="py-2 pr-3 text-slate-400 text-center">
+                                {isOpen ? '▾' : '▸'}
+                              </td>
+                              <td className="py-2 pr-4">
+                                <div className="font-medium text-slate-800 truncate max-w-[260px]" title={item.charge}>
+                                  {item.charge}
+                                </div>
+                                <div className="mt-1 h-1.5 rounded-full bg-blue-100" aria-hidden="true">
+                                  <div className="h-1.5 rounded-full bg-blue-500" style={{ width: `${barPct}%` }} />
+                                </div>
+                              </td>
+                              <td className="py-2 pr-4 text-slate-500 whitespace-nowrap" title={countyTitle}>
+                                {countyLabel}
+                              </td>
+                              <td className="py-2 pr-4 text-right font-semibold text-slate-800">
+                                {money(item.totalBond)}
+                              </td>
+                              <td className="py-2 pr-4 text-right text-slate-500">
+                                {money(item.avgBond)}
+                              </td>
+                              <td className="py-2 text-right text-slate-500">{item.count}</td>
+                            </tr>
+                            {isOpen && (
+                              <tr key={`${item.charge}__accordion`} className="bg-slate-50">
+                                <td colSpan={6} className="px-4 pb-4 pt-2">
+                                  <div className="flex flex-col gap-4">
+                                    {/* County Breakdown */}
+                                    {details.length > 0 ? (
+                                      <div>
+                                        <p className="text-xs font-semibold text-slate-600 mb-1">County Breakdown</p>
+                                        <table className="w-full text-xs">
+                                          <thead>
+                                            <tr className="text-left text-slate-400 border-b">
+                                              <th className="py-1 pr-4 font-medium">County</th>
+                                              <th className="py-1 pr-4 text-right font-medium">Count</th>
+                                              <th className="py-1 pr-4 text-right font-medium">Total Bond</th>
+                                              <th className="py-1 text-right font-medium">Avg Bond</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {details.map((d) => (
+                                              <tr key={d.county} className="border-b last:border-0">
+                                                <td className="py-1 pr-4 text-slate-700 font-medium">{prettyCounty(d.county)}</td>
+                                                <td className="py-1 pr-4 text-right text-slate-500">{d.count}</td>
+                                                <td className="py-1 pr-4 text-right text-slate-700">{money(d.totalBond)}</td>
+                                                <td className="py-1 text-right text-slate-500">{money(d.avgBond)}</td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    ) : (
+                                      <p className="text-xs text-slate-400">County detail unavailable</p>
+                                    )}
+
+                                    {/* Sample Records */}
+                                    {samples.length > 0 ? (
+                                      <div>
+                                        <p className="text-xs font-semibold text-slate-600 mb-1">Sample Records (top by bond)</p>
+                                        <table className="w-full text-xs">
+                                          <thead>
+                                            <tr className="text-left text-slate-400 border-b">
+                                              <th className="py-1 pr-4 font-medium">Name</th>
+                                              <th className="py-1 pr-4 font-medium">County</th>
+                                              <th className="py-1 pr-4 font-medium">Date</th>
+                                              <th className="py-1 text-right font-medium">Bond</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {samples.map((s, idx) => (
+                                              <tr key={idx} className="border-b last:border-0">
+                                                <td className="py-1 pr-4 text-slate-700">{s.full_name || '—'}</td>
+                                                <td className="py-1 pr-4 text-slate-500">{s.county ? prettyCounty(s.county) : '—'}</td>
+                                                <td className="py-1 pr-4 text-slate-500">{s.booking_date || '—'}</td>
+                                                <td className="py-1 text-right text-slate-700">{money(s.bond_amount)}</td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    ) : (
+                                      <p className="text-xs text-slate-400">No sample records available</p>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  {chargeItems.length > 10 && (
+                    <div className="mt-3 text-center">
+                      <button
+                        type="button"
+                        onClick={() => setShowAllCharges((v) => !v)}
+                        className="text-xs text-blue-600 hover:text-blue-700"
+                      >
+                        {showAllCharges ? 'Show less' : `View all ${chargeItems.length} charges`}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </Panel>
+          );
+        })()}
 
         {/* Snapshot panel with tabs */}
         <Panel

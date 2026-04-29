@@ -99,6 +99,8 @@ _STAGING_MAP: Dict[str, str] = {
     "jefferson_events":           "v2_lookup_results",
     # Endpoint cache (Galveston discovers its own POST endpoint)
     "galveston_p2c_endpoint":     "v2_galveston_p2c_endpoint",
+    # Wharton
+    "wharton_inmates":            "v2_wharton_events",
 }
 
 
@@ -297,6 +299,58 @@ def run_harris_reports(db, dry_run: bool, limit: int, force_reingest: bool = Fal
     return 0
 
 
+def run_wharton(db, dry_run: bool, limit: int) -> int:
+    """
+    Fetch and optionally store Wharton County DCN custody events.
+
+    dry_run=True  → normalize up to `limit` events, print, no writes
+    dry_run=False → poll() into v2_wharton_events staging collection
+    """
+    from ingestion.event_feeds.wharton_dcn import WhartonDCNEventFeed  # noqa: PLC0415
+
+    feed = WhartonDCNEventFeed(db)
+
+    if dry_run:
+        print(f"[wharton] dry-run — fetching events (limit={limit})")
+        raw_events = list(feed.fetch_events())
+        print(f"[wharton] fetched {len(raw_events)} raw rows")
+
+        run_scraped_at = _utcnow_iso()
+        ok = warn = skip = 0
+        for raw in raw_events[:limit]:
+            raw["_scraped_at"] = run_scraped_at
+            event = feed.normalize_event(raw)
+            if event is None:
+                skip += 1
+                continue
+            required = ["county", "source", "full_name", "scraped_at", "source_id"]
+            missing = [f for f in required if not event.get(f)]
+            status = f"WARN missing={missing}" if missing else "OK"
+            if missing:
+                warn += 1
+            else:
+                ok += 1
+            event_str = json.dumps(
+                {k: v for k, v in event.items() if k != "_upsert_key"},
+                default=str,
+                indent=2,
+            )
+            print(f"  [{status}] {event_str}")
+        print(f"[wharton] dry-run summary: ok={ok} warn={warn} skip={skip}")
+        return 0
+
+    # Non-dry-run: redirect writes to staging collection
+    feed.COLLECTION = "v2_wharton_events"
+    stored = 0
+    print(f"[wharton] writing to v2_wharton_events (limit={limit})")
+    for result in feed.poll():
+        stored += 1
+        if stored >= limit:
+            break
+    print(f"[wharton] stored {stored} events")
+    return 0
+
+
 def run_lookup(
     source: str,
     db,
@@ -399,6 +453,7 @@ def _check_feature_flags(source: str) -> None:
         "brazoria_lookup": "ENABLE_V2_LOOKUPS",
         "fortbend_lookup": "ENABLE_V2_LOOKUPS",
         "jefferson_lookup":"ENABLE_V2_LOOKUPS",
+        "wharton":         "ENABLE_V2_WHARTON",
     }
 
     flag_name = source_flags.get(source)
@@ -431,7 +486,7 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument(
         "--source",
         required=True,
-        choices=["galveston", "harris_reports", "brazoria_lookup", "fortbend_lookup", "jefferson_lookup"],
+        choices=["galveston", "harris_reports", "wharton", "brazoria_lookup", "fortbend_lookup", "jefferson_lookup"],
         help="Which v2 scraper to run",
     )
     p.add_argument(
@@ -616,6 +671,7 @@ def main() -> int:
         target_coll = _STAGING_MAP.get(
             {"galveston": "galveston_events",
              "harris_reports": "harris_bond",
+             "wharton": "wharton_inmates",
              "brazoria_lookup": "brazoria_inmates",
              "fortbend_lookup": "fortbend_inmates",
              "jefferson_lookup": "jefferson_events"}.get(args.source, args.source),
@@ -634,6 +690,8 @@ def main() -> int:
             exit_code = run_galveston(db, dry_run=dry_run, limit=args.limit)
         elif args.source == "harris_reports":
             exit_code = run_harris_reports(db, dry_run=dry_run, limit=args.limit, force_reingest=args.force_reingest)
+        elif args.source == "wharton":
+            exit_code = run_wharton(db, dry_run=dry_run, limit=args.limit)
         else:
             booking_date = getattr(args, "booking_date", "")
             # jefferson_lookup allows either last_name or booking_date

@@ -60,6 +60,12 @@ export function useTriggerRun() {
   });
 }
 
+export function useRunAll() {
+  return useMutation({
+    mutationFn: (body) => sendJSON('/admin/ingestion/run-all', { method: 'POST', body }),
+  });
+}
+
 export function usePauseSource() {
   const qc = useQueryClient();
   return useMutation({

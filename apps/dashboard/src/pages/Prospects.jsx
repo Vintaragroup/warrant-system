@@ -5,7 +5,7 @@ import { useProspects } from '../hooks/prospects';
 import { useEnrichmentProxyHealth } from '../hooks/enrichment';
 import { API_BASE, getAuthHeader } from '../lib/api';
 
-const COUNTIES = ['all', 'harris', 'brazoria', 'galveston', 'fortbend', 'jefferson'];
+const COUNTIES = ['all', 'harris', 'brazoria', 'galveston', 'fortbend', 'jefferson', 'wharton'];
 const WINDOW_OPTIONS = [
   { id: '24h', label: 'Last 24h' },
   { id: '48h', label: 'Last 48h' },
