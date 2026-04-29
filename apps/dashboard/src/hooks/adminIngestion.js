@@ -77,3 +77,12 @@ export function useResumeSource() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['ingestion'] }),
   });
 }
+
+export function useIngestionReadiness({ days = 3 } = {}, options = {}) {
+  return useQuery({
+    queryKey: ['ingestion', 'readiness', days],
+    queryFn: () => getJSON(`/admin/ingestion/readiness?days=${days}`),
+    staleTime: 60_000,
+    ...options,
+  });
+}

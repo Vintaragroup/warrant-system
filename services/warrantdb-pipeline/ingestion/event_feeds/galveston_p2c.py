@@ -402,10 +402,12 @@ class GalvestonP2CEventFeed(EventFeedScraper):
             "age":         raw.get("age")  or None,
 
             # ── Booking ──
-            "booking_number": booking_number,
-            "jacket_number":  jacket_number,
-            "booking_date":   booking_date,
-            "agency":         raw.get("agency") or None,
+            "booking_number":  booking_number,
+            "jacket_number":   jacket_number,
+            "booking_date":    booking_date,
+            "arrest_date":     _parse_date(raw.get("arrest_date")),
+            "arrest_date_raw": raw.get("arrest_date_raw") or None,
+            "agency":          raw.get("agency") or None,
 
             # ── Legal ──
             "charges":           charges,
@@ -675,6 +677,7 @@ class GalvestonP2CEventFeed(EventFeedScraper):
                 "sex":            row.get("sex") or None,
                 "race":           row.get("race") or None,
                 "arrest_date":    _parse_date(row.get("disp_arrest_date") or row.get("date_arr")),
+                "arrest_date_raw": row.get("disp_arrest_date") or row.get("date_arr") or None,
                 "charges":        [row["chrgdesc"]] if row.get("chrgdesc") else [],
                 "total_bond":     None,
                 "detail_url":     None,  # requires ASP.NET PostBack; no GET detail URL

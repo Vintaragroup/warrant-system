@@ -80,6 +80,48 @@ def _to_mmddyyyy(date_str: str) -> str:
     return date_str
 
 
+_DATE_FORMATS = [
+    "%m/%d/%Y %I:%M %p",   # MM/DD/YYYY HH:MM AM/PM
+    "%m/%d/%Y %H:%M",       # MM/DD/YYYY HH:MM (24h)
+    "%m/%d/%Y",             # MM/DD/YYYY
+]
+
+
+def _parse_date_to_iso(s: Optional[str]) -> Optional[str]:
+    """
+    Normalize a date string to ISO-8601 format.
+
+    Accepts:
+      - MM/DD/YYYY
+      - MM/DD/YYYY HH:MM
+      - MM/DD/YYYY HH:MM AM/PM
+      - YYYY-MM-DD (already ISO — passed through)
+      - YYYY-MM-DDTHH:MM:SS... (already ISO — passed through)
+
+    Returns YYYY-MM-DD string when time component is midnight/absent,
+    or YYYY-MM-DDTHH:MM:SS when a meaningful time is present.
+    Returns the original string unchanged if parsing fails.
+    """
+    if not s:
+        return None
+    stripped = s.strip()
+    if not stripped:
+        return None
+    # Already ISO date or datetime
+    if re.match(r"^\d{4}-\d{2}-\d{2}", stripped):
+        return stripped
+    for fmt in _DATE_FORMATS:
+        try:
+            dt = datetime.strptime(stripped, fmt)
+            if dt.hour == 0 and dt.minute == 0 and dt.second == 0:
+                return dt.strftime("%Y-%m-%d")
+            return dt.strftime("%Y-%m-%dT%H:%M:%S")
+        except ValueError:
+            continue
+    # Unrecognized format — return as-is so data is not silently dropped
+    return stripped
+
+
 class BrazoriaLookup(LookupScraper):
     """
     Brazoria County Tyler PublicAccess lookup.
@@ -268,10 +310,14 @@ class BrazoriaLookup(LookupScraper):
                 result["booking_number"] = m.group(1).strip()
             m = re.search(r"Booked:\s*([\d/]+)", booking_text, re.I)
             if m:
-                result["booking_date"] = m.group(1).strip()
+                _raw = m.group(1).strip()
+                result["booking_date_raw"] = _raw
+                result["booking_date"] = _parse_date_to_iso(_raw)
             m = re.search(r"Released:\s*([\d/]+)", booking_text, re.I)
             if m:
-                result["release_date"] = m.group(1).strip()
+                _raw = m.group(1).strip()
+                result["release_date_raw"] = _raw
+                result["release_date"] = _parse_date_to_iso(_raw)
 
         # ── Charge table ─────────────────────────────────────────────────────
         # Tyler detail page charge table has these headers (case-insensitive):
@@ -344,6 +390,9 @@ class BrazoriaLookup(LookupScraper):
         first_name     = (raw.get("first_name")     or "").strip().upper() or None
         detail_url     = raw.get("detail_url") or None
 
+        booking_date_raw = raw.get("booking_date") or None
+        booking_date_iso = _parse_date_to_iso(booking_date_raw)
+
         if not booking_number and not detail_url:
             return None
 
@@ -361,20 +410,21 @@ class BrazoriaLookup(LookupScraper):
             full_name = last_name
 
         return LookupResult({
-            "full_name":      full_name,
-            "last_name":      last_name,
-            "first_name":     first_name,
-            "dob":            raw.get("dob") or None,
-            "booking_number": booking_number,
-            "booking_date":   raw.get("booking_date") or None,
-            "charges":        raw.get("charges") or [],
-            "bond_amount":    raw.get("bond_amount") or None,
-            "detail_url":     detail_url,
-            "county":         self.COUNTY,
-            "source":         self.SOURCE,
-            "scraped_at":     raw.get("scraped_at") or _utcnow_iso(),
-            "observed_at":    raw.get("booking_date") or None,
-            "_upsert_key":    upsert_key,
+            "full_name":         full_name,
+            "last_name":         last_name,
+            "first_name":        first_name,
+            "dob":               raw.get("dob") or None,
+            "booking_number":    booking_number,
+            "booking_date":      booking_date_iso,
+            "booking_date_raw":  booking_date_raw,
+            "charges":           raw.get("charges") or [],
+            "bond_amount":       raw.get("bond_amount") or None,
+            "detail_url":        detail_url,
+            "county":            self.COUNTY,
+            "source":            self.SOURCE,
+            "scraped_at":        raw.get("scraped_at") or _utcnow_iso(),
+            "observed_at":       booking_date_iso,
+            "_upsert_key":       upsert_key,
         })
 
     # ── Internal helpers ─────────────────────────────────────────────────────

@@ -50,6 +50,16 @@ _COLLECTIONS: List[Tuple[str, Optional[str], Optional[int]]] = [
 ]
 
 _AUDIT_COLLECTION = "scrape_audit"
+_INGESTION_RUNS_COLLECTION = "ingestion_runs"
+
+# Map collection → scheduler source name for ingestion_runs lookup
+_COLLECTION_TO_SOURCE = {
+    "v2_galveston_events": "galveston",
+    "v2_harris_reports": "harris_reports",
+    "v2_lookup_results": None,          # shared by multiple sources
+    "v2_report_manifest": "harris_reports",
+    "v2_galveston_p2c_endpoint": None,
+}
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -132,6 +142,26 @@ def _check_collection(
         "stale_reason": stale_reason,
     }
 
+    # Latest ingestion_runs entries for the scheduler source that feeds this collection
+    scheduler_source = _COLLECTION_TO_SOURCE.get(collection_name)
+    if scheduler_source:
+        latest_success_run = db[_INGESTION_RUNS_COLLECTION].find_one(
+            {"source": scheduler_source, "status": "success", "dry_run": False},
+            sort=[("started_at", -1)],
+            projection={"started_at": 1, "records_written": 1, "run_id": 1},
+        )
+        latest_failed_run = db[_INGESTION_RUNS_COLLECTION].find_one(
+            {"source": scheduler_source, "status": "failed"},
+            sort=[("started_at", -1)],
+            projection={"started_at": 1, "error": 1, "run_id": 1},
+        )
+        if latest_success_run:
+            latest_success_run.pop("_id", None)
+        if latest_failed_run:
+            latest_failed_run.pop("_id", None)
+        result["latest_success_run"] = latest_success_run
+        result["latest_failed_run"] = latest_failed_run
+
     # Last audit entry for this source (verbose only)
     if verbose and expected_source:
         audit_doc = db[_AUDIT_COLLECTION].find_one(
@@ -157,6 +187,18 @@ def _print_result(r: Dict[str, Any], verbose: bool) -> None:
 
     if r["stale"] and r["stale_reason"]:
         print(f"          ↳ STALE: {r['stale_reason']}")
+
+    # Latest ingestion_runs info
+    success_run = r.get("latest_success_run")
+    failed_run = r.get("latest_failed_run")
+    if success_run:
+        run_age = _age_str(_parse_iso(success_run.get("started_at")))
+        written = success_run.get("records_written")
+        written_str = f"  written={written}" if written is not None else ""
+        print(f"          ↳ last success run: {run_age}{written_str}")
+    if failed_run:
+        fail_age = _age_str(_parse_iso(failed_run.get("started_at")))
+        print(f"          ↳ last failed run:  {fail_age}")
 
     if verbose:
         audit = r.get("last_audit")

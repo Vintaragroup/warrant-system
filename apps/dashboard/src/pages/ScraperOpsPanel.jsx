@@ -9,6 +9,7 @@ import {
   useTriggerRun,
   usePauseSource,
   useResumeSource,
+  useIngestionReadiness,
 } from '../hooks/adminIngestion';
 
 // ── Error boundary ─────────────────────────────────────────────────────────────
@@ -63,6 +64,7 @@ const TABS = [
   { id: 'scheduler', label: 'Scheduler' },
   { id: 'runs', label: 'Run History' },
   { id: 'errors', label: 'Errors' },
+  { id: 'readiness', label: 'Readiness' },
 ];
 
 // ── Shared helpers ─────────────────────────────────────────────────────────────
@@ -944,6 +946,209 @@ function RunsTab({ mode }) {
   );
 }
 
+// ── Readiness tab ─────────────────────────────────────────────────────────────
+
+const READINESS_STYLES = {
+  ready:          'bg-emerald-50 text-emerald-700 border-emerald-200',
+  watch:          'bg-amber-50  text-amber-700  border-amber-200',
+  blocked:        'bg-rose-50   text-rose-700   border-rose-200',
+  'manual-only':  'bg-slate-100 text-slate-500  border-slate-200',
+  ready_to_promote: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+};
+
+const READINESS_ICON = {
+  ready:          '✓',
+  watch:          '⚠',
+  blocked:        '✗',
+  'manual-only':  '—',
+  ready_to_promote: '✓',
+};
+
+function ReadinessBadge({ value }) {
+  const cls = READINESS_STYLES[value] ?? 'bg-slate-100 text-slate-600 border-slate-200';
+  const icon = READINESS_ICON[value] ?? '?';
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-semibold ${cls}`}>
+      {icon} {value}
+    </span>
+  );
+}
+
+function ReadinessTab() {
+  const [days, setDays] = useState(3);
+  const { data, isLoading, error, refetch, isFetching } = useIngestionReadiness({ days });
+
+  const global = data?.global ?? null;
+  const sources = data?.sources ?? [];
+
+  return (
+    <div className="space-y-5">
+      {/* Header controls */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Observation window
+          </label>
+          <select
+            value={days}
+            onChange={(e) => setDays(Number(e.target.value))}
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 focus:border-blue-400 focus:outline-none"
+          >
+            {[1, 3, 7, 14].map((d) => (
+              <option key={d} value={d}>{d} {d === 1 ? 'day' : 'days'}</option>
+            ))}
+          </select>
+        </div>
+        <button
+          type="button"
+          disabled={isFetching}
+          onClick={() => refetch()}
+          className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-600 hover:border-blue-300 hover:text-blue-600 disabled:opacity-50"
+        >
+          {isFetching ? 'Refreshing…' : 'Refresh'}
+        </button>
+      </div>
+
+      {isLoading && (
+        <div className="py-8 text-center text-sm text-slate-500">Loading readiness data…</div>
+      )}
+
+      {error && (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          Failed to load readiness: {error.message}
+        </div>
+      )}
+
+      {/* Global status */}
+      {global && (
+        <div className={`rounded-xl border p-4 ${READINESS_STYLES[global.overall] ?? 'border-slate-200 bg-white'}`}>
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-sm font-semibold uppercase tracking-wide">Overall:</span>
+            <ReadinessBadge value={global.overall} />
+          </div>
+          <p className="mt-2 text-sm">{global.recommendation}</p>
+          {data?.evaluated_at && (
+            <p className="mt-1 text-xs opacity-70">
+              Evaluated {fmtTime(data.evaluated_at)} · last {days} day{days !== 1 ? 's' : ''}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Per-source cards */}
+      {sources.length > 0 && (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
+          {sources.map((s) => (
+            <div
+              key={s.source}
+              className="rounded-xl border border-slate-200 bg-white p-4 space-y-3"
+            >
+              {/* Source header */}
+              <div className="flex items-center justify-between gap-2">
+                <code className="text-sm font-semibold text-slate-800">{s.source}</code>
+                <ReadinessBadge value={s.readiness} />
+              </div>
+
+              {/* Metrics grid */}
+              {s.total_runs != null && (
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-600">
+                  <span className="text-slate-400">Runs (window)</span>
+                  <span>{s.total_runs}</span>
+
+                  <span className="text-slate-400">Success rate</span>
+                  <span>
+                    {s.success_rate != null
+                      ? `${(s.success_rate * 100).toFixed(1)}%`
+                      : '—'}
+                    {' '}
+                    <span className="text-slate-400">
+                      ({s.success_count}/{s.total_runs})
+                    </span>
+                  </span>
+
+                  <span className="text-slate-400">Days observed</span>
+                  <span>{s.days_observed}</span>
+
+                  <span className="text-slate-400">Last success</span>
+                  <span title={s.latest_success ?? '—'}>{fmtAge(s.latest_success)}</span>
+
+                  <span className="text-slate-400">Last failure</span>
+                  <span
+                    className={s.latest_failure ? 'text-rose-600' : ''}
+                    title={s.latest_failure ?? '—'}
+                  >
+                    {fmtAge(s.latest_failure)}
+                  </span>
+
+                  {s.avg_records_written != null && (
+                    <>
+                      <span className="text-slate-400">Avg written</span>
+                      <span>
+                        {s.avg_records_written}
+                        <span className="text-slate-400 ml-1">
+                          (min {s.min_records_written} / max {s.max_records_written})
+                        </span>
+                      </span>
+                    </>
+                  )}
+
+                  {s.duplicate_key_warnings_total > 0 && (
+                    <>
+                      <span className="text-slate-400">Dup warnings</span>
+                      <span className={s.duplicate_key_warnings_total >= 50 ? 'text-rose-600 font-semibold' : ''}>
+                        {s.duplicate_key_warnings_total}
+                      </span>
+                    </>
+                  )}
+
+                  {s.required_field_missing_count_total > 0 && (
+                    <>
+                      <span className="text-slate-400">Missing fields</span>
+                      <span className="text-amber-700">{s.required_field_missing_count_total}</span>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* Staleness */}
+              {s.stale && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  ⚠ Stale: {s.stale_reason}
+                </div>
+              )}
+
+              {/* Blockers */}
+              {s.blockers?.length > 0 && (
+                <div className="space-y-1">
+                  {s.blockers.map((b, i) => (
+                    <div
+                      key={i}
+                      className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs text-rose-700"
+                    >
+                      ✗ {b}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!isLoading && sources.length === 0 && !error && (
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-400">
+          No readiness data available. Ensure scheduled runs have been active for at least {days} day{days !== 1 ? 's' : ''}.
+        </div>
+      )}
+
+      <p className="text-xs text-slate-400">
+        Readiness evaluates non-dry-run scheduled runs only. No production reads or writes are
+        performed by this check. Promotion requires manual sign-off.
+      </p>
+    </div>
+  );
+}
+
 // ── Panel root ────────────────────────────────────────────────────────────────
 
 function ScraperOpsPanelInner() {
@@ -977,6 +1182,7 @@ function ScraperOpsPanelInner() {
       {tab === 'scheduler' && <SchedulerTab />}
       {tab === 'runs' && <RunsTab mode="runs" />}
       {tab === 'errors' && <RunsTab mode="errors" />}
+      {tab === 'readiness' && <ReadinessTab />}
     </SectionCard>
   );
 }

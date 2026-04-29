@@ -576,6 +576,242 @@ r.post('/run', async (req, res) => {
   });
 });
 
+// ── GET /api/admin/ingestion/readiness ───────────────────────────────────────
+
+/**
+ * Evaluate promotion readiness for all v2 staging sources.
+ *
+ * Query params:
+ *   days (int, default 3) — observation window in days
+ *
+ * Readiness values per source:
+ *   ready        Meets all thresholds for the observation window
+ *   watch        Marginal — needs more data
+ *   blocked      Hard failure detected
+ *   manual-only  Source is not scheduled for continuous ingestion
+ *
+ * Global overall values:
+ *   ready_to_promote  All required sources are ready
+ *   watch             Some required sources need more time
+ *   blocked           At least one required source has hard failures
+ */
+
+const READINESS_RULES = {
+  galveston:        { staleHours: 1,  minSuccessRate: 0.95, minDays: 3, required: true },
+  harris_reports:   { staleHours: 36, minSuccessRate: 0.95, minDays: 3, required: true },
+  jefferson_lookup: { staleHours: 12, minSuccessRate: 0.90, minDays: 3, required: true },
+  brazoria_lookup:  { staleHours: 12, minSuccessRate: 0.90, minDays: 3, required: false, alwaysWatch: true },
+  fortbend_lookup:  { required: false, manualOnly: true },
+};
+
+const REQUIRED_SOURCES = Object.entries(READINESS_RULES)
+  .filter(([, r]) => r.required)
+  .map(([s]) => s);
+
+const DUP_WARNING_THRESHOLD = 50;
+
+r.get('/readiness', async (req, res) => {
+  try {
+    const db = getDb();
+    const days = Math.min(30, Math.max(1, parseInt(req.query.days || '3', 10)));
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const sinceIso = since.toISOString();
+
+    const sourceResults = await Promise.all(
+      Object.entries(READINESS_RULES).map(async ([source, rules]) => {
+        if (rules.manualOnly) {
+          return {
+            source,
+            readiness: 'manual-only',
+            blockers: ['source is manual-only — not scheduled for continuous ingestion'],
+            total_runs: 0,
+            success_count: 0,
+            failed_count: 0,
+            skipped_count: 0,
+            success_rate: null,
+            days_observed: 0,
+            latest_success: null,
+            latest_failure: null,
+            stale: null,
+            stale_reason: null,
+            avg_records_written: null,
+            min_records_written: null,
+            max_records_written: null,
+            duplicate_key_warnings_total: 0,
+            required_field_missing_count_total: 0,
+          };
+        }
+
+        // Query non-dry-run runs within the observation window
+        const allRuns = await db.collection(INGESTION_RUNS_COLLECTION)
+          .find(
+            { source, started_at: { $gte: sinceIso }, dry_run: false },
+            { projection: { _id: 0, run_id: 1, status: 1, started_at: 1, records_written: 1, duplicate_key_warnings: 1, required_field_missing_count: 1 } },
+          )
+          .sort({ started_at: -1 })
+          .toArray();
+
+        const successRuns = allRuns.filter((r) => r.status === 'success');
+        const failedRuns = allRuns.filter((r) => r.status === 'failed');
+        const skippedRuns = allRuns.filter((r) => r.status === 'skipped');
+
+        const total = allRuns.length;
+        const successCount = successRuns.length;
+        const successRate = total > 0 ? successCount / total : 0;
+
+        const latestSuccess = successRuns[0]?.started_at ?? null;
+        const latestFailure = failedRuns[0]?.started_at ?? null;
+
+        // Unique days with at least one success
+        const successDays = new Set(
+          successRuns.map((r) => r.started_at?.slice(0, 10)).filter(Boolean),
+        );
+        const daysObserved = successDays.size;
+
+        // Record write stats from successful runs
+        const writtenValues = successRuns
+          .map((r) => r.records_written ?? 0)
+          .filter((v) => v != null);
+        const avgRecordsWritten = writtenValues.length
+          ? writtenValues.reduce((a, b) => a + b, 0) / writtenValues.length
+          : null;
+        const minRecordsWritten = writtenValues.length ? Math.min(...writtenValues) : null;
+        const maxRecordsWritten = writtenValues.length ? Math.max(...writtenValues) : null;
+
+        const dupWarningsTotal = allRuns.reduce((acc, r) => acc + (r.duplicate_key_warnings ?? 0), 0);
+        const missingFieldsTotal = allRuns.reduce((acc, r) => acc + (r.required_field_missing_count ?? 0), 0);
+
+        // Staleness
+        let stale = false;
+        let staleReason = null;
+        if (rules.staleHours != null) {
+          if (!latestSuccess) {
+            stale = true;
+            staleReason = 'no successful run in observation window';
+          } else {
+            const ageH = (Date.now() - new Date(latestSuccess).getTime()) / 3_600_000;
+            if (ageH > rules.staleHours) {
+              stale = true;
+              staleReason = `latest success is ${ageH.toFixed(1)}h old (threshold ${rules.staleHours}h)`;
+            }
+          }
+        }
+
+        if (rules.alwaysWatch) {
+          return {
+            source,
+            readiness: 'watch',
+            blockers: ['source is disabled/optional — enable explicitly to evaluate'],
+            total_runs: total,
+            success_count: successCount,
+            failed_count: failedRuns.length,
+            skipped_count: skippedRuns.length,
+            success_rate: total > 0 ? Math.round(successRate * 10000) / 10000 : null,
+            days_observed: daysObserved,
+            latest_success: latestSuccess,
+            latest_failure: latestFailure,
+            stale,
+            stale_reason: staleReason,
+            avg_records_written: avgRecordsWritten != null ? Math.round(avgRecordsWritten * 10) / 10 : null,
+            min_records_written: minRecordsWritten,
+            max_records_written: maxRecordsWritten,
+            duplicate_key_warnings_total: dupWarningsTotal,
+            required_field_missing_count_total: missingFieldsTotal,
+          };
+        }
+
+        // Evaluate blockers
+        const blockers = [];
+
+        if (total === 0) {
+          blockers.push(`no runs in the last ${days} days`);
+        }
+        if (daysObserved < rules.minDays) {
+          blockers.push(`only ${daysObserved} day(s) with successful runs (need ≥${rules.minDays})`);
+        }
+        if (total > 0 && successRate < rules.minSuccessRate) {
+          blockers.push(
+            `success rate ${(successRate * 100).toFixed(1)}% is below threshold ${(rules.minSuccessRate * 100).toFixed(0)}%`
+            + ` (${successCount}/${total} succeeded)`,
+          );
+        }
+        if (stale) {
+          blockers.push(`data is stale: ${staleReason}`);
+        }
+        if (avgRecordsWritten !== null && avgRecordsWritten === 0) {
+          blockers.push('avg_records_written = 0 — ingestion is not writing any records');
+        }
+        if (dupWarningsTotal >= DUP_WARNING_THRESHOLD) {
+          blockers.push(`duplicate_key_warnings=${dupWarningsTotal} exceeds threshold ${DUP_WARNING_THRESHOLD}`);
+        }
+
+        const readiness = blockers.length > 0 ? 'blocked' : 'ready';
+
+        return {
+          source,
+          readiness,
+          blockers,
+          total_runs: total,
+          success_count: successCount,
+          failed_count: failedRuns.length,
+          skipped_count: skippedRuns.length,
+          success_rate: total > 0 ? Math.round(successRate * 10000) / 10000 : null,
+          days_observed: daysObserved,
+          latest_success: latestSuccess,
+          latest_failure: latestFailure,
+          stale,
+          stale_reason: staleReason,
+          avg_records_written: avgRecordsWritten != null ? Math.round(avgRecordsWritten * 10) / 10 : null,
+          min_records_written: minRecordsWritten,
+          max_records_written: maxRecordsWritten,
+          duplicate_key_warnings_total: dupWarningsTotal,
+          required_field_missing_count_total: missingFieldsTotal,
+        };
+      }),
+    );
+
+    // Global gate
+    const bySource = Object.fromEntries(sourceResults.map((r) => [r.source, r]));
+    const anyBlocked = REQUIRED_SOURCES.some((s) => bySource[s]?.readiness === 'blocked');
+    const allReady = REQUIRED_SOURCES.every((s) => bySource[s]?.readiness === 'ready');
+    const overall = anyBlocked ? 'blocked' : allReady ? 'ready_to_promote' : 'watch';
+
+    const blockedSources = REQUIRED_SOURCES.filter((s) => bySource[s]?.readiness === 'blocked');
+    const watchSources = REQUIRED_SOURCES.filter((s) => bySource[s]?.readiness === 'watch');
+
+    let recommendation;
+    if (overall === 'ready_to_promote') {
+      recommendation = 'All required sources are healthy. Review metrics carefully before promoting. No automated promotion — manual sign-off required.';
+    } else if (overall === 'blocked') {
+      recommendation = `Promotion blocked by: ${blockedSources.join(', ')}. Resolve blockers and observe for at least 3 more days.`;
+    } else {
+      recommendation = `Sources need more observation time: ${watchSources.join(', ')}. Continue monitoring scheduled runs.`;
+    }
+
+    return res.json({
+      ok: true,
+      evaluated_at: new Date().toISOString(),
+      observation_days: days,
+      since: sinceIso,
+      global: {
+        overall,
+        required_sources_ready: allReady,
+        blocked_sources: blockedSources,
+        watch_sources: watchSources,
+        recommendation,
+      },
+      sources: sourceResults,
+    });
+  } catch (err) {
+    console.error('[adminIngestion] /readiness error:', err.message);
+    return res.status(err.statusCode || 500).json({
+      ok: false,
+      error: err.code || 'SERVER_ERROR',
+      message: err.message,
+    });
+  }
+});
+
 // ── POST /api/admin/ingestion/schedules/:source/pause ────────────────────────
 
 r.post('/schedules/:source/pause', async (req, res) => {

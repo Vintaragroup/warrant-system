@@ -82,6 +82,62 @@ No writes to production collections (`galveston_events`, `harris_bond`, etc.) oc
 
 ---
 
+## Promotion Readiness API
+
+`GET /api/admin/ingestion/readiness?days=3` returns a per-source + global readiness verdict
+computed directly from `ingestion_runs` without spawning a Python subprocess.
+
+```json
+{
+  "ok": true,
+  "evaluated_at": "...",
+  "observation_days": 3,
+  "global": {
+    "overall": "blocked | watch | ready_to_promote",
+    "required_sources_ready": false,
+    "blocked_sources": ["galveston"],
+    "recommendation": "..."
+  },
+  "sources": [
+    {
+      "source": "galveston",
+      "readiness": "blocked | watch | ready | manual-only",
+      "blockers": ["only 0 day(s) with successful runs (need ≥3)"],
+      "success_rate": null,
+      "days_observed": 0,
+      "latest_success": null,
+      "avg_records_written": null,
+      "duplicate_key_warnings_total": 0
+    }
+  ]
+}
+```
+
+Visible in Admin UI under **Scraper Ops → Readiness** tab (no "Promote" button — promotion is manual).
+
+---
+
+## `ingestion_runs` Observation Metrics (added in Session 3)
+
+New fields recorded by `scheduler/audit.py::finish_run()`:
+
+| Field                          | Description                                                              |
+| ------------------------------ | ------------------------------------------------------------------------ |
+| `records_inserted`             | Docs newly inserted (populated by scraper if available)                  |
+| `records_updated`              | Docs updated in-place                                                    |
+| `records_skipped`              | Docs skipped (already current, filtered out, etc.)                       |
+| `collection_name`              | Staging collection written to                                            |
+| `required_field_missing_count` | Docs missing required schema fields                                      |
+| `duplicate_key_warnings`       | Duplicate-key write warnings                                             |
+| `source_health`                | Optional health annotation from the scraper                              |
+| `previous_records_written`     | `records_written` from the previous successful non-dry-run for this source |
+| `records_written_delta`        | Difference from previous run (positive = growth, negative = shrink)      |
+| `previous_run_id`              | `run_id` of the prior run used for delta computation                     |
+
+Delta fields are only set for `status=success, dry_run=false` runs.
+
+---
+
 ## Run History
 
 `GET /api/admin/ingestion/runs` returns 1 entry — a scheduled galveston skip from 2026-04-27. Manual API runs do not create run history entries unless `--respect-schedule` is passed (which is intentional; audit records are for scheduled/production runs).

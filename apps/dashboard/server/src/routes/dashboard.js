@@ -131,17 +131,22 @@ r.get('/metrics', (req, res) => {
   res.json({ generatedAt: new Date().toISOString(), routes: out });
 });
 
+// V2 staging collections — all fresh data from the v2 ingestion pipeline.
+// v2_lookup_results contains brazoria, fortbend, and jefferson records.
 const COUNTY_COLLECTIONS = [
-  'simple_brazoria',
-  'simple_fortbend',
-  'simple_galveston',
-  'simple_harris',
-  'simple_jefferson',
+  'v2_galveston_events',
+  'v2_harris_reports',
+  'v2_lookup_results',
 ];
+
+// Canonical county names exposed by the v2 collections (independent of collection structure).
+const ALL_COUNTY_NAMES = ['brazoria', 'fortbend', 'galveston', 'harris', 'jefferson'];
 
 // Use the first collection only as an entry point for $unionWith
 const BASE_COLLECTION = COUNTY_COLLECTIONS[0];
 const baseColl = (db) => db.collection(BASE_COLLECTION);
+
+console.log('[dashboard] V2 mode: reading from collections:', COUNTY_COLLECTIONS);
 
 const DASHBOARD_TZ = process.env.DASHBOARD_TZ || 'America/Chicago';
 const _ymdFmt = new Intl.DateTimeFormat('en-CA', {
@@ -177,20 +182,29 @@ const toYmd = (fieldPath) => ({
         },
         null,
         {
+          // Fast path: if the string is already YYYY-MM-DD format, use it directly.
+          // Avoids converting through UTC midnight which shifts the date by one day
+          // in negative-offset timezones (e.g. America/Chicago CDT = UTC-5).
           $cond: [
-            { $ne: ['$$asDate', null] },
-            {
-              $dateToString: {
-                date: '$$asDate',
-                timezone: DASHBOARD_TZ,
-                format: '%Y-%m-%d',
-              },
-            },
+            { $regexMatch: { input: '$$strValue', regex: /^\d{4}-\d{2}-\d{2}$/ } },
+            { $substrCP: ['$$strValue', 0, 10] },
             {
               $cond: [
-                { $gte: [{ $strLenCP: '$$strValue' }, 10] },
-                { $substrCP: ['$$strValue', 0, 10] },
-                '$$strValue',
+                { $ne: ['$$asDate', null] },
+                {
+                  $dateToString: {
+                    date: '$$asDate',
+                    timezone: DASHBOARD_TZ,
+                    format: '%Y-%m-%d',
+                  },
+                },
+                {
+                  $cond: [
+                    { $gte: [{ $strLenCP: '$$strValue' }, 10] },
+                    { $substrCP: ['$$strValue', 0, 10] },
+                    '$$strValue',
+                  ],
+                },
               ],
             },
           ],
@@ -257,24 +271,30 @@ const buildWindowMatchV2 = (win) => {
 };
 
 /**
- * Build a $unionWith pipeline across all simple_* collections, with:
- *  - booking_date normalization (YYYY-MM-DD string)
+ * Build a $unionWith pipeline across all v2_* collections, with:
+ *  - booking_date normalization (YYYY-MM-DD string) — uses observed_at for harris_reports
  *  - robust bond_amount normalization (numeric)
- *  - county fallback
- *  - global exclusion of Harris/Civil rows
+ *  - county fallback (v2 docs always carry explicit county field)
+ *  - global exclusion of Harris/Civil rows (no-op for v2 which has no category field)
  */
 function unionAll(match = {}, project = null) {
   // Normalize booking_date & bond_amount
   const normalizeStages = [
     {
       $set: {
-        // Prefer normalized booking_date; fall back to legacy and ingest timestamps
+        // Prefer normalized booking_date; fall back to legacy and ingest timestamps.
+        // arrest_date is the primary date field for Galveston (v2_galveston_events).
+        // event_date is a Galveston compatibility alias for booking_date.
+        // scraped_at is last resort — must not be used as a booking date proxy.
         booking_date_n: {
           $let: {
             vars: {
               candidates: [
+                toYmd('arrest_date'),
                 toYmd('booking_date'),
+                toYmd('observed_at'),
                 toYmd('booked_at'),
+                toYmd('event_date'),
                 toYmd('booking_date_iso'),
                 toYmd('normalized_at'),
                 toYmd('scraped_at'),
@@ -601,7 +621,7 @@ function unionAllFast(match = {}, project = null, opts = {}) {
     normalized_at_dt: { $let: { vars: { v: '$normalized_at', t: { $toString: { $ifNull: ['$normalized_at', ''] } }, ty: { $type: '$normalized_at' } }, in: { $cond: [ { $eq: ['$$ty', 'date'] }, '$$v', { $convert: { input: { $trim: { input: '$$t' } }, to: 'date', onError: null, onNull: null } } ] } } },
   };
   if (needBooking || needBookingDt) {
-    baseSet.booking_date_n = { $let: { vars: { c1: toYmd('booking_date'), c2: toYmd('booking_date_iso'), c3: toYmd('booked_at') }, in: { $ifNull: ['$$c1', { $ifNull: ['$$c2', '$$c3'] }] } } };
+    baseSet.booking_date_n = { $let: { vars: { c1: toYmd('arrest_date'), c2: toYmd('booking_date'), c3: toYmd('observed_at'), c4: toYmd('booking_date_iso'), c5: toYmd('booked_at'), c6: toYmd('event_date'), c7: toYmd('scraped_at') }, in: { $ifNull: ['$$c1', { $ifNull: ['$$c2', { $ifNull: ['$$c3', { $ifNull: ['$$c4', { $ifNull: ['$$c5', { $ifNull: ['$$c6', '$$c7'] }] }] }] }] }] } } };
   }
   if (needTimeBucket) {
     baseSet.time_bucket_n = { $let: { vars: { tb: { $toString: { $ifNull: ['$time_bucket', ''] } } }, in: { $cond: [ { $eq: ['$$tb', ''] }, null, { $toLower: { $trim: { input: '$$tb' } } } ] } } };
@@ -611,7 +631,9 @@ function unionAllFast(match = {}, project = null, opts = {}) {
   }
 
   const stages = [];
-  if (coarseYmd) stages.push({ $match: { booking_date: coarseYmd } });
+  // Coarse pre-filter: let through docs where booking_date is in range OR null/absent
+  // (null-booking_date docs fall back to observed_at during normalization)
+  if (coarseYmd) stages.push({ $match: { $or: [{ booking_date: null }, { booking_date: { $exists: false } }, { booking_date: coarseYmd }] } });
   stages.push({ $set: baseSet });
   if (needBookingDt) {
     stages.push({ $set: { booking_dt: {
@@ -650,7 +672,7 @@ function unionAllFast(match = {}, project = null, opts = {}) {
       coll,
       pipeline: (() => {
         const up = [];
-        if (coarseYmd) up.push({ $match: { booking_date: coarseYmd } });
+        if (coarseYmd) up.push({ $match: { $or: [{ booking_date: null }, { booking_date: { $exists: false } }, { booking_date: coarseYmd }] } });
         up.push({ $set: baseSet }); // reuse logic (acceptable slight duplication)
         if (needBookingDt) up.push({ $set: { booking_dt: {
           $let: {
@@ -884,7 +906,7 @@ async function bondByCountyForWindow(db, win, useV2 = false) {
 }
 
 async function adaptiveBondByCounty(db, preferred = ['24h', '48h', '72h', '7d']) {
-  const counties = COUNTY_COLLECTIONS.map(c => c.replace('simple_', ''));
+  const counties = ALL_COUNTY_NAMES;
   const results = new Map();
   for (const win of preferred) {
     const rows = await bondByCountyForWindow(db, win).catch(() => []);
@@ -933,7 +955,7 @@ async function adaptiveBondByCountyV2SinglePass(db, preferred = ['24h','48h','72
     if (!byCounty.has(d.county)) byCounty.set(d.county, new Map());
     byCounty.get(d.county).set(bucketToWindow(d.bucket), d.value || 0);
   });
-  const counties = COUNTY_COLLECTIONS.map(c => c.replace('simple_', ''));
+  const counties = ALL_COUNTY_NAMES;
   const out = [];
   for (const county of counties) {
     const winMap = byCounty.get(county) || new Map();
@@ -1025,14 +1047,15 @@ r.get('/kpis', async (req, res) => {
         res.set('X-Bucket-Coverage', String(Math.round(coverage * 100)) + '%');
         const COVERAGE_MIN = 0.8; // require at least 80% coverage to trust v2 counts
         if (coverage < COVERAGE_MIN) {
+          // Low time_bucket_v2 coverage (v2 collections don't materialize this field) — use legacy date-range path
           pathVariantUsed = 'fallback-countByWindow-low-coverage';
           [c24, c48, c72, c7, c30, c3to7] = await Promise.all([
-            countByWindow(db, '24h', useV2),
-            countByWindow(db, '48h', useV2),
-            countByWindow(db, '72h', useV2),
-            countByWindow(db, '7d', useV2),
-            countByWindow(db, '30d', useV2),
-            countByWindow(db, '3d_7d', useV2),
+            countByWindow(db, '24h', false),
+            countByWindow(db, '48h', false),
+            countByWindow(db, '72h', false),
+            countByWindow(db, '7d', false),
+            countByWindow(db, '30d', false),
+            countByWindow(db, '3d_7d', false),
           ]);
         }
         // Fallback to legacy counting if buckets are unexpectedly empty (e.g., missing time_bucket_v2 coverage)
@@ -1040,11 +1063,11 @@ r.get('/kpis', async (req, res) => {
         if (!Number.isFinite(total) || total === 0) {
           pathVariantUsed = 'fallback-countByWindow-zero';
           [c24, c48, c72, c7, c30] = await Promise.all([
-            countByWindow(db, '24h', useV2),
-            countByWindow(db, '48h', useV2),
-            countByWindow(db, '72h', useV2),
-            countByWindow(db, '7d', useV2),
-            countByWindow(db, '30d', useV2),
+            countByWindow(db, '24h', false),
+            countByWindow(db, '48h', false),
+            countByWindow(db, '72h', false),
+            countByWindow(db, '7d', false),
+            countByWindow(db, '30d', false),
           ]);
         }
         const _t1 = Date.now();
@@ -1053,12 +1076,12 @@ r.get('/kpis', async (req, res) => {
         // Fallback to legacy per-window counting preserving semantics
         pathVariantUsed = 'fallback-countByWindow';
           [c24, c48, c72, c7, c30, c3to7] = await Promise.all([
-          countByWindow(db, '24h', useV2),
-          countByWindow(db, '48h', useV2),
-          countByWindow(db, '72h', useV2),
-            countByWindow(db, '7d',  useV2),
-            countByWindow(db, '30d', useV2),
-            countByWindow(db, '3d_7d', useV2),
+          countByWindow(db, '24h', false),
+          countByWindow(db, '48h', false),
+          countByWindow(db, '72h', false),
+            countByWindow(db, '7d',  false),
+            countByWindow(db, '30d', false),
+            countByWindow(db, '3d_7d', false),
         ]);
       }
     } else {
@@ -1348,6 +1371,7 @@ r.get('/new', withMetrics('new', async (req, res) => {
     }
     const cursor = baseColl(db).aggregate(pipeline, { allowDiskUse: true });
     const rawItems = await withTimeout((cursor.maxTimeMS ? cursor.maxTimeMS(MAX_DB_MS) : cursor).toArray(), MAX_DB_MS, 'new.items').catch(() => []);
+    console.log(`[dashboard:new] collections=${COUNTY_COLLECTIONS.join(',')} count=${rawItems.length} sample=${rawItems[0] ? JSON.stringify(rawItems[0]).slice(0, 200) : 'none'}`);
     const metaNew = await fetchContactedCaseIds(rawItems.map(it => it.id));
     let items = rawItems.map(it => ({
       ...it,
@@ -1545,7 +1569,7 @@ r.get('/trends', async (req, res) => {
     ]);
     const rows = await withTimeout((agg.maxTimeMS ? agg.maxTimeMS(MAX_DB_MS) : agg).toArray(), MAX_DB_MS).catch(() => []);
 
-  const allCounties = COUNTY_COLLECTIONS.map(c => c.replace('simple_', ''));
+  const allCounties = ALL_COUNTY_NAMES;
   const key = (c, d) => `${c}__${d}`;
   const seen = new Map(rows.map(r => [key(r.county, r.date), r]));
   const filled = [];
@@ -1608,28 +1632,42 @@ r.get('/per-county', withMetrics('per-county', async (req, res) => {
           });
           rows = Array.from(byCounty.values()).sort((a,b)=>a.county.localeCompare(b.county));
         } else {
-          // Fallback to legacy booking_dt based per-county snapshot when no v2 buckets are present
+          // Fallback to legacy date-anchored per-county snapshot when no v2 buckets are present
           pathVariant = 'legacy-fallback-empty-buckets';
-          const since30 = new Date(Date.now() - 30 * 24 * 3600000);
-          const match = { booking_dt: { $gte: since30 } };
-          const winCond = (() => {
-            const and = (...conds) => ({ $and: conds });
-            const lt = (f, n) => ({ $lt: [f, n] });
-            const gte = (f, n) => ({ $gte: [f, n] });
-            const h = '$hoursAgo';
+          const _now = new Date();
+          const _dayMs = 24 * 3600000;
+          const _ymdAgo = (n) => ymdInTZ(new Date(_now.getTime() - n * _dayMs));
+          const _todayYmd     = _ymdAgo(0);
+          const _yesterdayYmd = _ymdAgo(1);
+          const _twoDaysYmd   = _ymdAgo(2);
+          const _since7Ymd    = _ymdAgo(6);
+          const _since30Ymd   = _ymdAgo(29);
+          const _since31Ymd   = _ymdAgo(30);
+          const _winYmd = (() => {
             switch (win) {
-              case '24h': return lt(h, 24);
-              case '48h': return and(gte(h, 24), lt(h, 48));
-              case '72h': return and(gte(h, 48), lt(h, 72));
-              case '7d':  return lt(h, 24 * 7);
-              case '30d': return lt(h, 24 * 30);
-              default:    return lt(h, 24);
+              case '24h':  return { $eq: ['$booking_date', _todayYmd] };
+              case '48h':  return { $eq: ['$booking_date', _yesterdayYmd] };
+              case '72h':  return { $eq: ['$booking_date', _twoDaysYmd] };
+              case '7d':   return { $gte: ['$booking_date', _since7Ymd] };
+              case '30d':  return { $gte: ['$booking_date', _since30Ymd] };
+              default:     return { $eq: ['$booking_date', _todayYmd] };
             }
           })();
+          const _fbMatch = { booking_date: { $gte: _since31Ymd } };
           const pipeline = [
-            ...unionAllFast(match, { county: 1, bond_amount: 1, booking_dt: 1 }, { needBond: true, needBookingDt: true }),
-            { $set: { hoursAgo: { $dateDiff: { startDate: '$booking_dt', endDate: '$$NOW', unit: 'hour' } } } },
-            { $group: { _id: '$county', today: { $sum: { $cond: [{ $lt: ['$hoursAgo', 24] }, 1, 0] } }, yesterday: { $sum: { $cond: [{ $and: [{ $gte: ['$hoursAgo', 24] }, { $lt: ['$hoursAgo', 48] }] }, 1, 0] } }, twoDaysAgo: { $sum: { $cond: [{ $and: [{ $gte: ['$hoursAgo', 48] }, { $lt: ['$hoursAgo', 72] }] }, 1, 0] } }, last7d: { $sum: { $cond: [{ $lt: ['$hoursAgo', 24 * 7] }, 1, 0] } }, last30d: { $sum: { $cond: [{ $lt: ['$hoursAgo', 24 * 30] }, 1, 0] } }, bondToday: { $sum: { $cond: [{ $lt: ['$hoursAgo', 24] }, { $ifNull: ['$bond_amount', 0] }, 0] } }, bondWindow: { $sum: { $cond: [winCond, { $ifNull: ['$bond_amount', 0] }, 0] } } } },
+            ...unionAllFast(_fbMatch, { county: 1, bond_amount: 1, booking_date: 1 }, { needBond: true, needBooking: true }),
+            {
+              $group: {
+                _id: '$county',
+                today:      { $sum: { $cond: [{ $eq:  ['$booking_date', _todayYmd]     }, 1, 0] } },
+                yesterday:  { $sum: { $cond: [{ $eq:  ['$booking_date', _yesterdayYmd] }, 1, 0] } },
+                twoDaysAgo: { $sum: { $cond: [{ $eq:  ['$booking_date', _twoDaysYmd]   }, 1, 0] } },
+                last7d:     { $sum: { $cond: [{ $gte: ['$booking_date', _since7Ymd]    }, 1, 0] } },
+                last30d:    { $sum: { $cond: [{ $gte: ['$booking_date', _since30Ymd]   }, 1, 0] } },
+                bondToday:  { $sum: { $cond: [{ $eq:  ['$booking_date', _todayYmd]     }, { $ifNull: ['$bond_amount', 0] }, 0] } },
+                bondWindow: { $sum: { $cond: [_winYmd, { $ifNull: ['$bond_amount', 0] }, 0] } },
+              }
+            },
             { $project: { _id: 0, county: '$_id', counts: { today: '$today', yesterday: '$yesterday', twoDaysAgo: '$twoDaysAgo', last7d: '$last7d', last30d: '$last30d' }, bondValue: '$bondWindow', bondToday: 1 } },
             { $sort: { county: 1 } }
           ];
@@ -1637,36 +1675,58 @@ r.get('/per-county', withMetrics('per-county', async (req, res) => {
           rows = await withTimeout((agg.maxTimeMS ? agg.maxTimeMS(MAX_DB_MS) : agg).toArray(), MAX_DB_MS).catch(() => []);
         }
       } else {
-        // Legacy hour-diff path
-        const since30 = new Date(Date.now() - 30 * 24 * 3600000);
-        const match = { booking_dt: { $gte: since30 } };
-        const winCond = (() => {
-          const and = (...conds) => ({ $and: conds });
-          const lt = (f, n) => ({ $lt: [f, n] });
-          const gte = (f, n) => ({ $gte: [f, n] });
-          const h = '$hoursAgo';
+        // Legacy date-anchored path.
+        // Use calendar-day bucket comparison on booking_date_n instead of hoursAgo
+        // so that records from 7 days ago (e.g. 04/21 when today is 04/28) are not
+        // excluded by an off-by-one on the 168-hour strict boundary.
+        const now = new Date();
+        const dayMs = 24 * 3600000;
+        const ymdAgo = (n) => ymdInTZ(new Date(now.getTime() - n * dayMs));
+        const todayYmd     = ymdAgo(0);
+        const yesterdayYmd = ymdAgo(1);
+        const twoDaysYmd   = ymdAgo(2);
+        const since7Ymd    = ymdAgo(6);   // today + previous 6 days = 7 inclusive
+        const since30Ymd   = ymdAgo(29);  // today + previous 29 days = 30 inclusive
+        const since31Ymd   = ymdAgo(30);  // extra day buffer for coarse pre-filter
+
+        // Window match for the requested win (bond aggregation)
+        const winYmd = (() => {
           switch (win) {
-            case '24h': return lt(h, 24);
-            case '48h': return and(gte(h, 24), lt(h, 48));
-            case '72h': return and(gte(h, 48), lt(h, 72));
-            case '7d':  return lt(h, 24 * 7);
-            case '30d': return lt(h, 24 * 30);
-            default:    return lt(h, 24);
+            case '24h':  return { $eq: ['$booking_date', todayYmd] };
+            case '48h':  return { $eq: ['$booking_date', yesterdayYmd] };
+            case '72h':  return { $eq: ['$booking_date', twoDaysYmd] };
+            case '7d':   return { $gte: ['$booking_date', since7Ymd] };
+            case '30d':  return { $gte: ['$booking_date', since30Ymd] };
+            default:     return { $eq: ['$booking_date', todayYmd] };
           }
         })();
+
+        // Coarse match on booking_date string (rewriteBookingKeys -> booking_date_n after $set stage)
+        const match = { booking_date: { $gte: since31Ymd } };
         const pipeline = [
-          ...unionAllFast(match, { county: 1, bond_amount: 1, booking_dt: 1 }, { needBond: true, needBookingDt: true }),
-          { $set: { hoursAgo: { $dateDiff: { startDate: '$booking_dt', endDate: '$$NOW', unit: 'hour' } } } },
-          { $group: { _id: '$county', today: { $sum: { $cond: [{ $lt: ['$hoursAgo', 24] }, 1, 0] } }, yesterday: { $sum: { $cond: [{ $and: [{ $gte: ['$hoursAgo', 24] }, { $lt: ['$hoursAgo', 48] }] }, 1, 0] } }, twoDaysAgo: { $sum: { $cond: [{ $and: [{ $gte: ['$hoursAgo', 48] }, { $lt: ['$hoursAgo', 72] }] }, 1, 0] } }, last7d: { $sum: { $cond: [{ $lt: ['$hoursAgo', 24 * 7] }, 1, 0] } }, last30d: { $sum: { $cond: [{ $lt: ['$hoursAgo', 24 * 30] }, 1, 0] } }, bondToday: { $sum: { $cond: [{ $lt: ['$hoursAgo', 24] }, { $ifNull: ['$bond_amount', 0] }, 0] } }, bondWindow: { $sum: { $cond: [winCond, { $ifNull: ['$bond_amount', 0] }, 0] } } } },
+          ...unionAllFast(match, { county: 1, bond_amount: 1, booking_date: 1 }, { needBond: true, needBooking: true }),
+          {
+            $group: {
+              _id: '$county',
+              today:      { $sum: { $cond: [{ $eq:  ['$booking_date', todayYmd]     }, 1, 0] } },
+              yesterday:  { $sum: { $cond: [{ $eq:  ['$booking_date', yesterdayYmd] }, 1, 0] } },
+              twoDaysAgo: { $sum: { $cond: [{ $eq:  ['$booking_date', twoDaysYmd]   }, 1, 0] } },
+              last7d:     { $sum: { $cond: [{ $gte: ['$booking_date', since7Ymd]    }, 1, 0] } },
+              last30d:    { $sum: { $cond: [{ $gte: ['$booking_date', since30Ymd]   }, 1, 0] } },
+              bondToday:  { $sum: { $cond: [{ $eq:  ['$booking_date', todayYmd]     }, { $ifNull: ['$bond_amount', 0] }, 0] } },
+              bondWindow: { $sum: { $cond: [winYmd, { $ifNull: ['$bond_amount', 0] }, 0] } },
+            }
+          },
           { $project: { _id: 0, county: '$_id', counts: { today: '$today', yesterday: '$yesterday', twoDaysAgo: '$twoDaysAgo', last7d: '$last7d', last30d: '$last30d' }, bondValue: '$bondWindow', bondToday: 1 } },
           { $sort: { county: 1 } }
         ];
         const agg = baseColl(db).aggregate(pipeline, { allowDiskUse: true });
         rows = await withTimeout((agg.maxTimeMS ? agg.maxTimeMS(MAX_DB_MS) : agg).toArray(), MAX_DB_MS).catch(() => []);
+        console.log(`[dashboard:per-county] collections=${COUNTY_COLLECTIONS.join(',')} rowCount=${rows.length} sample=${rows[0] ? JSON.stringify(rows[0]).slice(0, 200) : 'none'}`);
       }
 
       // Ensure all counties are present
-      const counties = COUNTY_COLLECTIONS.map((c) => c.replace('simple_', ''));
+      const counties = ALL_COUNTY_NAMES;
       const map = new Map(rows.map((r) => [String(r.county || '').toLowerCase(), r]));
       const items = counties.map((cty) => (
         map.get(cty) || { county: cty, counts: { today: 0, yesterday: 0, twoDaysAgo: 0, last7d: 0, last30d: 0 }, bondValue: 0, bondToday: 0 }
@@ -1682,6 +1742,88 @@ r.get('/per-county', withMetrics('per-county', async (req, res) => {
     res.status(500).json({ error: String(err?.message || err) });
   }
 }));
+
+// ===== GALVESTON DEBUG =====
+// GET /api/dashboard/galveston-debug  (or any route with ?debug=1)
+// Returns per-day breakdown, field audit, and sample excluded docs for v2_galveston_events.
+// Gate: only responds when ?debug=1 is present.
+r.get('/galveston-debug', async (req, res) => {
+  ensurePermission(req, 'dashboard:read');
+  if (req.query.debug !== '1') {
+    return res.status(400).json({ error: 'Add ?debug=1 to enable this endpoint' });
+  }
+  const db = ensureDb(res); if (!db) return;
+  try {
+    const coll = db.collection('v2_galveston_events');
+    const dayMs = 24 * 3600000;
+    const now = new Date();
+    const ymdAgo = (n) => ymdInTZ(new Date(now.getTime() - n * dayMs));
+    const since7 = ymdAgo(6);
+    const since30 = ymdAgo(29);
+
+    const DATE_FIELDS = ['arrest_date', 'booking_date', 'observed_at', 'event_date', 'booked_at'];
+    const projection = Object.fromEntries([...DATE_FIELDS, 'full_name', 'charge_description', 'arrest_date_raw', 'county', 'ingested_at'].map(f => [f, 1]));
+    projection._id = 0;
+
+    const docs = await coll.find({}, { projection }).toArray();
+    const total = docs.length;
+
+    // Per-day breakdown and field usage
+    const byDate = {};
+    const fieldUsage = {};
+    const excluded = [];
+
+    for (const d of docs) {
+      let picked = null;
+      let pickedField = null;
+      for (const f of DATE_FIELDS) {
+        const v = d[f];
+        if (v && /^\d{4}-\d{2}-\d{2}/.test(String(v))) {
+          picked = String(v).slice(0, 10);
+          pickedField = f;
+          break;
+        }
+      }
+      if (!picked) {
+        excluded.push({ name: d.full_name, fields: Object.fromEntries(DATE_FIELDS.map(f => [f, d[f] ?? null])) });
+        continue;
+      }
+      byDate[picked] = (byDate[picked] || 0) + 1;
+      fieldUsage[pickedField] = (fieldUsage[pickedField] || 0) + 1;
+    }
+
+    // Filter to 7-day window
+    const byDate7d = Object.fromEntries(Object.entries(byDate).filter(([d]) => d >= since7).sort());
+    const count7d = Object.values(byDate7d).reduce((s, n) => s + n, 0);
+
+    // Sample from today
+    const todayYmd = ymdAgo(0);
+    const sampleToday = docs.filter(d => {
+      for (const f of DATE_FIELDS) {
+        if (d[f] && String(d[f]).startsWith(todayYmd)) return true;
+      }
+      return false;
+    }).slice(0, 5).map(d => ({ name: d.full_name, arrest_date: d.arrest_date, booking_date: d.booking_date, charge: d.charge_description }));
+
+    res.json({
+      galveston_debug: {
+        collection: 'v2_galveston_events',
+        total_docs: total,
+        count_7d: count7d,
+        by_date_7d: byDate7d,
+        by_date_all: Object.fromEntries(Object.entries(byDate).sort()),
+        date_field_used: fieldUsage,
+        excluded_count: excluded.length,
+        sample_excluded: excluded.slice(0, 5),
+        sample_today: sampleToday,
+        window_start: since7,
+        window_end: todayYmd,
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: String(err?.message || err) });
+  }
+});
 
 // ===== DIAGNOSTICS (window bounds + sample) =====
 r.get('/diag', async (req, res) => {

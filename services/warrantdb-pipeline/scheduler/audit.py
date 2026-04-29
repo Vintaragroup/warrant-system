@@ -67,6 +67,18 @@ def create_run(
         "records_seen": 0,
         "records_written": 0,
         "records_failed": 0,
+        # Observation-period metrics — populated by finish_run()
+        "records_inserted": None,
+        "records_updated": None,
+        "records_skipped": None,
+        "collection_name": None,
+        "required_field_missing_count": None,
+        "duplicate_key_warnings": None,
+        "source_health": None,
+        # Delta tracking vs previous successful run — populated by finish_run()
+        "previous_records_written": None,
+        "records_written_delta": None,
+        "previous_run_id": None,
         "command": _redact(command) if command else None,
         "stdout_tail": None,
         "stderr_tail": None,
@@ -88,14 +100,26 @@ def finish_run(
     stderr_tail: Optional[str] = None,
     error: Optional[str] = None,
     skip_reason: Optional[str] = None,
+    # Observation-period metrics
+    records_inserted: Optional[int] = None,
+    records_updated: Optional[int] = None,
+    records_skipped: Optional[int] = None,
+    collection_name: Optional[str] = None,
+    required_field_missing_count: Optional[int] = None,
+    duplicate_key_warnings: Optional[int] = None,
+    source_health: Optional[str] = None,
 ) -> None:
     """
     Update an existing ingestion_runs document with final status and metrics.
     All text fields are redacted and truncated before storage.
+
+    Delta fields (previous_records_written, records_written_delta, previous_run_id)
+    are computed automatically for non-dry-run success runs by querying the most
+    recent prior successful non-dry-run for the same source.
     """
     existing = db[_COLLECTION].find_one(
         {"run_id": run_id},
-        {"started_at": 1},
+        {"started_at": 1, "source": 1, "dry_run": 1},
     )
     duration_ms = None
     if existing:
@@ -103,6 +127,30 @@ def finish_run(
         if started_at:
             now = datetime.now(timezone.utc)
             duration_ms = int((now - started_at).total_seconds() * 1000)
+
+    # Delta tracking: compare against previous successful non-dry-run for this source
+    previous_records_written: Optional[int] = None
+    records_written_delta: Optional[int] = None
+    previous_run_id: Optional[str] = None
+
+    if existing and status == "success" and not existing.get("dry_run", True):
+        source = existing.get("source")
+        if source:
+            prev = db[_COLLECTION].find_one(
+                {
+                    "source": source,
+                    "run_id": {"$ne": run_id},
+                    "status": "success",
+                    "dry_run": False,
+                },
+                {"run_id": 1, "records_written": 1},
+                sort=[("started_at", -1)],
+            )
+            if prev:
+                previous_run_id = prev.get("run_id")
+                previous_records_written = prev.get("records_written")
+                if previous_records_written is not None:
+                    records_written_delta = records_written - previous_records_written
 
     now_iso = datetime.now(timezone.utc).isoformat()
     db[_COLLECTION].update_one(
@@ -115,6 +163,16 @@ def finish_run(
             "records_seen": records_seen,
             "records_written": records_written,
             "records_failed": records_failed,
+            "records_inserted": records_inserted,
+            "records_updated": records_updated,
+            "records_skipped": records_skipped,
+            "collection_name": collection_name,
+            "required_field_missing_count": required_field_missing_count,
+            "duplicate_key_warnings": duplicate_key_warnings,
+            "source_health": source_health,
+            "previous_records_written": previous_records_written,
+            "records_written_delta": records_written_delta,
+            "previous_run_id": previous_run_id,
             "stdout_tail": _truncate(_redact(stdout_tail), _STDOUT_TAIL_CHARS),
             "stderr_tail": _truncate(_redact(stderr_tail), _STDERR_TAIL_CHARS),
             "error": _truncate(_redact(error), _ERROR_TAIL_CHARS),

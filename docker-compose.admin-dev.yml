@@ -57,6 +57,8 @@ services:
       - REDIS_URL=${REDIS_URL:-}
       # Sampling: log every request in dev
       - LOG_SAMPLE_RATE=1
+      # v2 collections don't have time_bucket_v2 materialized — use legacy date-range path
+      - DISABLE_TIME_BUCKET_V2=true
     ports:
       - "3001:3001"
     volumes:
