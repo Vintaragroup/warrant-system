@@ -204,22 +204,25 @@ function BondDisplay({ amount, status, raw }) {
   );
 }
 
-function MiniStackedBar({ new24, new48, new72 }) {
-  const total = Math.max((new24 || 0) + (new48 || 0) + (new72 || 0), 0.0001);
-  const p24 = (new24 / total) * 100;
-  const p48 = (new48 / total) * 100;
-  const p72 = (new72 / total) * 100;
+function MiniStackedBar({ new24, new48, new72, new3to7 }) {
+  const total = Math.max((new24 || 0) + (new48 || 0) + (new72 || 0) + (new3to7 || 0), 0.0001);
+  const p24    = ((new24    || 0) / total) * 100;
+  const p48    = ((new48    || 0) / total) * 100;
+  const p72    = ((new72    || 0) / total) * 100;
+  const p3to7  = ((new3to7  || 0) / total) * 100;
   return (
     <div className="w-full">
       <div className="h-3 bg-slate-200 rounded-full overflow-hidden">
         <div className="h-full bg-green-400 inline-block" style={{ width: `${p24}%` }} />
         <div className="h-full bg-amber-400 inline-block" style={{ width: `${p48}%` }} />
         <div className="h-full bg-red-400 inline-block" style={{ width: `${p72}%` }} />
+        <div className="h-full bg-purple-400 inline-block" style={{ width: `${p3to7}%` }} />
       </div>
       <div className="mt-1 flex justify-between text-[10px] text-slate-500">
         <span>24h: {new24 || 0}</span>
         <span>48h: {new48 || 0}</span>
         <span>72h: {new72 || 0}</span>
+        <span>3-7d: {new3to7 || 0}</span>
       </div>
     </div>
   );
@@ -844,7 +847,10 @@ export default function DashboardScreen() {
       const new24 = Number(pc.counts?.today || 0);
       const new48 = Number(pc.counts?.yesterday || 0);
       const new72 = Number(pc.counts?.twoDaysAgo || 0);
-      const totalVolume = new24 + new48 + new72;
+      const new3to7 = Number(pc.counts?.threeToSeven || 0);
+      const last7d = Number(pc.counts?.last7d || 0);
+      const hasBond = pc.hasBond != null ? Number(pc.hasBond) : null;
+      const totalVolume = new24 + new48 + new72 + new3to7;
       return {
         county: name,
         pretty: prettyCounty(name),
@@ -852,6 +858,9 @@ export default function DashboardScreen() {
         new24,
         new48,
         new72,
+        new3to7,
+        last7d,
+        hasBond,
         bondToday: Number(pc.bondToday || 0),
         bondWindowValue: bondValueForWindow(name),
         lastPull,
@@ -1097,10 +1106,14 @@ export default function DashboardScreen() {
             <div className="grid grid-cols-2 gap-3">
               {ALL_COUNTIES.map((name) => {
                 const amount = bondValueForWindow(name);
+                const pc = perCountyMap.get(normCountyKey(name)) || {};
+                const hasBond = pc.hasBond != null ? Number(pc.hasBond) : null;
+                const last7dCount = Number(pc.counts?.last7d || 0);
+                const bondDisplay = (hasBond === 0 && last7dCount > 0) ? 'N/A' : money(amount);
                 return (
                   <div key={name} className="rounded-xl border p-3">
                     <div className="text-sm font-semibold text-slate-800">{prettyCounty(name)}</div>
-                    <div className="text-slate-500 text-xs">{money(amount)}</div>
+                    <div className="text-slate-500 text-xs">{bondDisplay}</div>
                   </div>
                 );
               })}
@@ -1394,12 +1407,16 @@ export default function DashboardScreen() {
                     <div className="text-xs text-slate-500">Today: {money(c.bondToday)}</div>
                   </div>
                   <div className="mt-3">
-                    <MiniStackedBar new24={c.new24} new48={c.new48} new72={c.new72} />
+                    <MiniStackedBar new24={c.new24} new48={c.new48} new72={c.new72} new3to7={c.new3to7} />
                   </div>
                   <div className="mt-3 text-[10px] text-slate-500 flex items-center gap-3">
                     <span className="inline-block w-3 h-3 bg-green-400 rounded-sm" /> 24h
                     <span className="inline-block w-3 h-3 bg-amber-400 rounded-sm" /> 48h
                     <span className="inline-block w-3 h-3 bg-red-400 rounded-sm" /> 72h
+                    <span className="inline-block w-3 h-3 bg-purple-400 rounded-sm" /> 3–7d
+                  </div>
+                  <div className="mt-2 text-xs text-slate-600">
+                    7d total: <span className="font-semibold">{c.last7d.toLocaleString()}</span>
                   </div>
                   <div className="mt-3 text-xs text-slate-500">Bond value (7d)</div>
                   <Sparkline values={Array.isArray(c.valueTrend) ? c.valueTrend : []} />
@@ -1460,6 +1477,8 @@ export default function DashboardScreen() {
                   <th className="py-2 pr-3 text-right font-semibold">24h</th>
                   <th className="py-2 pr-3 text-right font-semibold">48h</th>
                   <th className="py-2 pr-3 text-right font-semibold">72h</th>
+                  <th className="py-2 pr-3 text-right font-semibold">3–7d</th>
+                  <th className="py-2 pr-3 text-right font-semibold">7d total</th>
                   <th className="py-2 pr-3 text-right font-semibold">Bond ({valueWindow})</th>
                   <th className="py-2 pr-3 text-left font-semibold">Trend (7d)</th>
                   <th className="py-2 pr-3 text-left font-semibold">Last pull</th>
@@ -1483,7 +1502,9 @@ export default function DashboardScreen() {
                       <td className="py-2 pr-3 text-right">{c.new24.toLocaleString()}</td>
                       <td className="py-2 pr-3 text-right">{c.new48.toLocaleString()}</td>
                       <td className="py-2 pr-3 text-right">{c.new72.toLocaleString()}</td>
-                      <td className="py-2 pr-3 text-right">{money(c.bondWindowValue)}</td>
+                      <td className="py-2 pr-3 text-right">{c.new3to7.toLocaleString()}</td>
+                      <td className="py-2 pr-3 text-right font-semibold">{c.last7d.toLocaleString()}</td>
+                      <td className="py-2 pr-3 text-right">{c.hasBond === 0 && c.last7d > 0 ? 'N/A' : money(c.bondWindowValue)}</td>
                       <td className="py-2 pr-3"><Sparkline values={Array.isArray(c.valueTrend) ? c.valueTrend : []} /></td>
                       <td className="py-2 pr-3 text-xs text-slate-500">
                         {c.lastPull === '—' ? '—' : new Date(c.lastPull).toLocaleString()}
@@ -1510,7 +1531,7 @@ export default function DashboardScreen() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={8} className="py-6 text-center text-slate-500">
+                    <td colSpan={10} className="py-6 text-center text-slate-500">
                       All counties are clear for this filter.
                     </td>
                   </tr>

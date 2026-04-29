@@ -91,6 +91,12 @@ CONCURRENCY = _int("GALV_CONCURRENCY", 10)
 ROWS_MAX = _int("GALV_ROWS_MAX", 5000)
 ROW_DELAY = float(os.getenv("GALV_ROW_DELAY_SEC", "0.5"))
 USE_ENDPOINT_CACHE = os.getenv("GALV_ENDPOINT_CACHE", "true").strip().lower() in ("1", "true", "yes")
+# Set GALV_DETAIL_FETCH=false to skip detail page enrichment (faster, no bond data)
+DETAIL_FETCH = os.getenv("GALV_DETAIL_FETCH", "true").strip().lower() in ("1", "true", "yes")
+
+# ASP.NET form field names for detail page lookup
+_DETAIL_FORM_RECORD_INDEX = "ctl00$MasterPage$mainContent$CenterColumnContent$hfRecordIndex"
+_DETAIL_FORM_BUTTON = "ctl00$MasterPage$mainContent$CenterColumnContent$btnInmateDetail"
 
 _BAD_NAME_RE = re.compile(
     r"(HOME|DAILY\s+BULLETIN|INMATE\s+INQUIRY|ARRESTS|CRASH\s+REPORTS|WANTED)",
@@ -311,20 +317,50 @@ class GalvestonP2CEventFeed(EventFeedScraper):
         rows = data.get("rows") or []
         print(f"[galv] roster: {len(rows)} rows")
 
-        detail_urls = self._extract_detail_urls(rows)
-        print(f"[galv] detail pages to fetch: {len(detail_urls)}")
-
-        # Async fetch all detail pages
-        detail_map = asyncio.run(self._fetch_all_details(detail_urls, cookies))
+        # ── Detail page enrichment via ASP.NET form POST ──────────────────
+        # Each row has a my_num (0-based jqGrid row index) that maps to the
+        # hfRecordIndex hidden field used by the detail-page PostBack handler.
+        # One VIEWSTATE is loaded once and reused for all concurrent POSTs.
+        detail_map: Dict[str, Dict[str, Any]] = {}
+        if DETAIL_FETCH:
+            viewstate = self._load_page_viewstate(cookies)
+            if viewstate["loaded"]:
+                print(f"[galv] fetching detail pages for {len(rows)} roster rows")
+                detail_map = asyncio.run(
+                    self._fetch_all_details_by_my_num(rows, viewstate, cookies)
+                )
+                ok_count = sum(1 for v in detail_map.values() if v.get("detail_fetch_status") == "ok")
+                fail_count = len(detail_map) - ok_count
+                print(f"[galv] detail fetch complete: ok={ok_count} failed={fail_count}")
+            else:
+                print("[galv] WARNING: could not load VIEWSTATE — skipping detail enrichment")
+        else:
+            print("[galv] detail fetch disabled (GALV_DETAIL_FETCH=false)")
 
         for row in rows:
             raw = self._parse_roster_row(row)
             if not raw:
                 continue
-            url_raw = raw.get("detail_url") or ""
-            norm_url = _normalize_detail_url(url_raw) if url_raw else ""
-            if norm_url and norm_url in detail_map:
-                raw.update(detail_map[norm_url])
+            my_num = str(row.get("my_num", ""))
+            if my_num and my_num in detail_map:
+                detail_data = detail_map[my_num]
+                # Merge detail fields; roster fields (agency, booking_number) take precedence
+                for field in (
+                    "bond_amount", "total_bond", "charges", "mugshot_url",
+                    "release_date", "detail_fetched_at",
+                    "detail_fetch_status", "detail_fetch_error",
+                ):
+                    if field in detail_data and detail_data[field] is not None:
+                        raw[field] = detail_data[field]
+                # Prefer detail charges when they are richer (list of dicts vs strings)
+                detail_charges = detail_data.get("charges")
+                if detail_charges and isinstance(
+                    detail_charges[0] if detail_charges else None, dict
+                ):
+                    raw["charges"] = detail_charges
+                raw.setdefault("detail_fetch_status", detail_data.get("detail_fetch_status", "skipped"))
+            else:
+                raw["detail_fetch_status"] = "skipped" if not DETAIL_FETCH else "missing"
             raw["_scraped_at"] = self._scraped_at
             yield raw
 
@@ -411,8 +447,14 @@ class GalvestonP2CEventFeed(EventFeedScraper):
 
             # ── Legal ──
             "charges":           charges,
-            "bond_amount":       raw.get("bond_amount") or raw.get("total_bond") or None,
+            "bond_amount":       raw.get("bond_amount") or None,
             "charge_description": _first_charge_desc(charges),
+            "release_date":      _parse_date(raw.get("release_date")),
+            "mugshot_url":       raw.get("mugshot_url") or None,
+
+            # ── Detail enrichment metadata ──
+            "detail_fetch_status": raw.get("detail_fetch_status") or "skipped",
+            "detail_fetch_error":  raw.get("detail_fetch_error") or None,
 
             # ── Source ──
             "county":     self.COUNTY,
@@ -479,6 +521,104 @@ class GalvestonP2CEventFeed(EventFeedScraper):
                 print(f"[galv] detail fetch error {url}: {exc}")
                 return norm, None
 
+    def _load_page_viewstate(self, cookies: Dict[str, str]) -> Dict[str, Any]:
+        """
+        GET /jailinmates.aspx once to extract ASP.NET VIEWSTATE fields.
+        These are reused across all concurrent detail-page POSTs.
+        """
+        try:
+            with httpx.Client(
+                headers=UA, verify=_verify(), cookies=cookies,
+                timeout=TIMEOUT, follow_redirects=True,
+            ) as client:
+                resp = client.get(ROSTER_HTML, headers={"Referer": f"{BASE}/main.aspx"})
+                resp.raise_for_status()
+                soup = BeautifulSoup(resp.text, "lxml")
+                vs_el = soup.select_one("#__VIEWSTATE")
+                vg_el = soup.select_one("#__VIEWSTATEGENERATOR")
+                ev_el = soup.select_one("#__EVENTVALIDATION")
+                return {
+                    "__VIEWSTATE": vs_el["value"] if vs_el else "",
+                    "__VIEWSTATEGENERATOR": vg_el["value"] if vg_el else "",
+                    "__EVENTVALIDATION": ev_el["value"] if ev_el else "",
+                    "loaded": bool(vs_el),
+                }
+        except Exception as exc:
+            print(f"[galv] failed to load page VIEWSTATE: {exc}")
+            return {"__VIEWSTATE": "", "__VIEWSTATEGENERATOR": "", "__EVENTVALIDATION": "", "loaded": False}
+
+    async def _fetch_all_details_by_my_num(
+        self,
+        rows: List[Dict[str, Any]],
+        viewstate: Dict[str, str],
+        cookies: Dict[str, str],
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        Fetch detail pages for all roster rows using their my_num (jqGrid row
+        index) as the hfRecordIndex PostBack selector.
+        Returns {my_num_str: parsed_detail_dict}.
+        """
+        sem = asyncio.Semaphore(CONCURRENCY)
+        results: Dict[str, Dict[str, Any]] = {}
+
+        async with httpx.AsyncClient(
+            headers=UA, verify=_verify(), cookies=cookies,
+            timeout=TIMEOUT, follow_redirects=True,
+        ) as client:
+            tasks = [
+                self._fetch_one_detail_by_my_num(client, sem, str(row["my_num"]), viewstate)
+                for row in rows
+                if row.get("my_num") is not None
+            ]
+            for coro in asyncio.as_completed(tasks):
+                my_num, data = await coro
+                results[my_num] = data
+
+        return results
+
+    async def _fetch_one_detail_by_my_num(
+        self,
+        client: httpx.AsyncClient,
+        sem: asyncio.Semaphore,
+        my_num: str,
+        viewstate: Dict[str, str],
+    ) -> tuple[str, Dict[str, Any]]:
+        """POST to /jailinmates.aspx with hfRecordIndex=my_num to get the detail page."""
+        async with sem:
+            await asyncio.sleep(ROW_DELAY)
+            try:
+                post_data = {
+                    "__EVENTTARGET": "",
+                    "__EVENTARGUMENT": "",
+                    "__VIEWSTATE": viewstate["__VIEWSTATE"],
+                    "__VIEWSTATEGENERATOR": viewstate["__VIEWSTATEGENERATOR"],
+                    "__EVENTVALIDATION": viewstate["__EVENTVALIDATION"],
+                    _DETAIL_FORM_RECORD_INDEX: my_num,
+                    _DETAIL_FORM_BUTTON: "Get Details",
+                }
+                resp = await client.post(
+                    ROSTER_HTML,
+                    data=post_data,
+                    headers={
+                        "Content-Type": "application/x-www-form-urlencoded",
+                        "Referer": ROSTER_HTML,
+                    },
+                )
+                resp.raise_for_status()
+                # Verify we got a detail page (not a redirect to roster)
+                if "lblName" not in resp.text:
+                    raise ValueError("detail page not returned (missing lblName)")
+                data = self._parse_detail_page(resp.text, f"{ROSTER_HTML}?my_num={my_num}")
+                data["detail_fetched_at"] = _utcnow_iso()
+                data["detail_fetch_status"] = "ok"
+                return my_num, data
+            except Exception as exc:
+                print(f"[galv] detail fetch error my_num={my_num}: {exc}")
+                return my_num, {
+                    "detail_fetch_status": "failed",
+                    "detail_fetch_error": str(exc)[:200],
+                }
+
     def _parse_detail_page(self, html: str, source_url: str) -> Dict[str, Any]:
         """
         Parse a P2C inmate detail page.
@@ -522,6 +662,9 @@ class GalvestonP2CEventFeed(EventFeedScraper):
         result["agency"] = txt("#mainContent_CenterColumnContent_lblAgency") or None
         result["booking_number"] = (
             txt("#mainContent_CenterColumnContent_lblBookingNumber") or None
+        )
+        result["release_date"] = (
+            txt("#mainContent_CenterColumnContent_lblReleaseDate") or None
         )
 
         # Total bond label (prefer labeled value over per-charge sum)
@@ -680,7 +823,8 @@ class GalvestonP2CEventFeed(EventFeedScraper):
                 "arrest_date_raw": row.get("disp_arrest_date") or row.get("date_arr") or None,
                 "charges":        [row["chrgdesc"]] if row.get("chrgdesc") else [],
                 "total_bond":     None,
-                "detail_url":     None,  # requires ASP.NET PostBack; no GET detail URL
+                "my_num":         row.get("my_num"),  # jqGrid row index for detail PostBack
+                "detail_url":     None,  # requires ASP.NET PostBack via hfRecordIndex
             }
 
         # Legacy cell-array format fallback

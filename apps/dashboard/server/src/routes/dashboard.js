@@ -240,6 +240,11 @@ const buildWindowMatch = (win) => {
       return { $and: [ { booking_date_n: yesterday }, { category: { $ne: 'Civil' } } ] };
     case '72h': // two days ago
       return { $and: [ { booking_date_n: twoDays }, { category: { $ne: 'Civil' } } ] };
+    case '3d_7d': {
+      const start = ymdAgo(6); // 6 days ago (inclusive lower bound)
+      const end   = ymdAgo(3); // 3 days ago (inclusive upper bound)
+      return { $and: [ { booking_date_n: { $gte: start, $lte: end } }, { category: { $ne: 'Civil' } } ] };
+    }
     case '7d': {
       const start = ymdAgo(6); // today plus previous 6 days
       return { $and: [ { booking_date_n: { $gte: start } }, { category: { $ne: 'Civil' } } ] };
@@ -1615,12 +1620,13 @@ r.get('/per-county', withMetrics('per-county', async (req, res) => {
         if (bucketRows.length) {
           const byCounty = new Map();
           bucketRows.forEach(r => {
-            const c = r.county; if (!byCounty.has(c)) byCounty.set(c, { county: c, counts: { today:0,yesterday:0,twoDaysAgo:0,last7d:0,last30d:0 }, bondValue:0, bondToday:0 });
+            const c = r.county; if (!byCounty.has(c)) byCounty.set(c, { county: c, counts: { today:0,yesterday:0,twoDaysAgo:0,threeToSeven:0,last7d:0,last30d:0 }, bondValue:0, bondToday:0, hasBond:0 });
             const rec = byCounty.get(c);
             switch (r.bucket) {
               case '0_24h': rec.counts.today += r.n; rec.bondToday += r.bondSum; break;
               case '24_48h': rec.counts.yesterday += r.n; break;
               case '48_72h': rec.counts.twoDaysAgo += r.n; break;
+              case '3d_7d': rec.counts.threeToSeven += r.n; break;
               default: break;
             }
             // Aggregated windows
@@ -1629,6 +1635,7 @@ r.get('/per-county', withMetrics('per-county', async (req, res) => {
             // Bond window for requested win
             const bucketsForWin = bucketsForWindow(win);
             if (bucketsForWin.includes(r.bucket)) rec.bondValue += r.bondSum;
+            if (r.bondSum > 0) rec.hasBond = 1;
           });
           rows = Array.from(byCounty.values()).sort((a,b)=>a.county.localeCompare(b.county));
         } else {
@@ -1640,6 +1647,7 @@ r.get('/per-county', withMetrics('per-county', async (req, res) => {
           const _todayYmd     = _ymdAgo(0);
           const _yesterdayYmd = _ymdAgo(1);
           const _twoDaysYmd   = _ymdAgo(2);
+          const _since3Ymd    = _ymdAgo(3);
           const _since7Ymd    = _ymdAgo(6);
           const _since30Ymd   = _ymdAgo(29);
           const _since31Ymd   = _ymdAgo(30);
@@ -1659,16 +1667,18 @@ r.get('/per-county', withMetrics('per-county', async (req, res) => {
             {
               $group: {
                 _id: '$county',
-                today:      { $sum: { $cond: [{ $eq:  ['$booking_date', _todayYmd]     }, 1, 0] } },
-                yesterday:  { $sum: { $cond: [{ $eq:  ['$booking_date', _yesterdayYmd] }, 1, 0] } },
-                twoDaysAgo: { $sum: { $cond: [{ $eq:  ['$booking_date', _twoDaysYmd]   }, 1, 0] } },
-                last7d:     { $sum: { $cond: [{ $gte: ['$booking_date', _since7Ymd]    }, 1, 0] } },
-                last30d:    { $sum: { $cond: [{ $gte: ['$booking_date', _since30Ymd]   }, 1, 0] } },
-                bondToday:  { $sum: { $cond: [{ $eq:  ['$booking_date', _todayYmd]     }, { $ifNull: ['$bond_amount', 0] }, 0] } },
-                bondWindow: { $sum: { $cond: [_winYmd, { $ifNull: ['$bond_amount', 0] }, 0] } },
+                today:        { $sum: { $cond: [{ $eq:  ['$booking_date', _todayYmd]     }, 1, 0] } },
+                yesterday:    { $sum: { $cond: [{ $eq:  ['$booking_date', _yesterdayYmd] }, 1, 0] } },
+                twoDaysAgo:   { $sum: { $cond: [{ $eq:  ['$booking_date', _twoDaysYmd]   }, 1, 0] } },
+                threeToSeven: { $sum: { $cond: [{ $and: [{ $gte: ['$booking_date', _since7Ymd] }, { $lte: ['$booking_date', _since3Ymd] }] }, 1, 0] } },
+                last7d:       { $sum: { $cond: [{ $gte: ['$booking_date', _since7Ymd]    }, 1, 0] } },
+                last30d:      { $sum: { $cond: [{ $gte: ['$booking_date', _since30Ymd]   }, 1, 0] } },
+                bondToday:    { $sum: { $cond: [{ $eq:  ['$booking_date', _todayYmd]     }, { $ifNull: ['$bond_amount', 0] }, 0] } },
+                bondWindow:   { $sum: { $cond: [_winYmd, { $ifNull: ['$bond_amount', 0] }, 0] } },
+                hasBondAny:   { $sum: { $cond: [{ $gt: ['$bond_amount', 0] }, 1, 0] } },
               }
             },
-            { $project: { _id: 0, county: '$_id', counts: { today: '$today', yesterday: '$yesterday', twoDaysAgo: '$twoDaysAgo', last7d: '$last7d', last30d: '$last30d' }, bondValue: '$bondWindow', bondToday: 1 } },
+            { $project: { _id: 0, county: '$_id', counts: { today: '$today', yesterday: '$yesterday', twoDaysAgo: '$twoDaysAgo', threeToSeven: '$threeToSeven', last7d: '$last7d', last30d: '$last30d' }, bondValue: '$bondWindow', bondToday: 1, hasBond: '$hasBondAny' } },
             { $sort: { county: 1 } }
           ];
           const agg = baseColl(db).aggregate(pipeline, { allowDiskUse: true });
@@ -1685,6 +1695,7 @@ r.get('/per-county', withMetrics('per-county', async (req, res) => {
         const todayYmd     = ymdAgo(0);
         const yesterdayYmd = ymdAgo(1);
         const twoDaysYmd   = ymdAgo(2);
+        const since3Ymd    = ymdAgo(3);   // 3 days ago (inclusive upper bound for 3–7d bucket)
         const since7Ymd    = ymdAgo(6);   // today + previous 6 days = 7 inclusive
         const since30Ymd   = ymdAgo(29);  // today + previous 29 days = 30 inclusive
         const since31Ymd   = ymdAgo(30);  // extra day buffer for coarse pre-filter
@@ -1708,16 +1719,18 @@ r.get('/per-county', withMetrics('per-county', async (req, res) => {
           {
             $group: {
               _id: '$county',
-              today:      { $sum: { $cond: [{ $eq:  ['$booking_date', todayYmd]     }, 1, 0] } },
-              yesterday:  { $sum: { $cond: [{ $eq:  ['$booking_date', yesterdayYmd] }, 1, 0] } },
-              twoDaysAgo: { $sum: { $cond: [{ $eq:  ['$booking_date', twoDaysYmd]   }, 1, 0] } },
-              last7d:     { $sum: { $cond: [{ $gte: ['$booking_date', since7Ymd]    }, 1, 0] } },
-              last30d:    { $sum: { $cond: [{ $gte: ['$booking_date', since30Ymd]   }, 1, 0] } },
-              bondToday:  { $sum: { $cond: [{ $eq:  ['$booking_date', todayYmd]     }, { $ifNull: ['$bond_amount', 0] }, 0] } },
-              bondWindow: { $sum: { $cond: [winYmd, { $ifNull: ['$bond_amount', 0] }, 0] } },
+              today:        { $sum: { $cond: [{ $eq:  ['$booking_date', todayYmd]     }, 1, 0] } },
+              yesterday:    { $sum: { $cond: [{ $eq:  ['$booking_date', yesterdayYmd] }, 1, 0] } },
+              twoDaysAgo:   { $sum: { $cond: [{ $eq:  ['$booking_date', twoDaysYmd]   }, 1, 0] } },
+              threeToSeven: { $sum: { $cond: [{ $and: [{ $gte: ['$booking_date', since7Ymd] }, { $lte: ['$booking_date', since3Ymd] }] }, 1, 0] } },
+              last7d:       { $sum: { $cond: [{ $gte: ['$booking_date', since7Ymd]    }, 1, 0] } },
+              last30d:      { $sum: { $cond: [{ $gte: ['$booking_date', since30Ymd]   }, 1, 0] } },
+              bondToday:    { $sum: { $cond: [{ $eq:  ['$booking_date', todayYmd]     }, { $ifNull: ['$bond_amount', 0] }, 0] } },
+              bondWindow:   { $sum: { $cond: [winYmd, { $ifNull: ['$bond_amount', 0] }, 0] } },
+              hasBondAny:   { $sum: { $cond: [{ $gt: ['$bond_amount', 0] }, 1, 0] } },
             }
           },
-          { $project: { _id: 0, county: '$_id', counts: { today: '$today', yesterday: '$yesterday', twoDaysAgo: '$twoDaysAgo', last7d: '$last7d', last30d: '$last30d' }, bondValue: '$bondWindow', bondToday: 1 } },
+          { $project: { _id: 0, county: '$_id', counts: { today: '$today', yesterday: '$yesterday', twoDaysAgo: '$twoDaysAgo', threeToSeven: '$threeToSeven', last7d: '$last7d', last30d: '$last30d' }, bondValue: '$bondWindow', bondToday: 1, hasBond: '$hasBondAny' } },
           { $sort: { county: 1 } }
         ];
         const agg = baseColl(db).aggregate(pipeline, { allowDiskUse: true });
@@ -1729,7 +1742,7 @@ r.get('/per-county', withMetrics('per-county', async (req, res) => {
       const counties = ALL_COUNTY_NAMES;
       const map = new Map(rows.map((r) => [String(r.county || '').toLowerCase(), r]));
       const items = counties.map((cty) => (
-        map.get(cty) || { county: cty, counts: { today: 0, yesterday: 0, twoDaysAgo: 0, last7d: 0, last30d: 0 }, bondValue: 0, bondToday: 0 }
+        map.get(cty) || { county: cty, counts: { today: 0, yesterday: 0, twoDaysAgo: 0, threeToSeven: 0, last7d: 0, last30d: 0 }, bondValue: 0, bondToday: 0, hasBond: 0 }
       ));
 
       return { items, windowUsed: win, pathVariant };

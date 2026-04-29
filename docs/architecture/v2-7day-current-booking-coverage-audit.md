@@ -40,11 +40,13 @@
 
 ### Galveston — CURRENT_ROSTER_ONLY
 
-- **Endpoint:** `https://jcso.galvestoncountytx.gov/Inmate/jqHandler.ashx` (live JSON feed, up to 5000 rows)
+- **Endpoint:** `https://p2c.galvestoncountytx.gov/jqHandler.ashx?op=s` (live JSON feed, up to 5000 rows)
+- **Detail enrichment:** POST to `/jailinmates.aspx` with `hfRecordIndex=my_num` (ASP.NET VIEWSTATE form, one GET + N concurrent POSTs per scrape run)
 - **booking_date source:** `disp_arrest_date` or `date_arr` field from the JSON row
+- **bond_amount source:** `#mainContent_CenterColumnContent_lblTotalBoundAmount` on detail page
 - **Coverage limitation:** Only shows currently-jailed individuals. Released inmates from earlier in the week are absent. "7-day" count reflects only those still in custody as of scrape time.
-- **Fields populated:** `booking_date` (100%), `observed_at` (100%), `arrest_date` (100% after 2026-04-28 fix), `arrest_date_raw` (100% after fix)
-- **Dedup key:** `booking_number` if present; else stable hash of `source_id`
+- **Fields populated:** `booking_date` (100%), `observed_at` (100%), `arrest_date` (100%), `arrest_date_raw` (100%), `bond_amount` (~80%), `release_date` (where set), `detail_fetch_status` (100%)
+- **Dedup key:** `booking_number` (populated from detail page, 100%)
 
 ### Harris — REPORT_BASED
 
@@ -168,11 +170,130 @@ Set in `docker-compose.admin-dev.yml` to disable the experimental time-bucket v2
 
 ---
 
-## 6. Remaining Limitations
+## 6. Galveston Detail-Page Bond Enrichment (2026-04-29)
+
+### Problem
+
+The Galveston P2C jqHandler JSON roster (`jqHandler.ashx?op=s`) does not include bond amounts — it only returns booking metadata (name, DOB, charges description, arrest date). Bond data is only exposed on the individual inmate detail page, which requires an ASP.NET PostBack form submission.
+
+The previous scraper attempted GET-based detail-page fetching via URLs, but the Galveston P2C site migrated to a jqGrid named-field response format (no `cell` arrays), so `detail_url` was always `None` and `detail_map = {}` — resulting in 0% bond coverage.
+
+### Discovery
+
+- Inspected the roster HTML at `/jailinmates.aspx`: found `<form>` containing `hfRecordIndex` hidden field, `btnInmateDetail` submit button, and standard ASP.NET VIEWSTATE fields.
+- Each jqGrid roster row includes `my_num` (0-based integer row index), used as the `hfRecordIndex` value.
+- JavaScript function `selectRow(id)` sets `hfRecordIndex = id` and clicks `btnInmateDetail`, submitting the form.
+- A single VIEWSTATE loaded via `GET /jailinmates.aspx` is valid for all concurrent detail POSTs in the same session.
+- Bond total CSS selector: `#mainContent_CenterColumnContent_lblTotalBoundAmount` (note: "Bound" not "Bond").
+- `_money_to_float()` already handles all formats: `CASH OR SURETY $30,000.00` → `30000.0`, `N/A` / `DENIED $0.00` → `None`.
+
+### Implementation
+
+**File:** `services/warrantdb-pipeline/ingestion/event_feeds/galveston_p2c.py`
+
+**Changes:**
+
+1. **`DETAIL_FETCH` env var** — `GALV_DETAIL_FETCH=false` disables detail fetching (roster-only mode, faster).
+
+2. **`_load_page_viewstate(cookies)`** — Synchronous method. GETs `/jailinmates.aspx` once per scrape run; extracts `__VIEWSTATE`, `__VIEWSTATEGENERATOR`, `__EVENTVALIDATION` for reuse across all POSTs.
+
+3. **`_fetch_all_details_by_my_num(rows, viewstate, cookies)`** — Async method. Spawns one coroutine per roster row, bounded by `GALV_CONCURRENCY` semaphore.
+
+4. **`_fetch_one_detail_by_my_num(client, sem, my_num, viewstate)`** — Async method. POSTs to `/jailinmates.aspx` with:
+   - `ctl00$MasterPage$mainContent$CenterColumnContent$hfRecordIndex = my_num`
+   - `ctl00$MasterPage$mainContent$CenterColumnContent$btnInmateDetail = Get Details`
+   - Full VIEWSTATE fields
+   - Validates response contains `lblName` (catches mis-routed responses)
+
+5. **`_parse_detail_page()`** — Added `release_date` parsing from `#mainContent_CenterColumnContent_lblReleaseDate`.
+
+6. **`_parse_roster_row()`** — Added `my_num` to named-field return dict.
+
+7. **`fetch_events()`** — Replaced URL-based detail block with `my_num`-based VIEWSTATE POST flow. Detail fields merged into raw row; roster fields (agency, booking_number) take precedence. Unmatched rows get `detail_fetch_status = "skipped"`.
+
+8. **`normalize_event()`** — Added `release_date`, `mugshot_url`, `detail_fetch_status`, `detail_fetch_error` to `EventRecord`.
+
+### Validation Results (2026-04-29)
+
+**Dry-run (5 rows):** `ok=1114 failed=0` — VIEWSTATE loaded, all rows returned detail pages.
+
+**Live ingest (1112 rows):** `ok=1112 failed=0`, stored 1110 events.
+
+**MongoDB post-ingest audit (`v2_galveston_events`):**
+
+| Metric | Value |
+|---|---|
+| Total docs | 1114 |
+| `bond_amount > 0` | 890 (80%) |
+| `detail_fetch_status = ok` | 1111 |
+| `detail_fetch_status = failed` | 0 |
+| Last-7d docs with bond | 92 |
+| Last-7d bond total | $8,993,643.70 |
+
+### Dashboard Impact
+
+`hasBond` in the per-county server response is now non-zero for Galveston (was always 0 before). The frontend bond display for Galveston now shows real dollar values instead of "N/A".
+
+### Operational Notes
+
+- `GALV_DETAIL_FETCH=false` → skips detail fetching entirely (roster-only run, ~10s faster)
+- `GALV_CONCURRENCY` (default 10) controls parallel detail POST workers
+- `GALV_ROW_DELAY_SEC` (default 0.5) adds per-request delay inside the semaphore
+- VIEWSTATE load failure → prints warning, falls back to roster-only (no crash)
+- Per-row failure → `detail_fetch_status = "failed"`, error stored in `detail_fetch_error`; rest of run continues normally
+
+---
+
+## 7b. Brazoria Roster Enumeration Investigation (2026-04-29)
+
+**Objective:** Determine whether Brazoria bond coverage can be improved beyond named-lookup-only access, following the same Galveston detail enrichment pattern.
+
+**Probe script:** `services/warrantdb-pipeline/scripts/_probe_brazoria.py`
+
+### Evidence — All access paths tested and confirmed
+
+**Tyler portal** (`https://portal-txbrazoria.tylertech.cloud/PublicAccess/`):
+
+| Test Case | Result | Evidence |
+|---|---|---|
+| Last-name-only search | `ErrorOccured.aspx` | Server-side enforcement, no JS intercept needed |
+| Empty first+last names | `ErrorOccured.aspx` | Confirmed |
+| Single-letter first+last (`S`/`J`) | 200 OK, 0 results | Tyler returns empty results for too-short terms |
+| Booking-number-only search (`RadioSearchType=2`) | `ErrorOccured.aspx` | Booking number mode also requires name |
+| Booking-number + date range, no names | `ErrorOccured.aspx` | Confirmed |
+| AJAX/XHR/fetch patterns in page JS | None found | No scripts had URL patterns |
+| `JailRoster.aspx` | `ErrorOccured.aspx` (302→200) | Path exists but not accessible |
+| `InmateSearch.aspx` | `ErrorOccured.aspx` (302→200) | Same |
+| `JailSearch.aspx` | `ErrorOccured.aspx` (302→200) | Same |
+| `api/jail`, `api/inmates` | 404 | No REST API |
+| `jqHandler.ashx`, `handler.ashx` | 404 | No jqGrid/AJAX handler |
+
+**Other Brazoria domains:**
+
+| Domain | Result |
+|---|---|
+| `pubweb.brazoriacountytx.gov` | Connection refused — offline |
+| `brazoriacounty.net/sheriff/jail` | JS SPA, redirects to `/lander`, no links |
+| `brazoriacountytx.gov/departments/sheriff/jail-information` | 404 |
+| `brazoriacountytx.gov/government/elected-officials/sheriff/jail` | 404 |
+
+### Conclusion
+
+**Brazoria cannot be improved to roster-enumeration mode.** There is no publicly accessible jail roster endpoint. The Tyler portal enforces both first AND last name at the server level for all search types; this is not a client-side JS guard that can be bypassed.
+
+**What does work:** Named lookups via `BrazoriaLookup.lookup(last_name, first_name, fetch_details=True)` DO return bond data from detail pages. Tested: `RODRIGUEZ/JOSE` → 174 results, all with `bond_amount` populated from `JailingDetail.aspx`. The detail page parser already works correctly.
+
+**What cannot work:** A roster sweep, date-range sweep, or booking-number sweep that doesn't require a prior known name list. Brazoria is fundamentally a lookups-only source.
+
+**No code changes were made.** The existing `brazoria_lookup.py` already implements the best possible flow for this portal.
+
+---
+
+## 7. Remaining Limitations
 
 | Issue                               | Status      | Notes                                                                                           |
 | ----------------------------------- | ----------- | ----------------------------------------------------------------------------------------------- |
-| Brazoria 7-day coverage             | Won't fix   | Tyler portal requires names; no date-sweep possible                                             |
+| Brazoria 7-day coverage             | Won't fix   | Tyler portal requires names; no date-sweep possible — **confirmed by live probe 2026-04-29**   |
 | Fort Bend booking_date = None       | Known issue | Portal may not expose booking date in results list; field parsing may need column-detection fix |
 | Galveston roster-only               | Accepted    | Live jail roster; released inmates from earlier in the week are absent                          |
 | Harris no per-record booking_date   | Accepted    | Report-based source; `observed_at` = report date is the best available proxy                    |
@@ -197,6 +318,35 @@ Queries all v2 collections directly against MongoDB Atlas and produces a per-cou
 docker exec warrant-admin-dev-api-1 python3 /pipeline/scripts/audit_v2_7day_coverage.py --cutoff 2026-04-21
 docker exec warrant-admin-dev-api-1 python3 /pipeline/scripts/audit_v2_7day_coverage.py --cutoff 2026-04-21 --verbose
 ```
+
+---
+
+## 7a. Galveston Bond Enrichment Regression Check
+
+**Location:** `services/warrantdb-pipeline/scripts/check_galveston_bond_regression.py`
+
+Fails (exit code 1) if bond enrichment has regressed. Thresholds:
+
+| Check | Threshold |
+|---|---|
+| Records ingested within 48h | ≥ 1 |
+| `detail_fetch_status = ok` | ≥ 70% of total docs |
+| `bond_amount > 0` | ≥ 50% of total docs |
+| 7-day bond total | > $0 |
+
+**Usage:**
+
+```bash
+# MongoDB checks only (runs inside container):
+docker exec warrant-admin-dev-api-1 python3 /pipeline/scripts/check_galveston_bond_regression.py
+
+# Include dashboard API bond-total check:
+docker exec warrant-admin-dev-api-1 python3 /pipeline/scripts/check_galveston_bond_regression.py \
+    --dashboard-url http://host.docker.internal:3001 \
+    --dashboard-token <JWT>
+```
+
+**Baseline (2026-04-29):** `detail_fetch_status=ok 99.7%`, `bond_amount>0 79.9%`, 7d total `$8,993,643.70`.
 
 ---
 
