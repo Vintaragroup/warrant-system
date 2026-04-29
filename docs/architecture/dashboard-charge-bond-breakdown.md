@@ -18,11 +18,11 @@ A "Top Charges by Bond Value" panel on the dashboard that shows which charge typ
 
 **Query parameters:**
 
-| Param    | Default | Allowed values                        | Description                     |
-|----------|---------|---------------------------------------|---------------------------------|
-| `window` | `7d`    | `24h`, `48h`, `72h`, `3d_7d`, `7d`   | Date window (legacy date logic) |
-| `county` | `all`   | `all` or any county name              | Optional county filter          |
-| `limit`  | `20`    | `1–100`                               | Max charge rows returned        |
+| Param    | Default | Allowed values                     | Description                     |
+| -------- | ------- | ---------------------------------- | ------------------------------- |
+| `window` | `7d`    | `24h`, `48h`, `72h`, `3d_7d`, `7d` | Date window (legacy date logic) |
+| `county` | `all`   | `all` or any county name           | Optional county filter          |
+| `limit`  | `20`    | `1–100`                            | Max charge rows returned        |
 
 **Response shape:**
 
@@ -63,13 +63,13 @@ Uses the same legacy calendar-day booking_date logic as `/per-county`. The pipel
 
 Window → booking_date filter:
 
-| Window   | Filter                                          |
-|----------|-------------------------------------------------|
-| `24h`    | `{ booking_date: todayYmd }`                    |
-| `48h`    | `{ booking_date: yesterdayYmd }`                |
-| `72h`    | `{ booking_date: twoDaysYmd }`                  |
-| `3d_7d`  | `{ booking_date: { $gte: since7Ymd, $lte: since3Ymd } }` |
-| `7d`     | `{ booking_date: { $gte: since7Ymd } }`         |
+| Window  | Filter                                                   |
+| ------- | -------------------------------------------------------- |
+| `24h`   | `{ booking_date: todayYmd }`                             |
+| `48h`   | `{ booking_date: yesterdayYmd }`                         |
+| `72h`   | `{ booking_date: twoDaysYmd }`                           |
+| `3d_7d` | `{ booking_date: { $gte: since7Ymd, $lte: since3Ymd } }` |
+| `7d`    | `{ booking_date: { $gte: since7Ymd } }`                  |
 
 `since7Ymd` = today minus 6 days (inclusive 7-day range).
 
@@ -78,10 +78,12 @@ Window → booking_date filter:
 Field shapes vary by collection. The `_chargeRows` expansion handles three cases:
 
 **Priority 1 — `charges[]` array present:**
+
 - Description: `charges[].description` → `charges[].charge` → `charges[].charge_description` (first non-null)
 - Bond: `charges[].bond_amount` (numeric) → `charges[].bail_amount_int` (numeric) → parse `charges[].bond` string (regex: `\$[\d,]+(?:\.\d+)?`)
 
 **Priority 2 — no `charges[]` but `charge_description` exists at top level:**
+
 - Description: `charge_description`
 - Bond: top-level `bond_amount`
 
@@ -89,11 +91,11 @@ Field shapes vary by collection. The `_chargeRows` expansion handles three cases
 
 ### Field Shape by Collection
 
-| Collection            | Description field         | Bond field                                              |
-|-----------------------|---------------------------|----------------------------------------------------------|
-| `v2_galveston_events` | `charges[].charge`        | `charges[].bond` text e.g. `"CASH OR SURETY $60,000.00"` |
-| `v2_lookup_results`   | `charges[].charge_description` | `charges[].bail_amount_int` (numeric int)           |
-| `v2_harris_reports`   | `charge_description` (top-level) | `bond_amount` (top-level numeric)               |
+| Collection            | Description field                | Bond field                                               |
+| --------------------- | -------------------------------- | -------------------------------------------------------- |
+| `v2_galveston_events` | `charges[].charge`               | `charges[].bond` text e.g. `"CASH OR SURETY $60,000.00"` |
+| `v2_lookup_results`   | `charges[].charge_description`   | `charges[].bail_amount_int` (numeric int)                |
+| `v2_harris_reports`   | `charge_description` (top-level) | `bond_amount` (top-level numeric)                        |
 
 Descriptions are normalized to `UPPER CASE` with whitespace trimmed before grouping.
 
@@ -133,6 +135,7 @@ Returns `{ data, isLoading, error }` via React Query. `staleTime: 60_000`.
 **Location:** Below "County Bond Value" panel, above "Inmate Snapshot".
 
 **Features:**
+
 - Table: Charge | Total Bond | Avg Bond | Count
 - Horizontal bar visualization (relative to top charge's `totalBond`)
 - County filter dropdown (all counties / per-county)
@@ -140,6 +143,7 @@ Returns `{ data, isLoading, error }` via React Query. `staleTime: 60_000`.
 - Shows top 10 by default; "View all N charges" toggle for full list
 
 **State:**
+
 - `chargeWindow` (string, default `'7d'`)
 - `chargeCounty` (string, default `'all'`)
 - `showAllCharges` (boolean, default `false`)
