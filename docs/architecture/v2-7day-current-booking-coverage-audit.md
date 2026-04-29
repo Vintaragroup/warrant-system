@@ -8,13 +8,13 @@
 
 ## 1. Source Classification
 
-| County | Source Type | Scraper | 7-Day Coverage |
-|---|---|---|---|
-| Galveston | CURRENT_ROSTER_ONLY | `ingestion/event_feeds/galveston_p2c.py` | Partial — reflects whoever is currently jailed |
-| Harris | REPORT_BASED | `ingestion/reports/harris_reports.py` | Approximate — `observed_at` = report download date, not individual booking date |
-| Jefferson | FULL_7DAY_COVERAGE | `ingestion/lookups/jefferson_lookup.py` | Full — fetches complete MyOCV JSON feed, filters by booking date |
-| Brazoria | LOOKUP_ONLY | `ingestion/lookups/brazoria_lookup.py` | **Not possible** — Tyler portal requires both first AND last name; date-only searches rejected |
-| Fort Bend | LOOKUP_ONLY | `ingestion/lookups/fortbend_lookup.py` | **Not possible** — requires name-based search; no date-sweep capability |
+| County    | Source Type         | Scraper                                  | 7-Day Coverage                                                                                 |
+| --------- | ------------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Galveston | CURRENT_ROSTER_ONLY | `ingestion/event_feeds/galveston_p2c.py` | Partial — reflects whoever is currently jailed                                                 |
+| Harris    | REPORT_BASED        | `ingestion/reports/harris_reports.py`    | Approximate — `observed_at` = report download date, not individual booking date                |
+| Jefferson | FULL_7DAY_COVERAGE  | `ingestion/lookups/jefferson_lookup.py`  | Full — fetches complete MyOCV JSON feed, filters by booking date                               |
+| Brazoria  | LOOKUP_ONLY         | `ingestion/lookups/brazoria_lookup.py`   | **Not possible** — Tyler portal requires both first AND last name; date-only searches rejected |
+| Fort Bend | LOOKUP_ONLY         | `ingestion/lookups/fortbend_lookup.py`   | **Not possible** — requires name-based search; no date-sweep capability                        |
 
 ---
 
@@ -22,13 +22,13 @@
 
 ### Collection totals
 
-| County | Collection | Total docs | Docs in 7-day window | Latest booking_date |
-|---|---|---|---|---|
-| galveston | `v2_galveston_events` | 1110 | 138 | 2026-04-28 |
-| harris | `v2_harris_reports` | 655 | 655 | N/A (no per-record booking_date) |
-| jefferson | `v2_lookup_results` | 130 | 99 | 2026-04-28 |
-| brazoria | `v2_lookup_results` | 66 | 0 | 2025-10-01 (stale seed data) |
-| fortbend | `v2_lookup_results` | 19 | 0 | None (field not populated) |
+| County    | Collection            | Total docs | Docs in 7-day window | Latest booking_date              |
+| --------- | --------------------- | ---------- | -------------------- | -------------------------------- |
+| galveston | `v2_galveston_events` | 1110       | 138                  | 2026-04-28                       |
+| harris    | `v2_harris_reports`   | 655        | 655                  | N/A (no per-record booking_date) |
+| jefferson | `v2_lookup_results`   | 130        | 99                   | 2026-04-28                       |
+| brazoria  | `v2_lookup_results`   | 66         | 0                    | 2025-10-01 (stale seed data)     |
+| fortbend  | `v2_lookup_results`   | 19         | 0                    | None (field not populated)       |
 
 ### 7-day bucket note
 
@@ -116,6 +116,7 @@ Set in `docker-compose.admin-dev.yml` to disable the experimental time-bucket v2
 **Change:** Added `arrest_date` (highest priority) and `event_date` (fallback) to the `booking_date_n` candidate chain in both `unionAll()` and `unionAllFast()`.
 
 **Priority order (highest → lowest):**
+
 1. `arrest_date` — primary for Galveston (`v2_galveston_events`)
 2. `booking_date`
 3. `observed_at` — primary for Harris reports
@@ -136,10 +137,12 @@ Set in `docker-compose.admin-dev.yml` to disable the experimental time-bucket v2
 **Fix:** Replaced the `hoursAgo < n` group-stage conditions with string-comparison against YYYY-MM-DD values derived from `ymdInTZ()`. The `per-county` pipeline now projects `booking_date` (= `booking_date_n`) and groups on date-string equality/comparison.
 
 **Both code paths updated:**
+
 - `pathVariant = 'legacy'` (normal path when `DISABLE_TIME_BUCKET_V2=true`)
 - `pathVariant = 'legacy-fallback-empty-buckets'` (fallback when v2 buckets are absent)
 
 **Window semantics (calendar-day anchored):**
+
 - `today` = `booking_date == ymdAgo(0)` (today's date string)
 - `yesterday` = `booking_date == ymdAgo(1)`
 - `twoDaysAgo` = `booking_date == ymdAgo(2)`
@@ -157,6 +160,7 @@ Set in `docker-compose.admin-dev.yml` to disable the experimental time-bucket v2
 **Problem:** `normalize_event()` read `arrest_date` from raw and stored it as `booking_date`, but did not preserve it as a separate `arrest_date` field. `arrest_date` was 0% populated in `v2_galveston_events`.
 
 **Fix:**
+
 1. Roster fetch dict now includes `arrest_date_raw` (the original `disp_arrest_date` or `date_arr` string from the jqHandler JSON response).
 2. `EventRecord` now stores `arrest_date` (ISO-parsed) and `arrest_date_raw` (original string) as explicit fields alongside `booking_date`.
 
@@ -166,13 +170,13 @@ Set in `docker-compose.admin-dev.yml` to disable the experimental time-bucket v2
 
 ## 6. Remaining Limitations
 
-| Issue | Status | Notes |
-|---|---|---|
-| Brazoria 7-day coverage | Won't fix | Tyler portal requires names; no date-sweep possible |
-| Fort Bend booking_date = None | Known issue | Portal may not expose booking date in results list; field parsing may need column-detection fix |
-| Galveston roster-only | Accepted | Live jail roster; released inmates from earlier in the week are absent |
-| Harris no per-record booking_date | Accepted | Report-based source; `observed_at` = report date is the best available proxy |
-| Brazoria 66 stale docs (2025-10-01) | Legacy | Seed data from test run; do not reflect current bookings |
+| Issue                               | Status      | Notes                                                                                           |
+| ----------------------------------- | ----------- | ----------------------------------------------------------------------------------------------- |
+| Brazoria 7-day coverage             | Won't fix   | Tyler portal requires names; no date-sweep possible                                             |
+| Fort Bend booking_date = None       | Known issue | Portal may not expose booking date in results list; field parsing may need column-detection fix |
+| Galveston roster-only               | Accepted    | Live jail roster; released inmates from earlier in the week are absent                          |
+| Harris no per-record booking_date   | Accepted    | Report-based source; `observed_at` = report date is the best available proxy                    |
+| Brazoria 66 stale docs (2025-10-01) | Legacy      | Seed data from test run; do not reflect current bookings                                        |
 
 ---
 
@@ -181,12 +185,14 @@ Set in `docker-compose.admin-dev.yml` to disable the experimental time-bucket v2
 **Location:** `services/warrantdb-pipeline/scripts/audit_v2_7day_coverage.py`
 
 Queries all v2 collections directly against MongoDB Atlas and produces a per-county summary of:
+
 - Total docs
 - Docs within the 7-day window (using `BOOKING_DATE_CANDIDATES`)
 - Latest booking date
 - Field presence percentages
 
 **Usage:**
+
 ```bash
 docker exec warrant-admin-dev-api-1 python3 /pipeline/scripts/audit_v2_7day_coverage.py --cutoff 2026-04-21
 docker exec warrant-admin-dev-api-1 python3 /pipeline/scripts/audit_v2_7day_coverage.py --cutoff 2026-04-21 --verbose
@@ -219,35 +225,35 @@ newCountsBooked: {
 
 ### Galveston per-day breakdown (04/21–04/28)
 
-| Date | Records | Notes |
-|---|---|---|
-| 2026-04-21 | 20 | Day 8 — outside 7-day window |
-| 2026-04-22 | 16 | Day 7 of window |
-| 2026-04-23 | 13 | |
-| 2026-04-24 | 14 | |
-| 2026-04-25 | 12 | |
-| 2026-04-26 | 10 | |
-| 2026-04-27 | 37 | |
-| 2026-04-28 | 16 | Today |
-| **7-day total** | **118** | 04/22–04/28 |
+| Date            | Records | Notes                                 |
+| --------------- | ------- | ------------------------------------- |
+| 2026-04-21      | 20      | Day 8 — outside 7-day window          |
+| 2026-04-22      | 16      | Day 7 of window                       |
+| 2026-04-23      | 13      |                                       |
+| 2026-04-24      | 14      |                                       |
+| 2026-04-25      | 12      |                                       |
+| 2026-04-26      | 10      |                                       |
+| 2026-04-27      | 37      |                                       |
+| 2026-04-28      | 16      | Today                                 |
+| **7-day total** | **118** | 04/22–04/28                           |
 | **8-day total** | **138** | 04/21–04/28 (full scrape audit range) |
 
 ### Galveston roster name verification (04/28 sample, all confirmed ✓)
 
 All 10 names from the 04/28 live jail roster were verified present in `v2_galveston_events`:
 
-| Name | arrest_date |
-|---|---|
-| ALBUSTANJI, AHMAD HAITHAM | 2026-04-28 |
-| BATTS, ASHELY RENA | 2026-04-28 |
-| FORD, LIONEL EDWARD | 2026-04-28 |
-| HAMMACK, MELINDA ANN | 2026-04-28 |
-| MOORE, MIRANDA LYNN | 2026-04-28 |
-| RICHARDSON, DENNIS RAY | 2026-04-28 |
-| SERNA, VERONICA LYNN | 2026-04-28 |
-| THOMPKINS, DERRICK AARON | 2026-04-28 |
-| USHER, ISAIAH EDWARD | 2026-04-28 |
-| VERDUN, BRANDI LYNN | 2026-04-28 |
+| Name                      | arrest_date |
+| ------------------------- | ----------- |
+| ALBUSTANJI, AHMAD HAITHAM | 2026-04-28  |
+| BATTS, ASHELY RENA        | 2026-04-28  |
+| FORD, LIONEL EDWARD       | 2026-04-28  |
+| HAMMACK, MELINDA ANN      | 2026-04-28  |
+| MOORE, MIRANDA LYNN       | 2026-04-28  |
+| RICHARDSON, DENNIS RAY    | 2026-04-28  |
+| SERNA, VERONICA LYNN      | 2026-04-28  |
+| THOMPKINS, DERRICK AARON  | 2026-04-28  |
+| USHER, ISAIAH EDWARD      | 2026-04-28  |
+| VERDUN, BRANDI LYNN       | 2026-04-28  |
 
 ### Debug Endpoint
 

@@ -58,18 +58,18 @@ For `jefferson_lookup` and `brazoria_lookup`, `default_args.booking_date = "toda
 
 #### `ingestion_runs` fields added for observation-period metrics
 
-| Field                          | Set by        | Description                                                    |
-| ------------------------------ | ------------- | -------------------------------------------------------------- |
-| `records_inserted`             | `finish_run`  | Docs newly inserted (optional — set by scraper if available)   |
-| `records_updated`              | `finish_run`  | Docs updated in-place                                          |
-| `records_skipped`              | `finish_run`  | Docs skipped (already up-to-date, filtered, etc.)             |
-| `collection_name`              | `finish_run`  | Target staging collection name for this run                    |
-| `required_field_missing_count` | `finish_run`  | Count of docs missing one or more required schema fields       |
-| `duplicate_key_warnings`       | `finish_run`  | Count of duplicate-key write warnings encountered              |
-| `source_health`                | `finish_run`  | Optional free-text health annotation from the scraper          |
-| `previous_records_written`     | `finish_run`  | `records_written` from previous successful non-dry-run         |
-| `records_written_delta`        | `finish_run`  | `records_written − previous_records_written`                   |
-| `previous_run_id`              | `finish_run`  | `run_id` of the previous successful non-dry-run used for delta |
+| Field                          | Set by       | Description                                                    |
+| ------------------------------ | ------------ | -------------------------------------------------------------- |
+| `records_inserted`             | `finish_run` | Docs newly inserted (optional — set by scraper if available)   |
+| `records_updated`              | `finish_run` | Docs updated in-place                                          |
+| `records_skipped`              | `finish_run` | Docs skipped (already up-to-date, filtered, etc.)              |
+| `collection_name`              | `finish_run` | Target staging collection name for this run                    |
+| `required_field_missing_count` | `finish_run` | Count of docs missing one or more required schema fields       |
+| `duplicate_key_warnings`       | `finish_run` | Count of duplicate-key write warnings encountered              |
+| `source_health`                | `finish_run` | Optional free-text health annotation from the scraper          |
+| `previous_records_written`     | `finish_run` | `records_written` from previous successful non-dry-run         |
+| `records_written_delta`        | `finish_run` | `records_written − previous_records_written`                   |
+| `previous_run_id`              | `finish_run` | `run_id` of the previous successful non-dry-run used for delta |
 
 Delta fields are only populated for `status=success, dry_run=false` runs.
 
@@ -96,23 +96,23 @@ PYTHONPATH=$PWD MONGO_URI=... MONGO_DB=warrantdb \
 
 #### Readiness rules per source
 
-| Source             | Rule                                                                                              |
-| ------------------ | ------------------------------------------------------------------------------------------------- |
+| Source             | Rule                                                                                                    |
+| ------------------ | ------------------------------------------------------------------------------------------------------- |
 | `galveston`        | ≥3 days with successes, success_rate ≥95%, latest_success <1h, avg_records_written >0, no dup explosion |
-| `harris_reports`   | ≥3 days with successes, success_rate ≥95%, latest_success <36h                                   |
-| `jefferson_lookup` | ≥3 days with successes, success_rate ≥90%, latest_success <12h                                   |
-| `brazoria_lookup`  | Always `watch` — disabled/optional; enable explicitly to promote                                  |
-| `fortbend_lookup`  | Always `manual-only` — never scheduled                                                            |
+| `harris_reports`   | ≥3 days with successes, success_rate ≥95%, latest_success <36h                                          |
+| `jefferson_lookup` | ≥3 days with successes, success_rate ≥90%, latest_success <12h                                          |
+| `brazoria_lookup`  | Always `watch` — disabled/optional; enable explicitly to promote                                        |
+| `fortbend_lookup`  | Always `manual-only` — never scheduled                                                                  |
 
 #### Readiness values
 
-| Value             | Meaning                                                              |
-| ----------------- | -------------------------------------------------------------------- |
-| `ready`           | All thresholds met for the observation window                        |
-| `watch`           | Marginal — more observation required                                 |
-| `blocked`         | Hard failure (stale data, low success rate, no runs, etc.)           |
-| `manual-only`     | Source is not scheduled for continuous ingestion                     |
-| `ready_to_promote`| All required sources ready (global verdict only)                     |
+| Value              | Meaning                                                    |
+| ------------------ | ---------------------------------------------------------- |
+| `ready`            | All thresholds met for the observation window              |
+| `watch`            | Marginal — more observation required                       |
+| `blocked`          | Hard failure (stale data, low success rate, no runs, etc.) |
+| `manual-only`      | Source is not scheduled for continuous ingestion           |
+| `ready_to_promote` | All required sources ready (global verdict only)           |
 
 #### Global gate
 

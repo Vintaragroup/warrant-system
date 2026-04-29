@@ -121,18 +121,18 @@ Visible in Admin UI under **Scraper Ops → Readiness** tab (no "Promote" button
 
 New fields recorded by `scheduler/audit.py::finish_run()`:
 
-| Field                          | Description                                                              |
-| ------------------------------ | ------------------------------------------------------------------------ |
-| `records_inserted`             | Docs newly inserted (populated by scraper if available)                  |
-| `records_updated`              | Docs updated in-place                                                    |
-| `records_skipped`              | Docs skipped (already current, filtered out, etc.)                       |
-| `collection_name`              | Staging collection written to                                            |
-| `required_field_missing_count` | Docs missing required schema fields                                      |
-| `duplicate_key_warnings`       | Duplicate-key write warnings                                             |
-| `source_health`                | Optional health annotation from the scraper                              |
+| Field                          | Description                                                                |
+| ------------------------------ | -------------------------------------------------------------------------- |
+| `records_inserted`             | Docs newly inserted (populated by scraper if available)                    |
+| `records_updated`              | Docs updated in-place                                                      |
+| `records_skipped`              | Docs skipped (already current, filtered out, etc.)                         |
+| `collection_name`              | Staging collection written to                                              |
+| `required_field_missing_count` | Docs missing required schema fields                                        |
+| `duplicate_key_warnings`       | Duplicate-key write warnings                                               |
+| `source_health`                | Optional health annotation from the scraper                                |
 | `previous_records_written`     | `records_written` from the previous successful non-dry-run for this source |
-| `records_written_delta`        | Difference from previous run (positive = growth, negative = shrink)      |
-| `previous_run_id`              | `run_id` of the prior run used for delta computation                     |
+| `records_written_delta`        | Difference from previous run (positive = growth, negative = shrink)        |
+| `previous_run_id`              | `run_id` of the prior run used for delta computation                       |
 
 Delta fields are only set for `status=success, dry_run=false` runs.
 

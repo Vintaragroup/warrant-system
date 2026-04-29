@@ -24,13 +24,13 @@
 Use `check_v2_promotion_readiness.py` or `GET /api/admin/ingestion/readiness?days=3` for the live, metrics-based verdict.
 The table below reflects operational readiness status as of the session 2 scheduler enablement.
 
-| Source             | Admin Manual Dry-Run                                | Staging Non-Dry-Run | Scheduled Staging                 | Promotion Readiness Gate  |
-| ------------------ | --------------------------------------------------- | ------------------- | --------------------------------- | ------------------------- |
-| `galveston`        | ✅ Ready                                            | ✅ Ready            | ✅ Active (every 15 min)          | Requires ≥3 days, ≥95% success, latest <1h |
-| `harris_reports`   | ✅ Ready                                            | ✅ Ready            | ✅ Active (01:30 CT)              | Requires ≥3 days, ≥95% success, latest <36h |
-| `fortbend_lookup`  | ✅ Ready                                            | ✅ Ready            | ❌ manual-only                    | Not evaluated — manual only |
-| `jefferson_lookup` | ✅ HEALTHY — name lookup + date lookup both working | ✅                  | ✅ Active (3× daily)              | Requires ≥3 days, ≥90% success, latest <12h |
-| `brazoria_lookup`  | ✅ Ready (name lookup working, charges populated)   | ✅ Ready            | ❌ Disabled (network issue)       | watch — enable explicitly to evaluate |
+| Source             | Admin Manual Dry-Run                                | Staging Non-Dry-Run | Scheduled Staging           | Promotion Readiness Gate                    |
+| ------------------ | --------------------------------------------------- | ------------------- | --------------------------- | ------------------------------------------- |
+| `galveston`        | ✅ Ready                                            | ✅ Ready            | ✅ Active (every 15 min)    | Requires ≥3 days, ≥95% success, latest <1h  |
+| `harris_reports`   | ✅ Ready                                            | ✅ Ready            | ✅ Active (01:30 CT)        | Requires ≥3 days, ≥95% success, latest <36h |
+| `fortbend_lookup`  | ✅ Ready                                            | ✅ Ready            | ❌ manual-only              | Not evaluated — manual only                 |
+| `jefferson_lookup` | ✅ HEALTHY — name lookup + date lookup both working | ✅                  | ✅ Active (3× daily)        | Requires ≥3 days, ≥90% success, latest <12h |
+| `brazoria_lookup`  | ✅ Ready (name lookup working, charges populated)   | ✅ Ready            | ❌ Disabled (network issue) | watch — enable explicitly to evaluate       |
 
 ---
 
