@@ -162,6 +162,49 @@ function isStale(latestAt, source) {
   return Date.now() - ts > thresholdMs;
 }
 
+// ── Output count parser ─────────────────────────────────────────────────────
+
+/**
+ * Parse seen/written record counts from Python script stdout.
+ * Handles galveston, harris, and wharton output formats.
+ */
+function parseOutputCounts(stdout, stdoutHead, dryRun) {
+  let seen = null;
+  let written = null;
+  const dryRunSummaryMatch = stdout.match(/dry-run summary: ok=(\d+)/i);
+  const harrisFoundMatch   = (stdoutHead || stdout).match(/found (\d+) reports on datasets page/i);
+  const storedEventsMatch  = stdout.match(/stored (\d+) events/i);
+  const harrisStoredMatch  = stdout.match(/total records stored[: ]+(\d+)/i);
+  if (dryRun) {
+    if (dryRunSummaryMatch) seen = parseInt(dryRunSummaryMatch[1], 10);
+    else if (harrisFoundMatch) seen = parseInt(harrisFoundMatch[1], 10);
+    written = 0;
+  } else {
+    if (storedEventsMatch) { seen = parseInt(storedEventsMatch[1], 10); written = seen; }
+    if (harrisStoredMatch) { seen = parseInt(harrisStoredMatch[1], 10); written = seen; }
+  }
+  return { seen, written };
+}
+
+// ── Audit record writer ───────────────────────────────────────────────────────
+
+/**
+ * Write an ingestion_runs audit record. Never throws — audit failures must
+ * not crash or block ingestion.
+ */
+async function writeAuditRecord(db, record) {
+  try {
+    const runId = `${record.source}-${record.trigger}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    await db.collection(INGESTION_RUNS_COLLECTION).insertOne({
+      run_id: runId,
+      ...record,
+      created_at: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error('[adminIngestion] audit write failed:', err.message);
+  }
+}
+
 // ── GET /api/admin/ingestion/status ──────────────────────────────────────────
 
 r.get('/status', async (req, res) => {
@@ -419,6 +462,7 @@ r.post('/run', async (req, res) => {
     last_name: lastName = '',
     booking_date: bookingDate = '',
     force = false,
+    bulk = false,
   } = req.body || {};
 
   // ── Validation ──────────────────────────────────────────────────────────────
@@ -508,6 +552,9 @@ r.post('/run', async (req, res) => {
   // Redacted command for logging (never include secrets)
   const redactedCmd = `python3 scripts/run_ingestion_v2.py --source ${source} --limit ${limit} --trigger manual${dryRun ? ' --dry-run' : ' --no-dry-run'}`;
 
+  const startedAtMs = Date.now();
+  const startedAt = new Date().toISOString();
+
   // ── Spawn child process ─────────────────────────────────────────────────────
   const childEnv = {
     ...process.env,
@@ -567,14 +614,43 @@ r.post('/run', async (req, res) => {
   }
 
   const status = exitCode === 0 ? 'success' : 'failed';
+  const { seen: recordsSeen, written: recordsWritten } = parseOutputCounts(stdout, stdout, dryRun);
+
+  // Write audit record for every manual admin-triggered run
+  try {
+    const db = getDb();
+    const trigger = bulk
+      ? (dryRun ? 'manual_bulk_dry_run' : 'manual_bulk')
+      : (dryRun ? 'manual_dry_run' : 'manual');
+    await writeAuditRecord(db, {
+      source,
+      trigger,
+      status,
+      dry_run: dryRun,
+      started_at: startedAt,
+      completed_at: new Date().toISOString(),
+      duration_ms: Date.now() - startedAtMs,
+      records_seen: recordsSeen,
+      records_written: recordsWritten,
+      exit_code: exitCode,
+      command_summary: redactedCmd,
+      created_by: createdBy,
+      error: exitCode !== 0 ? tailOutput(redactSecrets(stderr || stdout)).slice(0, 500) : null,
+    });
+  } catch (auditErr) {
+    console.error('[adminIngestion] /run audit write failed:', auditErr.message);
+  }
 
   return res.json({
     ok: exitCode === 0,
     source,
     dry_run: dryRun,
+    bulk,
     limit,
     status,
     exit_code: exitCode,
+    records_seen: recordsSeen,
+    records_written: recordsWritten,
     command: redactedCmd,
     stdout_tail: tailOutput(redactSecrets(stdout)),
     stderr_tail: tailOutput(redactSecrets(stderr)),
@@ -646,6 +722,8 @@ r.post('/run-all', async (req, res) => {
       DRY_RUN: dryRun ? 'true' : 'false',
     };
 
+    const sourceStartedAtMs = Date.now();
+    const sourceStartedAt = new Date().toISOString();
     let stdout = '';
     let stdoutHead = ''; // First 2000 chars — for count-line parsing (not truncated)
     let stderr = '';
@@ -671,42 +749,81 @@ r.post('/run-all', async (req, res) => {
         child.on('close', () => clearTimeout(timer));
       });
 
-      // Parse seen/written counts from actual script output formats:
-      //   galveston dry-run:  "[galveston] dry-run summary: ok=N warn=N skip=N"  (appears at end → use stdout)
-      //   galveston live:     "[galveston] stored N events"                       (appears at end → use stdout)
-      //   harris dry-run:     "[harris] found N reports on datasets page"         (appears at START — use stdoutHead, gets truncated from stdout)
-      //   harris live:        "[harris] total records stored: N"                  (appears at end → use stdout)
-      let seen = null;
-      let written = null;
+      const { seen, written } = parseOutputCounts(stdout, stdoutHead, dryRun);
+      const srcStatus = exitCode === 0 ? 'completed' : 'failed';
+      const srcError  = exitCode !== 0 ? tailOutput(redactSecrets(stderr || stdout)).slice(0, 300) : null;
 
-      const dryRunSummaryMatch  = stdout.match(/dry-run summary: ok=(\d+)/i);
-      const harrisFoundMatch    = stdoutHead.match(/found (\d+) reports on datasets page/i);
-      const storedEventsMatch   = stdout.match(/stored (\d+) events/i);
-      const harrisStoredMatch   = stdout.match(/total records stored[: ]+(\d+)/i);
-
-      if (dryRun) {
-        if (dryRunSummaryMatch) seen = parseInt(dryRunSummaryMatch[1], 10);
-        else if (harrisFoundMatch) seen = parseInt(harrisFoundMatch[1], 10);
-        written = 0; // dry-run never writes
-      } else {
-        if (storedEventsMatch)  { seen = parseInt(storedEventsMatch[1], 10);  written = seen; }
-        if (harrisStoredMatch)  { seen = parseInt(harrisStoredMatch[1], 10);  written = seen; }
+      // Write audit record for each bulk source
+      try {
+        const db = getDb();
+        await writeAuditRecord(db, {
+          source,
+          trigger: dryRun ? 'manual_bulk_dry_run' : 'manual_bulk',
+          status: srcStatus === 'completed' ? 'success' : 'failed',
+          dry_run: dryRun,
+          started_at: sourceStartedAt,
+          completed_at: new Date().toISOString(),
+          duration_ms: Date.now() - sourceStartedAtMs,
+          records_seen: seen,
+          records_written: written,
+          exit_code: exitCode,
+          command_summary: `python3 scripts/run_ingestion_v2.py --source ${source} --limit ${limit} --trigger manual${dryRun ? ' --dry-run' : ' --no-dry-run'}`,
+          created_by: createdBy,
+          error: srcError,
+        });
+      } catch (auditErr) {
+        console.error(`[adminIngestion] /run-all audit write failed for ${source}:`, auditErr.message);
       }
 
-      results.push({
-        source,
-        status: exitCode === 0 ? 'completed' : 'failed',
-        seen,
-        written,
-        error: exitCode !== 0 ? tailOutput(redactSecrets(stderr || stdout)).slice(0, 300) : null,
-      });
+      results.push({ source, status: srcStatus, seen, written, error: srcError });
     } catch (err) {
+      // Write failure audit even when spawn itself throws
+      try {
+        const db = getDb();
+        await writeAuditRecord(db, {
+          source,
+          trigger: dryRun ? 'manual_bulk_dry_run' : 'manual_bulk',
+          status: 'failed',
+          dry_run: dryRun,
+          started_at: sourceStartedAt,
+          completed_at: new Date().toISOString(),
+          duration_ms: Date.now() - sourceStartedAtMs,
+          records_seen: null,
+          records_written: null,
+          exit_code: null,
+          command_summary: null,
+          created_by: createdBy,
+          error: err.message,
+        });
+      } catch { /* ignore */ }
       results.push({ source, status: 'failed', seen: null, written: null, error: err.message });
     }
   }
 
   // Lookup sources cannot run in bulk mode — report as skipped
+  const skipTs = new Date().toISOString();
   for (const source of skippedLookup) {
+    try {
+      const db = getDb();
+      await writeAuditRecord(db, {
+        source,
+        trigger: dryRun ? 'manual_bulk_dry_run' : 'manual_bulk',
+        status: 'skipped',
+        dry_run: dryRun,
+        started_at: skipTs,
+        completed_at: skipTs,
+        duration_ms: 0,
+        records_seen: null,
+        records_written: null,
+        exit_code: null,
+        command_summary: null,
+        created_by: createdBy,
+        skip_reason: 'Lookup sources require a name/date parameter — use Run Individual Source.',
+        error: null,
+      });
+    } catch (auditErr) {
+      console.error(`[adminIngestion] /run-all skip audit failed for ${source}:`, auditErr.message);
+    }
     results.push({
       source,
       status: 'skipped',
@@ -929,9 +1046,9 @@ r.get('/readiness', async (req, res) => {
 
     let recommendation;
     if (overall === 'ready_to_promote') {
-      recommendation = 'All required sources are healthy. Review metrics carefully before promoting. No automated promotion — manual sign-off required.';
+      recommendation = 'All required sources are healthy and up to date. Data can be used in production dashboards.';
     } else if (overall === 'blocked') {
-      recommendation = `Promotion blocked by: ${blockedSources.join(', ')}. Resolve blockers and observe for at least 3 more days.`;
+      recommendation = `Sources need attention: ${blockedSources.join(', ')}. Resolve blockers and observe for at least 3 more days.`;
     } else {
       recommendation = `Sources need more observation time: ${watchSources.join(', ')}. Continue monitoring scheduled runs.`;
     }

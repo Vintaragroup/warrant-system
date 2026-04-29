@@ -106,8 +106,15 @@ export default function Admin() {
       )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
-        <SummaryStat label="Scheduled jobs" value={5} />
-        <SummaryStat label="Sources" value="galveston, harris, wharton, ft bend, jefferson, brazoria" hint="See Scraper Ops for live status" tone="default" />
+        <SummaryStat label="Scheduled jobs" value={6} />
+        <div className="sm:col-span-3">
+          <SummaryStat
+            label="Sources"
+            value="Bulk: Galveston, Harris, Wharton  ·  Lookup: Fort Bend, Jefferson, Brazoria"
+            hint="See Scraper Ops for live status"
+            tone="default"
+          />
+        </div>
       </div>
 
       <ScraperOpsPanel />

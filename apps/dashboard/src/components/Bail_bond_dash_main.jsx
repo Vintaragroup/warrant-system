@@ -17,8 +17,8 @@ import DashboardDebugPanel from './DashboardDebugPanel.jsx';
 import { API_BASE, getAuthHeader } from '../lib/api';
 import { getJSON } from '../hooks/dashboard';
 
-// Always render these 5
-const ALL_COUNTIES = ['brazoria', 'fortbend', 'galveston', 'harris', 'jefferson'];
+// Always render these 6
+const ALL_COUNTIES = ['brazoria', 'fortbend', 'galveston', 'harris', 'jefferson', 'wharton'];
 
 const COUNTY_LABELS = {
   brazoria: 'Brazoria',
@@ -26,6 +26,7 @@ const COUNTY_LABELS = {
   galveston: 'Galveston',
   harris: 'Harris',
   jefferson: 'Jefferson',
+  wharton: 'Wharton',
 };
 
 const prettyCounty = (name) =>
@@ -1158,7 +1159,7 @@ export default function DashboardScreen() {
                     className="text-xs border rounded-md px-2 py-1 bg-white"
                   >
                     <option value="all">All Counties</option>
-                    {['brazoria', 'fortbend', 'galveston', 'harris', 'jefferson'].map((c) => (
+                    {['brazoria', 'fortbend', 'galveston', 'harris', 'jefferson', 'wharton'].map((c) => (
                       <option key={c} value={c}>{prettyCounty(c)}</option>
                     ))}
                   </select>

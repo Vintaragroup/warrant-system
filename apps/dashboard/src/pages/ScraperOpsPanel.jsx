@@ -7,7 +7,6 @@ import {
   useIngestionConfig,
   useUpdateIngestionConfig,
   useTriggerRun,
-  useRunAll,
   usePauseSource,
   useResumeSource,
   useIngestionReadiness,
@@ -104,9 +103,11 @@ function StatusBadge({ value }) {
     skipped: 'bg-slate-100 text-slate-500',
     completed: 'bg-emerald-50 text-emerald-700',
     enabled: 'bg-emerald-50 text-emerald-700',
+    scheduled: 'bg-emerald-50 text-emerald-700',
     disabled: 'bg-slate-100 text-slate-500',
     'not scheduled': 'bg-slate-100 text-slate-500',
     paused: 'bg-amber-50 text-amber-700',
+    pending: 'bg-slate-100 text-slate-400',
   };
   return (
     <span
@@ -173,7 +174,7 @@ function OverviewTab() {
           <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-4 py-3">Source</th>
-              <th className="px-4 py-3">Enabled</th>
+              <th className="px-4 py-3">Schedule</th>
               <th className="px-4 py-3">Mode</th>
               <th className="px-4 py-3">Schedule</th>
               <th className="px-4 py-3">Last run</th>
@@ -189,7 +190,7 @@ function OverviewTab() {
               const schedStatus = s.schedule?.paused
                 ? 'paused'
                 : s.enabled
-                  ? 'enabled'
+                  ? 'scheduled'
                   : 'not scheduled';
 
               return (
@@ -278,25 +279,37 @@ function ManualRunTab() {
   const [output, setOutput] = useState(null);
   const [awaitConfirm, setAwaitConfirm] = useState(false);
 
-  const { mutate, isPending } = useTriggerRun();
-  const { mutate: runAll, isPending: runAllPending } = useRunAll();
-  const [runAllResult, setRunAllResult] = useState(null);
-  const [runAllError, setRunAllError] = useState(null);
+  const { mutate, mutateAsync, isPending } = useTriggerRun();
+  const BULK_SOURCES = ['galveston', 'harris_reports', 'wharton'];
+  const [bulkProgress, setBulkProgress] = useState(null); // null | array
+  const [bulkRunning, setBulkRunning] = useState(false);
 
-  function handleRunAll() {
-    setRunAllResult(null);
-    setRunAllError(null);
-    runAll(
-      { limit: 100, dryRun },
-      {
-        onSuccess: (data) => setRunAllResult(data),
-        onError: (err) => {
-          let msg = err.message;
-          try { const b = JSON.parse(err.message.replace(/^Request failed \d+: /, '')); if (b?.message) msg = b.message; } catch { /* raw */ }
-          setRunAllError(msg);
-        },
-      },
-    );
+  async function handleRunAll() {
+    setBulkProgress([
+      ...BULK_SOURCES.map((s) => ({ source: s, status: 'pending', seen: null, written: null, error: null })),
+      { source: 'fortbend_lookup',  status: 'skipped', seen: null, written: null, error: 'Requires name/date params' },
+      { source: 'jefferson_lookup', status: 'skipped', seen: null, written: null, error: 'Requires name/date params' },
+      { source: 'brazoria_lookup',  status: 'skipped', seen: null, written: null, error: 'Requires name/date params' },
+    ]);
+    setBulkRunning(true);
+    for (const src of BULK_SOURCES) {
+      setBulkProgress((prev) => prev.map((p) => p.source === src ? { ...p, status: 'running' } : p));
+      try {
+        const result = await mutateAsync({ source: src, dry_run: dryRun, limit: 100, bulk: true });
+        setBulkProgress((prev) => prev.map((p) => p.source === src ? {
+          ...p,
+          status: result.ok ? 'completed' : 'failed',
+          seen:    result.records_seen ?? null,
+          written: result.records_written ?? null,
+          error:   !result.ok ? (result.message || 'Run failed') : null,
+        } : p));
+      } catch (err) {
+        let msg = err.message;
+        try { const b = JSON.parse(err.message.replace(/^Request failed \d+: /, '')); if (b?.message) msg = b.message; } catch { /* raw */ }
+        setBulkProgress((prev) => prev.map((p) => p.source === src ? { ...p, status: 'failed', error: msg } : p));
+      }
+    }
+    setBulkRunning(false);
   }
 
   const isLookup = LOOKUP_SOURCES.has(source);
@@ -379,7 +392,7 @@ function ManualRunTab() {
           <div>
             <p className="text-sm font-semibold text-blue-800">Run All Counties Now</p>
             <p className="text-xs text-blue-600 mt-0.5">
-              Runs bulk county scrapers (galveston + harris_reports) sequentially.
+              Runs bulk county scrapers (galveston + harris_reports + wharton) sequentially.
               Lookup sources (fortbend, jefferson, brazoria) require name/date parameters
               and must be run individually below.
               {dryRun
@@ -389,61 +402,60 @@ function ManualRunTab() {
           </div>
           <button
             type="button"
-            disabled={runAllPending}
+            disabled={bulkRunning || isPending}
             onClick={handleRunAll}
             className={`rounded-lg px-5 py-2.5 text-sm font-semibold ${
-              runAllPending
+              bulkRunning || isPending
                 ? 'bg-blue-400 text-white cursor-not-allowed opacity-70'
                 : dryRun
                   ? 'border border-blue-400 bg-blue-600 text-white hover:bg-blue-700'
                   : 'border border-blue-600 bg-blue-700 text-white hover:bg-blue-800'
             }`}
           >
-            {runAllPending ? 'Running…' : 'Run Bulk Scrapers Now'}
+            {bulkRunning ? 'Running…' : 'Run Bulk Scrapers Now'}
           </button>
         </div>
 
-        {/* Run-all results */}
-        {runAllError && (
-          <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
-            {runAllError}
-          </div>
-        )}
-        {runAllResult && (
+        {/* Bulk run progress */}
+        {bulkProgress && (
           <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-2">
             {(() => {
-              const completed = (runAllResult.results || []).filter((r) => r.status === 'completed').length;
-              const failed    = (runAllResult.results || []).filter((r) => r.status === 'failed').length;
-              const skipped   = (runAllResult.results || []).filter((r) => r.status === 'skipped').length;
-              const totalWritten = (runAllResult.results || [])
+              const completed    = bulkProgress.filter((r) => r.status === 'completed').length;
+              const failed       = bulkProgress.filter((r) => r.status === 'failed').length;
+              const totalWritten = bulkProgress
                 .filter((r) => r.status === 'completed')
                 .reduce((s, r) => s + (r.written ?? 0), 0);
-              const headline = failed > 0
-                ? 'Run finished with errors'
-                : skipped > 0 && completed === 0
-                  ? 'Run finished — no bulk sources completed'
-                  : 'Run complete';
+              if (bulkRunning) {
+                return <p className="text-xs font-semibold text-blue-700">Running bulk scrapers…</p>;
+              }
+              if (failed > 0) {
+                return <p className="text-xs font-semibold text-amber-700">⚠ Bulk run finished with issues — {failed} source{failed > 1 ? 's' : ''} failed</p>;
+              }
               return (
-                <>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      {headline}{runAllResult.dry_run ? ' (dry run)' : ''}
-                    </p>
-                    <span className="text-xs text-slate-400">
-                      Completed: {completed} · Failed: {failed} · Skipped: {skipped}
-                      {!runAllResult.dry_run && totalWritten > 0 && <> · Written: {totalWritten}</>}
-                    </span>
-                  </div>
-                </>
+                <p className="text-xs font-semibold text-emerald-700">
+                  {dryRun
+                    ? `✓ Dry run complete — no records written`
+                    : `✓ Bulk run complete${totalWritten > 0 ? ` — ${totalWritten} records written` : ' — all records up to date'}`}
+                </p>
               );
             })()}
-            {(runAllResult.results || []).map((r) => (
-              <div key={r.source} className="flex items-start gap-2 text-sm">
+            {bulkProgress.map((r) => (
+              <div key={r.source} className="flex items-center gap-2 text-sm">
                 <StatusBadge value={r.status} />
                 <span className="font-mono text-xs text-slate-700">{r.source}</span>
+                {r.status === 'running' && (
+                  <span className="text-xs text-blue-500 animate-pulse">running…</span>
+                )}
+                {r.status === 'pending' && (
+                  <span className="text-xs text-slate-400">waiting</span>
+                )}
                 {r.status === 'completed' && (
-                  <span className="text-xs text-slate-500">
-                    seen {r.seen ?? '?'}, written {r.written ?? '?'}
+                  <span className="text-xs text-emerald-600">
+                    {(r.written ?? 0) > 0
+                      ? `✅ wrote ${r.written}`
+                      : dryRun
+                        ? `seen ${r.seen ?? '?'}`
+                        : `seen ${r.seen ?? '?'} (all up to date)`}
                   </span>
                 )}
                 {r.status === 'failed' && r.error && (
@@ -644,10 +656,27 @@ function ManualRunTab() {
 
           {/* Summary stats */}
           {(output.records_written != null || output.records_seen != null) && (
-            <div className="flex gap-4 text-xs text-slate-500">
-              {output.records_seen != null && <span>Seen: {output.records_seen}</span>}
-              {output.records_written != null && <span>Written: {output.records_written}</span>}
-              {output.records_failed != null && <span>Failed: {output.records_failed}</span>}
+            <div className={`rounded-lg border px-3 py-2 ${
+              output.ok
+                ? 'border-emerald-200 bg-emerald-50'
+                : 'border-rose-200 bg-rose-50'
+            }`}>
+              <p className={`text-xs font-semibold mb-1 ${
+                output.ok ? 'text-emerald-700' : 'text-rose-700'
+              }`}>
+                {output.ok
+                  ? output.dry_run ? '✓ Dry run completed' : '✓ Run completed'
+                  : '✕ Run failed'}
+              </p>
+              <div className={`flex gap-4 text-xs ${
+                output.ok ? 'text-emerald-700' : 'text-rose-700'
+              }`}>
+                {output.records_seen != null && <span>Seen: <strong>{output.records_seen}</strong></span>}
+                {output.records_written != null && <span>Written: <strong>{output.records_written}</strong></span>}
+                {output.dry_run && output.records_written === 0 && (
+                  <span className="opacity-70">No records were saved.</span>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -831,7 +860,7 @@ function SchedulerForm({ source, cfg, onSave, saving, onPause, onResume, pausing
   );
 }
 
-function SchedulerTab() {
+function SchedulerTab({ onSaved }) {
   const [source, setSource] = useState('galveston');
   const [saveMsg, setSaveMsg] = useState(null);
   const [actionMsg, setActionMsg] = useState(null);
@@ -855,7 +884,7 @@ function SchedulerTab() {
     updateConfig(
       { source, patch },
       {
-        onSuccess: () => setSaveMsg({ ok: true, text: 'Saved successfully.' }),
+        onSuccess: () => setSaveMsg({ ok: true, text: `✓ Schedule saved for ${source}. Open the Overview tab to see the updated schedule status.` }),
         onError: (err) => {
           let msg = err.message;
           try {
@@ -1092,7 +1121,9 @@ const READINESS_ICON = {
 function ReadinessBadge({ value }) {
   const cls = READINESS_STYLES[value] ?? 'bg-slate-100 text-slate-600 border-slate-200';
   const icon = READINESS_ICON[value] ?? '?';
-  const displayText = value === 'blocked' ? 'needs attention' : value;
+  const displayText = value === 'blocked' ? 'needs attention'
+    : value === 'ready_to_promote' ? 'healthy'
+    : value;
   return (
     <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-semibold ${cls}`}>
       {icon} {displayText}
@@ -1343,7 +1374,7 @@ function ScraperOpsPanelInner() {
 
       {tab === 'overview' && <OverviewTab />}
       {tab === 'run' && <ManualRunTab />}
-      {tab === 'scheduler' && <SchedulerTab />}
+      {tab === 'scheduler' && <SchedulerTab onSaved={() => setTab('overview')} />}
       {tab === 'runs' && <RunsTab mode="runs" />}
       {tab === 'errors' && <RunsTab mode="errors" />}
       {tab === 'readiness' && <DataHealthTab />}

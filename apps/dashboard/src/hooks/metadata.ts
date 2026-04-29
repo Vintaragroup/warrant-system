@@ -9,7 +9,7 @@ export interface AccessMetadata {
 }
 
 const FALLBACK_METADATA: AccessMetadata = Object.freeze({
-  counties: ['brazoria', 'fortbend', 'galveston', 'harris', 'jefferson'],
+  counties: ['brazoria', 'fortbend', 'galveston', 'harris', 'jefferson', 'wharton'],
   departments: [],
   roles: ['SuperUser', 'Admin', 'DepartmentLead', 'Employee', 'Sales', 'BondClient'],
 });

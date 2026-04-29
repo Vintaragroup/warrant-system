@@ -1943,11 +1943,13 @@ r.get('/charge-bonds', withMetrics('charge-bonds', async (req, res) => {
           cntGalveston:    { $sum: { $cond: [{ $eq: ['$county', 'galveston'] }, 1, 0] } },
           cntHarris:       { $sum: { $cond: [{ $eq: ['$county', 'harris'] },    1, 0] } },
           cntJefferson:    { $sum: { $cond: [{ $eq: ['$county', 'jefferson'] }, 1, 0] } },
+          cntWharton:      { $sum: { $cond: [{ $eq: ['$county', 'wharton'] },   1, 0] } },
           bondBrazoria:    { $sum: { $cond: [{ $eq: ['$county', 'brazoria'] },  { $ifNull: ['$_chargeRows.bond', 0] }, 0] } },
           bondFortbend:    { $sum: { $cond: [{ $eq: ['$county', 'fortbend'] },  { $ifNull: ['$_chargeRows.bond', 0] }, 0] } },
           bondGalveston:   { $sum: { $cond: [{ $eq: ['$county', 'galveston'] }, { $ifNull: ['$_chargeRows.bond', 0] }, 0] } },
           bondHarris:      { $sum: { $cond: [{ $eq: ['$county', 'harris'] },    { $ifNull: ['$_chargeRows.bond', 0] }, 0] } },
           bondJefferson:   { $sum: { $cond: [{ $eq: ['$county', 'jefferson'] }, { $ifNull: ['$_chargeRows.bond', 0] }, 0] } },
+          bondWharton:     { $sum: { $cond: [{ $eq: ['$county', 'wharton'] },   { $ifNull: ['$_chargeRows.bond', 0] }, 0] } },
           // Raw sample records — post-processed in JS to pick top 5 by bond
           rawSamples: {
             $push: {
@@ -1969,8 +1971,8 @@ r.get('/charge-bonds', withMetrics('charge-bonds', async (req, res) => {
           charge:        '$_id',
           totalBond:     1,
           count:         1,
-          cntBrazoria:   1, cntFortbend: 1, cntGalveston: 1, cntHarris: 1, cntJefferson: 1,
-          bondBrazoria:  1, bondFortbend: 1, bondGalveston: 1, bondHarris: 1, bondJefferson: 1,
+          cntBrazoria:   1, cntFortbend: 1, cntGalveston: 1, cntHarris: 1, cntJefferson: 1, cntWharton: 1,
+          bondBrazoria:  1, bondFortbend: 1, bondGalveston: 1, bondHarris: 1, bondJefferson: 1, bondWharton: 1,
           rawSamples:    1,
         }
       });
@@ -1982,7 +1984,7 @@ r.get('/charge-bonds', withMetrics('charge-bonds', async (req, res) => {
         'charge-bonds'
       ).catch(() => []);
 
-      const COUNTY_NAMES = ['brazoria', 'fortbend', 'galveston', 'harris', 'jefferson'];
+      const COUNTY_NAMES = ['brazoria', 'fortbend', 'galveston', 'harris', 'jefferson', 'wharton'];
       const cntKey   = (c) => `cnt${c.charAt(0).toUpperCase()}${c.slice(1)}`;
       const bondKey  = (c) => `bond${c.charAt(0).toUpperCase()}${c.slice(1)}`;
 

@@ -55,8 +55,13 @@ export function useUpdateIngestionConfig() {
 }
 
 export function useTriggerRun() {
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: (body) => sendJSON('/admin/ingestion/run', { method: 'POST', body }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['ingestion', 'runs'] });
+      qc.invalidateQueries({ queryKey: ['ingestion', 'status'] });
+    },
   });
 }
 
