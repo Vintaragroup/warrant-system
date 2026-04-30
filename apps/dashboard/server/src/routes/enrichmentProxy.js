@@ -1,4 +1,10 @@
 import { Router } from 'express';
+import mongoose from 'mongoose';
+import {
+  V2_CASE_COLLECTIONS,
+  buildNormalizeStages,
+  buildCountyStage,
+} from '../lib/v2Collections.js';
 
 const r = Router();
 
@@ -108,6 +114,15 @@ async function forward(req, res) {
         error: err?.name || 'Error',
       });
     } catch {}
+    // For prospects_window, fall back to local MongoDB so the page stays functional
+    if (req.method === 'GET' && req.path === '/prospects_window') {
+      try {
+        const result = await fetchProspectsFromMongo(req.query);
+        return res.json(result);
+      } catch (dbErr) {
+        console.warn('Prospects MongoDB fallback failed', dbErr?.message);
+      }
+    }
     return res.status(status).json({ ok: false, error: 'Enrichment service unavailable' });
   } finally {
     clearTimeout(timer);
@@ -120,6 +135,74 @@ r.all('*', forward);
 export default r;
 
 // -------- Helpers ---------
+
+/**
+ * Fallback: query local v2_* collections for recent booking candidates when the
+ * enrichment service is unavailable. Returns a degraded-mode response shape.
+ */
+// NOTE: V2_CASE_COLLECTIONS is imported from shared helper.
+// v2_fortbend_events does NOT exist — Fort Bend is in v2_lookup_results.
+
+async function fetchProspectsFromMongo(query = {}) {
+  const windowHours = Math.min(Number(query.windowHours) || 72, 168);
+  const limit = Math.min(Number(query.limit) || 200, 500);
+  const county = query.county ? String(query.county).toLowerCase() : null;
+
+  const db = mongoose?.connection?.db;
+  if (!db) throw new Error('Database not connected');
+
+  const cutoff = new Date(Date.now() - windowHours * 60 * 60 * 1000);
+  const cutoffStr = cutoff.toISOString().slice(0, 10); // YYYY-MM-DD
+
+  const normalizeStages = buildNormalizeStages();
+  const dateMatchStage = { $match: { booking_date_n: { $gte: cutoffStr } } };
+
+  // If county filter provided, narrow to collection(s) for that county
+  const V2_COUNTY_TO_COLLS = new Map([
+    ['galveston',  ['v2_galveston_events']],
+    ['harris',     ['v2_harris_reports']],
+    ['fortbend',   ['v2_lookup_results']],
+    ['jefferson',  ['v2_lookup_results', 'v2_jefferson_events']],
+    ['brazoria',   ['v2_lookup_results']],
+    ['wharton',    ['v2_wharton_events']],
+  ]);
+
+  let collectionsToQuery = V2_CASE_COLLECTIONS;
+  if (county && V2_COUNTY_TO_COLLS.has(county)) {
+    collectionsToQuery = V2_COUNTY_TO_COLLS.get(county);
+  }
+
+  const perCollPipeline = (collName) => [
+    ...normalizeStages,
+    buildCountyStage(collName),
+    dateMatchStage,
+  ];
+
+  const [baseCollection, ...restCollections] = collectionsToQuery;
+  const listPipeline = [
+    ...perCollPipeline(baseCollection),
+    ...restCollections.map((coll) => ({
+      $unionWith: { coll, pipeline: perCollPipeline(coll) },
+    })),
+    { $sort: { booking_date_n: -1, _id: -1 } },
+    { $limit: limit },
+  ];
+
+  let items = [];
+  try {
+    items = await db.collection(baseCollection).aggregate(listPipeline).toArray();
+  } catch (e) {
+    console.warn('[enrichmentProxy] fallback v2 aggregate failed:', e?.message);
+  }
+
+  return {
+    ok: true,
+    degraded: true,
+    warning: 'Enrichment service unavailable. Showing raw unverified booking candidates from local data.',
+    items,
+    rows: [],
+  };
+}
 
 async function fetchSubjectName(subjectId) {
   if (!subjectId) return null;

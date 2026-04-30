@@ -210,6 +210,175 @@ class FortBendDiscovery:
         )
         return self._process_rows(rows, scraper)
 
+    def run_verify(
+        self,
+        first_prefix: str,
+        last_prefix: str,
+        verify_sample: int = 5,
+    ) -> Dict[str, Any]:
+        """
+        Verification mode: search with a prefix pair, open up to *verify_sample*
+        detail pages, and return evidence records for each page.
+
+        Emits no DB writes — always operates in dry-run evidence-gathering mode.
+        Returns a stats dict that includes a ``verify_details`` list.
+        """
+        from ingestion.lookups.fortbend_lookup import FortBendLookup  # noqa: PLC0415
+        scraper = FortBendLookup(self.db)
+        rows = scraper.search_person(
+            last_name=last_prefix.strip(),
+            first_name=first_prefix.strip(),
+        )
+
+        now          = _utcnow()
+        window_start = now - timedelta(days=self.window_days)
+
+        stats: Dict[str, Any] = {
+            'seen':            len(rows),
+            'details_checked': 0,
+            'recent_matches':  0,
+            'stale_cached':    0,
+            'unknown_date':    0,
+            'skipped':         0,
+            'skipped_cached':  0,
+            'errors':          0,
+            'written':         0,
+            'verify_details':  [],
+        }
+
+        sample_rows = rows[:verify_sample] if verify_sample else rows
+        cache_coll  = self.db[self.PROFILES_COLLECTION]
+
+        for i, row in enumerate(sample_rows):
+            detail_url = row.get('detail_url')
+            if not detail_url:
+                stats['skipped'] += 1
+                continue
+
+            # Build preliminary identity from search-row fields
+            jail_id_raw = (row.get('id') or '').strip() or None
+            last  = (row.get('last_name')  or '').strip().upper() or None
+            first = (row.get('first_name') or '').strip().upper() or None
+            full_name_row = (f"{last}, {first}" if last and first else last) or ''
+
+            prelim_key, prelim_conf = _build_identity_key(
+                row.get('booking_number'), jail_id_raw, full_name_row, row.get('dob'),
+            )
+
+            # Check stale cache (read-only)
+            cached = None
+            try:
+                cached = cache_coll.find_one({'identity_key': prelim_key})
+            except Exception:
+                pass
+            is_skip_cached = _should_skip_cached(cached, now)
+
+            stats['details_checked'] += 1
+            parse_warnings: List[str] = []
+
+            try:
+                detail = scraper.fetch_detail(detail_url)
+            except Exception as exc:
+                stats['errors'] += 1
+                stats['verify_details'].append({
+                    'index':               i + 1,
+                    'search_first':        first_prefix,
+                    'search_last':         last_prefix,
+                    'full_name':           full_name_row,
+                    'detail_url':          detail_url,
+                    'identity_key':        prelim_key,
+                    'identity_confidence': prelim_conf,
+                    'booking_date':        None,
+                    'booking_date_source': 'fetch_error',
+                    'raw_booking_date_text': None,
+                    'within_window':       None,
+                    'window_days':         self.window_days,
+                    'decision':            'error',
+                    'charges_count':       0,
+                    'bond_count':          0,
+                    'first_charge':        None,
+                    'first_bond_amount':   None,
+                    'parse_warnings':      [f'detail fetch error: {exc}'],
+                })
+                continue
+
+            # Merge detail with search-row
+            booking_number   = (detail.get('booking_number') or row.get('booking_number') or '').strip() or None
+            booking_date_str = detail.get('booking_date') or row.get('booking_date')
+            full_name_detail = detail.get('full_name') or full_name_row
+            dob_detail       = detail.get('dob') or row.get('dob')
+
+            identity_key, identity_conf = _build_identity_key(
+                booking_number, jail_id_raw, full_name_detail, dob_detail,
+            )
+
+            # Booking-date evidence
+            if booking_date_str:
+                booking_date_source = 'detail_page'
+            else:
+                booking_date_source = 'not_found'
+                parse_warnings.append(
+                    'booking date not found — Fort Bend portal does not expose booking date'
+                )
+
+            booking_dt = _parse_iso_date(booking_date_str)
+
+            if is_skip_cached:
+                decision      = 'would_skip_cached'
+                within_window = None
+                stats['skipped_cached'] += 1
+            elif booking_dt is None:
+                # No date: treat as current roster (active inmate) → would write
+                decision      = 'would_write_event'
+                within_window = None
+                stats['unknown_date']   += 1
+                stats['recent_matches'] += 1
+            elif booking_dt >= window_start:
+                decision      = 'would_write_event'
+                within_window = True
+                stats['recent_matches'] += 1
+            else:
+                decision      = 'would_cache_stale'
+                within_window = False
+                stats['stale_cached']   += 1
+
+            # Charges / bond evidence
+            charges         = detail.get('charges') or []
+            charges_count   = len(charges)
+            bond_amounts    = [c.get('bond_amount') for c in charges if c.get('bond_amount')]
+            bond_count      = len(bond_amounts)
+            first_charge    = None
+            if charges:
+                first_charge = (
+                    charges[0].get('offense')
+                    or charges[0].get('charge')
+                    or charges[0].get('description')
+                )
+            first_bond_amount = bond_amounts[0] if bond_amounts else detail.get('bond_amount')
+
+            stats['verify_details'].append({
+                'index':               i + 1,
+                'search_first':        first_prefix,
+                'search_last':         last_prefix,
+                'full_name':           full_name_detail or full_name_row,
+                'detail_url':          detail_url,
+                'identity_key':        identity_key,
+                'identity_confidence': identity_conf,
+                'booking_date':        booking_date_str,
+                'booking_date_source': booking_date_source,
+                'raw_booking_date_text': None,
+                'within_window':       within_window,
+                'window_days':         self.window_days,
+                'decision':            decision,
+                'charges_count':       charges_count,
+                'bond_count':          bond_count,
+                'first_charge':        first_charge,
+                'first_bond_amount':   first_bond_amount,
+                'parse_warnings':      parse_warnings,
+            })
+
+        return stats
+
     def run_name(self, last_name: str, first_name: str = '') -> Dict[str, Any]:
         """Search using an explicit last_name [+ first_name]."""
         from ingestion.lookups.fortbend_lookup import FortBendLookup  # noqa: PLC0415

@@ -534,7 +534,15 @@ class HarrisReportIngestor(ReportIngestor):
                 parts      = raw_name.split(",", 1)
                 last_name  = parts[0].strip()
                 first_name = parts[1].strip()
-            needs_help = _needs_bond_help(bond_amount, bond_note)
+            # Sanity check: bond amounts >= $500k are extremely rare.
+            # In the variant 17-column layout, c[3] can be a court-docket / case-number
+            # fragment that parses as a large integer. If the layout warning is set and
+            # bond_amount is suspiciously large, null it out rather than store garbage.
+            if bond_amount is not None and bond_amount >= 500_000 and case_number_parse_warning:
+                bond_amount = None
+                needs_help = False
+            else:
+                needs_help = _needs_bond_help(bond_amount, bond_note)
 
         elif kind == "nafiling":
             court_group  = _c(0)

@@ -212,7 +212,13 @@ export default function Prospects() {
           <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
             Failed to load prospects: {error?.message || 'Unknown error'}
           </div>
-        ) : isLoading ? (
+        ) : null}
+        {!isError && data?.degraded ? (
+          <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+            ⚠ {data.warning || 'Enrichment service unavailable. Showing raw booking candidates.'}
+          </div>
+        ) : null}
+        {isLoading ? (
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">
             Loading prospects…
           </div>

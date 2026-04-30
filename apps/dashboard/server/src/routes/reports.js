@@ -1,5 +1,11 @@
 /* eslint-env node */
 import { Router } from 'express';
+import mongoose from 'mongoose';
+import {
+  V2_CASE_COLLECTIONS,
+  buildNormalizeStages,
+  buildCountyStage,
+} from '../lib/v2Collections.js';
 
 const r = Router();
 
@@ -86,6 +92,45 @@ async function fetchProspectsWindow(window = '7d') {
   }
 }
 
+// V2 collections list is imported from shared helper (V2_CASE_COLLECTIONS).
+// NOTE: v2_fortbend_events does NOT exist — Fort Bend data is in v2_lookup_results.
+
+async function fetchProspects7dFromMongo() {
+  const db = mongoose?.connection?.db;
+  if (!db) throw new Error('Database not connected');
+
+  // Use normalization pipeline so booking_date_n is computed, then match >= 7 days ago.
+  // This mirrors what the dashboard does and correctly handles all v2_* date field variants.
+  const cutoffDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const cutoffStr = cutoffDate.toISOString().slice(0, 10); // YYYY-MM-DD
+
+  const normalizeStages = buildNormalizeStages();
+  const dateMatchStage = { $match: { booking_date_n: { $gte: cutoffStr } } };
+
+  const perCollPipeline = (collName) => [
+    ...normalizeStages,
+    buildCountyStage(collName),
+    dateMatchStage,
+  ];
+
+  const [baseCollection, ...restCollections] = V2_CASE_COLLECTIONS;
+  const countPipeline = [
+    ...perCollPipeline(baseCollection),
+    ...restCollections.map((coll) => ({
+      $unionWith: { coll, pipeline: perCollPipeline(coll) },
+    })),
+    { $count: 'total' },
+  ];
+
+  try {
+    const result = await db.collection(baseCollection).aggregate(countPipeline).toArray();
+    return result[0]?.total ?? 0;
+  } catch (e) {
+    console.warn('[reports] v2 count aggregate failed:', e?.message);
+    return 0;
+  }
+}
+
 r.get('/prospects7d', async (_req, res) => {
   try {
     const { rows, source } = await fetchProspectsWindow('7d');
@@ -104,9 +149,24 @@ r.get('/prospects7d', async (_req, res) => {
       source,
     });
   } catch (err) {
-    const status = err?.status || 502;
-    const message = err?.message || 'Unable to fetch prospect metrics';
-    return res.status(status).json({ ok: false, error: 'PROSPECTS_METRICS_FAILED', message });
+    console.warn('[reports] Enrichment service unavailable, falling back to local Mongo:', err?.message);
+    try {
+      const totalProspects7d = await fetchProspects7dFromMongo();
+      return res.json({
+        ok: true,
+        degraded: true,
+        warning: 'Enrichment service unavailable. Showing raw booking counts from local data.',
+        totalProspects7d,
+        enrichedCount: null,
+        textedCount: null,
+        respondedCount: null,
+        generatedAt: new Date().toISOString(),
+      });
+    } catch (dbErr) {
+      const status = err?.status || 502;
+      const message = err?.message || 'Unable to fetch prospect metrics';
+      return res.status(status).json({ ok: false, error: 'PROSPECTS_METRICS_FAILED', message });
+    }
   }
 });
 

@@ -252,3 +252,39 @@ export function useSelectCaseEnrichment(options = {}) {
     ...options,
   });
 }
+
+// ── Harris Sheriff enrichment ─────────────────────────────────────────────────
+
+/**
+ * Fetches the stored harris_sheriff_enrichments document for an SPN.
+ * The SPN is expected to be an 8-digit zero-padded string.
+ */
+export function useHarrisSheriffEnrichment(spn, options = {}) {
+  const { enabled = true, ...rest } = options;
+  const paddedSpn = spn ? String(spn).replace(/\D/g, '').padStart(8, '0') : null;
+  return useQuery({
+    queryKey: ['harrisSheriffEnrichment', paddedSpn],
+    queryFn: () => getJSON(`/admin/ingestion/enrichment/harris-sheriff/${paddedSpn}`),
+    enabled: Boolean(paddedSpn) && paddedSpn !== '00000000' && enabled,
+    staleTime: 60_000,
+    ...rest,
+  });
+}
+
+/**
+ * Mutation that triggers a single-SPN enrichment via the admin API.
+ * Call with: mutateAsync({ spn: '03334984', dry_run: false })
+ */
+export function useRunHarrisSheriffEnrichment(options = {}) {
+  return useMutation({
+    mutationFn: ({ spn, dry_run = false }) => {
+      if (!spn) throw new Error('spn is required');
+      return sendJSON('/admin/ingestion/enrich/harris-sheriff', {
+        method: 'POST',
+        body: { spn, dry_run },
+      });
+    },
+    ...options,
+  });
+}
+

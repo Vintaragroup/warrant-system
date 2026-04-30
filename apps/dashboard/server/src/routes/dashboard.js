@@ -138,6 +138,7 @@ const COUNTY_COLLECTIONS = [
   'v2_harris_reports',
   'v2_lookup_results',
   'v2_wharton_events',
+  'v2_jefferson_events',
 ];
 
 // Canonical county names exposed by the v2 collections (independent of collection structure).

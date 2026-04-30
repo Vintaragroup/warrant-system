@@ -19,6 +19,8 @@ import {
   useCaseEnrichment,
   useRunCaseEnrichment,
   useSelectCaseEnrichment,
+  useHarrisSheriffEnrichment,
+  useRunHarrisSheriffEnrichment,
 } from '../hooks/cases';
 import { useCheckins, useTriggerCheckInPing } from '../hooks/checkins';
 import { useToast } from '../components/ToastContext';
@@ -121,6 +123,151 @@ const TABS = [
   { id: 'communications', label: 'Comms' },
   { id: 'activity', label: 'Activity' },
 ];
+
+// ── Harris Sheriff Verification panel ────────────────────────────────────────
+
+function HarrisSheriffVerificationPanel({ spn }) {
+  const paddedSpn = String(spn || '').replace(/\D/g, '').padStart(8, '0');
+  const { data: enrichData, isLoading, refetch } = useHarrisSheriffEnrichment(paddedSpn);
+  const runMutation = useRunHarrisSheriffEnrichment();
+
+  const enrichment = enrichData?.enrichment;
+  const custodyStatus = enrichment?.custody_status;
+  const isNotInCustody = custodyStatus === 'not_in_custody';
+  const isPending = runMutation.isPending;
+
+  async function handleRunEnrichment() {
+    try {
+      await runMutation.mutateAsync({ spn: paddedSpn, dry_run: false });
+      refetch();
+    } catch { /* errors surface via runMutation.isError */ }
+  }
+
+  return (
+    <SectionCard
+      title="Harris Sheriff Verification"
+      subtitle={`SPN ${paddedSpn} — Harris County Sheriff JailInfo custody check`}
+    >
+      {/* Loading from cache */}
+      {isLoading && (
+        <div className="flex items-center gap-2 py-3 text-sm text-slate-500">
+          <svg className="h-4 w-4 animate-spin text-purple-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          Loading custody status…
+        </div>
+      )}
+
+      {/* Running enrichment progress */}
+      {isPending && (
+        <div className="rounded-xl border border-purple-200 bg-purple-50 px-4 py-4 space-y-2 mb-3">
+          <div className="flex items-center gap-3">
+            <svg className="h-4 w-4 shrink-0 animate-spin text-purple-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            <div>
+              <p className="text-sm font-semibold text-purple-800">Checking Harris Sheriff JailInfo…</p>
+              <p className="text-xs text-purple-600">SPN: {paddedSpn}</p>
+            </div>
+          </div>
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-purple-100">
+            <div
+              className="h-full rounded-full bg-purple-500"
+              style={{ width: '40%', animation: 'hsv-progress 1.4s ease-in-out infinite' }}
+            />
+          </div>
+          <style>{`@keyframes hsv-progress { 0% { transform: translateX(-200%); width: 40%; } 100% { transform: translateX(350%); width: 40%; } }`}</style>
+        </div>
+      )}
+
+      {/* Run error */}
+      {runMutation.isError && (
+        <div className="mb-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700">
+          ❌ Enrichment failed — {runMutation.error?.message || 'unknown error'}
+        </div>
+      )}
+
+      {/* No enrichment on file */}
+      {!isLoading && !enrichment && !isPending && (
+        <div className="space-y-3">
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+            No Sheriff enrichment on file for SPN {paddedSpn}.
+          </div>
+          <button
+            type="button"
+            onClick={handleRunEnrichment}
+            disabled={isPending}
+            className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700 disabled:opacity-60"
+          >
+            Run Enrichment
+          </button>
+        </div>
+      )}
+
+      {/* Stored enrichment data */}
+      {!isLoading && enrichment && (
+        <div className="space-y-3">
+          {isNotInCustody && (
+            <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+              <span className="mt-0.5 shrink-0">⚠</span>
+              <span>
+                Confirmed Not in Custody — Released or Bailed.{' '}
+                <span className="font-normal text-amber-700">This person is no longer a prospect.</span>
+              </span>
+            </div>
+          )}
+          {custodyStatus === 'in_custody' && (
+            <div className="flex items-start gap-2 rounded-lg border border-blue-300 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-800">
+              <span className="mt-0.5 shrink-0">🔒</span>
+              <span>Confirmed In Custody</span>
+            </div>
+          )}
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-3">
+            {[
+              ['Full name', enrichment.full_name],
+              ['SPN', enrichment.confirmed_spn || enrichment.spn],
+              ['Custody status', custodyStatus?.replace(/_/g, ' ')],
+              ['Facility', enrichment.facility],
+              ['Housing', enrichment.housing_location],
+              ['Booking status', enrichment.booking_status],
+              ['Release status', enrichment.release_status],
+              ['Date of birth', enrichment.dob],
+              ['Age', enrichment.age],
+              ['Sex', enrichment.sex],
+              ['Race', enrichment.race],
+              ['Info accurate as of', enrichment.info_accurate_as_of],
+              ['Last checked', enrichment.last_checked_at
+                ? new Date(enrichment.last_checked_at).toLocaleString()
+                : null],
+            ].map(([label, val]) =>
+              val ? (
+                <div key={label}>
+                  <dt className="text-xs font-medium text-slate-500">{label}</dt>
+                  <dd className="text-slate-800">{val}</dd>
+                </div>
+              ) : null
+            )}
+          </dl>
+          {enrichment.warnings?.length > 0 && (
+            <div className="rounded-lg border border-yellow-200 bg-yellow-50 px-3 py-2 text-xs text-yellow-800">
+              <strong>Warnings:</strong> {enrichment.warnings.join('; ')}
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={handleRunEnrichment}
+            disabled={isPending}
+            className="rounded-lg border border-purple-300 px-3 py-1.5 text-xs font-medium text-purple-700 hover:bg-purple-50 disabled:opacity-60"
+          >
+            {isPending ? 'Running…' : 'Re-run Enrichment'}
+          </button>
+        </div>
+      )}
+    </SectionCard>
+  );
+}
 
 export default function CaseDetail() {
   const navigate = useNavigate();
@@ -2376,7 +2523,14 @@ export default function CaseDetail() {
   if (activeTab === 'checkins') activeContent = checkinsContent;
   else if (activeTab === 'checklist') activeContent = checklistContent;
   else if (activeTab === 'crm') activeContent = crmContent;
-  else if (activeTab === 'enrichment') activeContent = enrichmentContent;
+  else if (activeTab === 'enrichment') activeContent = (
+    <div className="space-y-6">
+      {data?.county?.toLowerCase() === 'harris' && data?.spn && (
+        <HarrisSheriffVerificationPanel spn={data.spn} />
+      )}
+      {enrichmentContent}
+    </div>
+  );
   else if (activeTab === 'documents') activeContent = documentsContent;
   else if (activeTab === 'communications') activeContent = communicationsContent;
   else if (activeTab === 'activity') activeContent = activityContent;

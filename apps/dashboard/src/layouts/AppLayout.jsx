@@ -7,6 +7,7 @@ import BottomNav from "../components/BottomNav";
 
 const tabs = [
   { to: "/", label: "Dashboard", end: true },
+  { to: "/cases", label: "Cases" },
   { to: "/prospects", label: "Prospects" },
   { to: "/crm", label: "CRM" },
   { to: "/call-queue", label: "Call Queue" },

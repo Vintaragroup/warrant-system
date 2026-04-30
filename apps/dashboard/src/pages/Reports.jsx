@@ -47,6 +47,12 @@ export default function Reports() {
         </div>
       ) : null}
 
+      {!isError && data?.degraded ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          ⚠ {data.warning || 'Enrichment service unavailable. Enrichment metrics are unavailable.'}
+        </div>
+      ) : null}
+
       {!isLoading && !isError ? (
         <>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

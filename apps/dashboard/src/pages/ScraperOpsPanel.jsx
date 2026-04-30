@@ -12,7 +12,7 @@ import {
   useIngestionReadiness,
   useCancelJob,
 } from '../hooks/adminIngestion';
-import { getJSON } from '../hooks/dashboard';
+import { getJSON, sendJSON } from '../hooks/dashboard';
 
 // ── Error boundary ─────────────────────────────────────────────────────────────
 
@@ -103,6 +103,7 @@ function StatusBadge({ value }) {
     success: 'bg-emerald-50 text-emerald-700',
     failed: 'bg-rose-50 text-rose-700',
     running: 'bg-blue-50 text-blue-700',
+    queued: 'bg-blue-50 text-blue-600',
     skipped: 'bg-slate-100 text-slate-500',
     completed: 'bg-emerald-50 text-emerald-700',
     enabled: 'bg-emerald-50 text-emerald-700',
@@ -283,37 +284,109 @@ function ManualRunTab() {
   const [awaitConfirm, setAwaitConfirm] = useState(false);
 
   const { mutate, mutateAsync, isPending } = useTriggerRun();
-  const BULK_SOURCES = ['galveston', 'harris_reports', 'wharton'];
+  const BULK_SOURCES = ['galveston', 'harris_reports', 'wharton', 'jefferson_lookup', 'fortbend_lookup'];
   const [bulkProgress, setBulkProgress] = useState(null); // null | array
   const [bulkRunning, setBulkRunning] = useState(false);
+  const [bulkFortBendJobId, setBulkFortBendJobId] = useState(null);
+  const bulkFortBendPollRef = useRef(null);
 
   async function handleRunAll() {
+    // Reset any prior Fort Bend poll
+    if (bulkFortBendPollRef.current) { clearInterval(bulkFortBendPollRef.current); bulkFortBendPollRef.current = null; }
+    setBulkFortBendJobId(null);
     setBulkProgress([
-      ...BULK_SOURCES.map((s) => ({ source: s, status: 'pending', seen: null, written: null, error: null })),
-      { source: 'fortbend_lookup',  status: 'skipped', seen: null, written: null, error: 'Requires name/date params' },
-      { source: 'jefferson_lookup', status: 'skipped', seen: null, written: null, error: 'Requires name/date params' },
-      { source: 'brazoria_lookup',  status: 'skipped', seen: null, written: null, error: 'Requires name/date params' },
+      ...BULK_SOURCES.map((s) => ({ source: s, status: 'pending', seen: null, written: null, error: null, date_searched: null })),
+      { source: 'brazoria_lookup', status: 'skipped', seen: null, written: null, error: 'Requires name + first_name' },
     ]);
     setBulkRunning(true);
+    let fortBendQueued = false;
     for (const src of BULK_SOURCES) {
       setBulkProgress((prev) => prev.map((p) => p.source === src ? { ...p, status: 'running' } : p));
       try {
-        const result = await mutateAsync({ source: src, dry_run: dryRun, limit: 100, bulk: true });
-        setBulkProgress((prev) => prev.map((p) => p.source === src ? {
-          ...p,
-          status: result.ok ? 'completed' : 'failed',
-          seen:    result.records_seen ?? null,
-          written: result.records_written ?? null,
-          error:   !result.ok ? (result.message || 'Run failed') : null,
-        } : p));
+        const isFortbend = src === 'fortbend_lookup';
+        const isJeffersonBulk = src === 'jefferson_lookup';
+        const payload = isFortbend
+          ? { source: src, dry_run: dryRun, discoveryMode: 'auto', windowDays: 7, limit: 0, bulk: true }
+          : isJeffersonBulk
+            ? { source: src, dry_run: dryRun, limit: 100, booking_date: 'today', bulk: true }
+            : { source: src, dry_run: dryRun, limit: 100, bulk: true };
+        const result = await mutateAsync(payload);
+        if (isFortbend && result.job_id) {
+          // Async job queued — start polling
+          fortBendQueued = true;
+          setBulkFortBendJobId(result.job_id);
+          setBulkProgress((prev) => prev.map((p) => p.source === src ? {
+            ...p,
+            status: 'queued',
+            job_id: result.job_id,
+            prefixes_checked: 0,
+            prefixes_total: 676,
+            percent_complete: 0,
+            current_prefix: null,
+            elapsed_seconds: 0,
+            estimated_seconds_remaining: null,
+          } : p));
+        } else {
+          setBulkProgress((prev) => prev.map((p) => p.source === src ? {
+            ...p,
+            status: result.ok ? 'completed' : 'failed',
+            seen:          result.records_seen ?? null,
+            written:       result.records_written ?? null,
+            date_searched: result.date_searched ?? null,
+            error:   !result.ok ? (result.message || 'Run failed') : null,
+          } : p));
+        }
       } catch (err) {
         let msg = err.message;
         try { const b = JSON.parse(err.message.replace(/^Request failed \d+: /, '')); if (b?.message) msg = b.message; } catch { /* raw */ }
         setBulkProgress((prev) => prev.map((p) => p.source === src ? { ...p, status: 'failed', error: msg } : p));
       }
     }
-    setBulkRunning(false);
+    // Keep bulkRunning=true while Fort Bend async job is running; poll useEffect clears it
+    if (!fortBendQueued) setBulkRunning(false);
   }
+
+  // Poll Fort Bend bulk auto-discovery job
+  useEffect(() => {
+    if (!bulkFortBendJobId) return;
+    const poll = async () => {
+      try {
+        const data = await getJSON(`/admin/ingestion/jobs/${bulkFortBendJobId}`);
+        if (data?.job) {
+          const j = data.job;
+          setBulkProgress((prev) => prev.map((p) => p.source === 'fortbend_lookup' ? {
+            ...p,
+            status: j.status,
+            job_id: bulkFortBendJobId,
+            prefixes_checked: j.prefixes_checked ?? 0,
+            prefixes_total: j.prefixes_total ?? 676,
+            percent_complete: j.percent_complete ?? 0,
+            current_prefix: j.current_prefix ?? null,
+            elapsed_seconds: j.elapsed_seconds ?? 0,
+            estimated_seconds_remaining: j.estimated_seconds_remaining ?? null,
+            seen: j.seen ?? 0,
+            written: j.written ?? 0,
+            details_checked: j.details_checked ?? null,
+            recent_matches: j.recent_matches ?? null,
+            prefixes_total: j.prefixes_total ?? 676,
+            completed_full_sweep: j.completed_full_sweep ?? false,
+            error: ['failed', 'cancelled'].includes(j.status) ? (j.stderr_tail || 'Fort Bend discovery failed') : null,
+          } : p));
+          if (['completed', 'failed', 'cancelled'].includes(j.status)) {
+            clearInterval(bulkFortBendPollRef.current);
+            bulkFortBendPollRef.current = null;
+            setBulkFortBendJobId(null);
+            setBulkRunning(false);
+          }
+        }
+      } catch (err) {
+        console.error('[bulk fortbend poll]', err);
+      }
+    };
+    poll();
+    bulkFortBendPollRef.current = setInterval(poll, 3000);
+    return () => { if (bulkFortBendPollRef.current) clearInterval(bulkFortBendPollRef.current); };
+  }, [bulkFortBendJobId]);
 
   const isLookup = LOOKUP_SOURCES.has(source);
   const isJefferson = source === 'jefferson_lookup';
@@ -395,9 +468,8 @@ function ManualRunTab() {
           <div>
             <p className="text-sm font-semibold text-blue-800">Run All Counties Now</p>
             <p className="text-xs text-blue-600 mt-0.5">
-              Runs bulk county scrapers (galveston + harris_reports + wharton) sequentially.
-              Lookup sources (fortbend, jefferson, brazoria) require name/date parameters
-              and must be run individually below.
+              Runs Galveston, Harris, Wharton, Jefferson, and Fort Bend full discovery sweep (aa–zz).
+              Brazoria remains lookup-only — requires real first and last names.
               {dryRun
                 ? ' Dry run ON — no records will be written.'
                 : ' Writes to staging collections.'}
@@ -415,7 +487,7 @@ function ManualRunTab() {
                   : 'border border-blue-600 bg-blue-700 text-white hover:bg-blue-800'
             }`}
           >
-            {bulkRunning ? 'Running…' : 'Run Bulk Scrapers Now'}
+            {bulkRunning ? 'Running…' : 'Run Daily Bulk Scrapers Now'}
           </button>
         </div>
 
@@ -443,29 +515,81 @@ function ManualRunTab() {
               );
             })()}
             {bulkProgress.map((r) => (
-              <div key={r.source} className="flex items-center gap-2 text-sm">
-                <StatusBadge value={r.status} />
-                <span className="font-mono text-xs text-slate-700">{r.source}</span>
-                {r.status === 'running' && (
-                  <span className="text-xs text-blue-500 animate-pulse">running…</span>
-                )}
-                {r.status === 'pending' && (
-                  <span className="text-xs text-slate-400">waiting</span>
-                )}
-                {r.status === 'completed' && (
-                  <span className="text-xs text-emerald-600">
-                    {(r.written ?? 0) > 0
-                      ? `✅ wrote ${r.written}`
-                      : dryRun
-                        ? `seen ${r.seen != null ? r.seen : 'unavailable'}`
-                        : `seen ${r.seen != null ? r.seen : 'unavailable'} (all up to date)`}
-                  </span>
-                )}
-                {r.status === 'failed' && r.error && (
-                  <span className="text-xs text-rose-600 truncate max-w-xs" title={r.error}>{r.error}</span>
-                )}
-                {r.status === 'skipped' && (
-                  <span className="text-xs text-slate-400">{r.error}</span>
+              <div key={r.source} className="space-y-1">
+                <div className="flex items-center gap-2 text-sm">
+                  <StatusBadge value={r.status} />
+                  <span className="font-mono text-xs text-slate-700">{r.source}</span>
+                  {r.status === 'running' && r.source !== 'fortbend_lookup' && (
+                    <span className="text-xs text-blue-500 animate-pulse">running…</span>
+                  )}
+                  {(r.status === 'queued' || (r.status === 'running' && r.source === 'fortbend_lookup')) && (
+                    <span className="text-xs text-blue-500 animate-pulse">
+                      {r.status === 'queued' ? 'starting full sweep…' : `scanning${r.current_prefix ? ` prefix ${r.current_prefix}` : '…'}`}
+                    </span>
+                  )}
+                  {r.status === 'pending' && (
+                    <span className="text-xs text-slate-400">waiting</span>
+                  )}
+                  {r.status === 'completed' && (
+                    <span className="text-xs text-emerald-600">
+                      {r.source === 'fortbend_lookup'
+                        ? (() => {
+                            const checked = r.prefixes_checked ?? 0;
+                            const total = r.prefixes_total ?? 676;
+                            const fullSweep = r.completed_full_sweep || checked >= total;
+                            const prefixSummary = fullSweep
+                              ? `full sweep ${checked}/${total} prefixes`
+                              : checked > 0
+                                ? `partial — ${checked}/${total} prefixes checked`
+                                : null;
+                            if (fullSweep && (r.written ?? 0) > 0)
+                              return `✅ Fort Bend ${prefixSummary} — wrote ${r.written}${r.details_checked != null ? ` (${r.details_checked} details, ${r.recent_matches ?? 0} matched)` : ''}`;
+                            if (fullSweep)
+                              return `✅ Fort Bend ${prefixSummary}${r.details_checked != null ? ` — ${r.details_checked} details, ${r.seen ?? 0} seen` : ''}`;
+                            if (prefixSummary && (r.written ?? 0) > 0)
+                              return `⚠ Fort Bend ${prefixSummary} — wrote ${r.written}`;
+                            if (prefixSummary)
+                              return `⚠ Fort Bend ${prefixSummary} — seen ${r.seen ?? 0}`;
+                            return dryRun
+                              ? `seen ${r.seen ?? 0}, ${r.details_checked ?? 0} details checked`
+                              : `seen ${r.seen ?? 0} — all up to date (${r.details_checked ?? 0} details checked)`;
+                          })()
+                        : ((r.written ?? 0) > 0
+                          ? `✅ wrote ${r.written}${r.date_searched ? ` — date ${r.date_searched}` : ''}`
+                          : dryRun
+                            ? `seen ${r.seen != null ? r.seen : 'unavailable'}${r.date_searched ? ` (${r.date_searched})` : ''}`
+                            : `seen ${r.seen != null ? r.seen : 'unavailable'} (all up to date)${r.date_searched ? ` — ${r.date_searched}` : ''}`)}
+                    </span>
+                  )}
+                  {r.status === 'failed' && r.error && (
+                    <span className="text-xs text-rose-600 truncate max-w-xs" title={r.error}>{r.error}</span>
+                  )}
+                  {r.status === 'skipped' && (
+                    <span className="text-xs text-slate-400">{r.error}</span>
+                  )}
+                </div>
+                {/* Fort Bend inline job progress (while queued or running) */}
+                {r.source === 'fortbend_lookup' && ['queued', 'running'].includes(r.status) && (
+                  <div className="ml-6 space-y-1.5 rounded border border-blue-100 bg-blue-50 px-3 py-2">
+                    <div className="w-full bg-blue-200 rounded-full h-1.5">
+                      <div
+                        className="bg-blue-500 h-1.5 rounded-full transition-all duration-500"
+                        style={{ width: (r.percent_complete || 0) + '%' }}
+                      />
+                    </div>
+                    <div className="flex flex-wrap gap-3 text-xs text-blue-700">
+                      {r.current_prefix && <span>Current prefix: <strong>{r.current_prefix}</strong></span>}
+                      <span>Prefixes: {r.prefixes_checked || 0} / {r.prefixes_total || 676} ({(r.percent_complete || 0).toFixed(1)}%)</span>
+                      {r.elapsed_seconds > 0 && <span>Elapsed: {Math.floor(r.elapsed_seconds / 60)}m {Math.round(r.elapsed_seconds % 60)}s</span>}
+                      {r.estimated_seconds_remaining != null && <span>ETA: ~{Math.floor(r.estimated_seconds_remaining / 60)}m</span>}
+                    </div>
+                    <div className="flex flex-wrap gap-3 text-xs text-blue-600">
+                      <span>Seen: {r.seen || 0}</span>
+                      {r.details_checked != null && <span>Details: {r.details_checked}</span>}
+                      {r.recent_matches != null && <span>Matched: {r.recent_matches}</span>}
+                      {(r.written ?? 0) > 0 && <span className="text-emerald-600 font-semibold">Written: {r.written}</span>}
+                    </div>
+                  </div>
                 )}
               </div>
             ))}
@@ -701,6 +825,7 @@ function FortBendDiscoveryTab() {
   const [dryRun, setDryRun] = useState(true);
   const [result, setResult] = useState(null);
   const [confirming, setConfirming] = useState(false);
+  const [verifySample, setVerifySample] = useState(5);
 
   const [jobId, setJobId] = useState(null);
   const [jobProgress, setJobProgress] = useState(null);
@@ -712,16 +837,18 @@ function FortBendDiscoveryTab() {
 
   const buildPayload = (modeOverride) => {
     const effectiveMode = modeOverride ?? mode;
+    const usePrefix = effectiveMode === 'prefix' || effectiveMode === 'verify';
     return {
       source: 'fortbend_lookup',
       dry_run: dryRun,
       limit,
       discoveryMode: effectiveMode,
-      firstPrefix: effectiveMode === 'prefix' ? firstPrefix : '',
-      lastPrefix: effectiveMode === 'prefix' ? lastPrefix : '',
+      firstPrefix: usePrefix ? firstPrefix : '',
+      lastPrefix: usePrefix ? lastPrefix : '',
       first_name: effectiveMode === 'name' ? firstName : '',
       last_name: effectiveMode === 'name' ? lastName : '',
       windowDays,
+      ...(effectiveMode === 'verify' ? { verifySample } : {}),
     };
   };
 
@@ -787,7 +914,7 @@ function FortBendDiscoveryTab() {
       <div>
         <label className="block text-xs font-medium text-gray-700 mb-1">Mode</label>
         <div className="flex gap-2 flex-wrap">
-          {['prefix', 'name', 'seed', 'auto'].map((m) => (
+          {['prefix', 'name', 'seed', 'auto', 'verify'].map((m) => (
             <button
               key={m}
               onClick={() => setMode(m)}
@@ -797,7 +924,7 @@ function FortBendDiscoveryTab() {
                   : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
               }`}
             >
-              {m === 'auto' ? 'Auto (aa–zz)' : m.charAt(0).toUpperCase() + m.slice(1)}
+              {m === 'auto' ? 'Auto (aa–zz)' : m === 'verify' ? 'Verify Detail Parsing' : m.charAt(0).toUpperCase() + m.slice(1)}
             </button>
           ))}
         </div>
@@ -868,6 +995,50 @@ function FortBendDiscoveryTab() {
           Auto mode iterates all 676 first×last prefix combinations (aa through zz), checking the stale
           cache before fetching each detail page. Use <strong>Result Limit</strong> to cap total rows processed.
         </p>
+      )}
+
+      {/* Verify mode inputs */}
+      {mode === 'verify' && (
+        <div className="space-y-3">
+          <p className="text-sm text-gray-600 bg-purple-50 rounded p-3 border border-purple-200">
+            Verify mode opens real detail pages and emits evidence for each, confirming what fields are
+            parsed, what booking-date logic applies, and what the write decision would be. No records are
+            written regardless of the dry-run setting.
+          </p>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">First Name Prefix</label>
+              <input
+                type="text"
+                value={firstPrefix}
+                onChange={(e) => setFirstPrefix(e.target.value)}
+                placeholder="e.g. a"
+                className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Last Name Prefix</label>
+              <input
+                type="text"
+                value={lastPrefix}
+                onChange={(e) => setLastPrefix(e.target.value)}
+                placeholder="e.g. a"
+                className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Sample Size</label>
+              <input
+                type="number"
+                min={1}
+                max={25}
+                value={verifySample}
+                onChange={(e) => setVerifySample(Number(e.target.value))}
+                className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm"
+              />
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Window + limit */}
@@ -985,7 +1156,7 @@ function FortBendDiscoveryTab() {
       )}
 
       {/* Result card */}
-      {result && (
+      {result && !result.verification_details && (
         <div className={`rounded border p-4 text-sm ${result.ok ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
           <div className="font-semibold mb-2">{result.ok ? '✓ Completed' : '✗ Failed'}</div>
           {result.message && <p className="text-gray-700 mb-3">{result.message}</p>}
@@ -1009,6 +1180,83 @@ function FortBendDiscoveryTab() {
           {result.dry_run && (
             <p className="text-xs text-gray-500 mt-2 italic">Dry run — no records were written.</p>
           )}
+        </div>
+      )}
+
+      {/* Verify result card */}
+      {result && result.verification_details && (
+        <div className={`rounded border p-4 text-sm ${result.ok ? 'bg-purple-50 border-purple-200' : 'bg-red-50 border-red-200'}`}>
+          <div className="font-semibold mb-2">{result.ok ? '✓ Verify Completed' : '✗ Verify Failed'}</div>
+          {result.message && <p className="text-gray-700 mb-2">{result.message}</p>}
+          <div className="grid grid-cols-5 gap-2 text-xs mb-4">
+            {[
+              ['Seen', result.seen],
+              ['Details Checked', result.details_checked],
+              ['Recent / Unknown', result.recent_matches],
+              ['Stale', result.stale_cached],
+              ['Unknown Date', result.unknown_date],
+            ].map(([label, val]) => (
+              <div key={label} className="bg-white rounded border border-purple-200 p-2 text-center">
+                <div className="font-bold text-gray-900">{val ?? '—'}</div>
+                <div className="text-gray-500 mt-0.5">{label}</div>
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-gray-500 mb-2 italic">
+            Fort Bend does not expose booking dates — all records show <code>not_found</code> and are treated as current roster.
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs border-collapse">
+              <thead>
+                <tr className="bg-purple-100 text-purple-800">
+                  <th className="text-left px-2 py-1 border border-purple-200">#</th>
+                  <th className="text-left px-2 py-1 border border-purple-200">Name</th>
+                  <th className="text-left px-2 py-1 border border-purple-200">Booking Date</th>
+                  <th className="text-left px-2 py-1 border border-purple-200">Within Window</th>
+                  <th className="text-left px-2 py-1 border border-purple-200">Decision</th>
+                  <th className="text-left px-2 py-1 border border-purple-200">Charges</th>
+                  <th className="text-left px-2 py-1 border border-purple-200">Bond</th>
+                  <th className="text-left px-2 py-1 border border-purple-200">Detail</th>
+                </tr>
+              </thead>
+              <tbody>
+                {result.verification_details.map((d) => {
+                  const decisionColor = {
+                    would_write_event: 'text-green-700 bg-green-50',
+                    would_cache_stale: 'text-yellow-700 bg-yellow-50',
+                    would_skip_cached: 'text-blue-700 bg-blue-50',
+                    error:             'text-red-700 bg-red-50',
+                  }[d.decision] ?? 'text-gray-700 bg-gray-50';
+                  return (
+                    <tr key={d.index} className="hover:bg-purple-50">
+                      <td className="px-2 py-1 border border-purple-100 text-gray-500">{d.index}</td>
+                      <td className="px-2 py-1 border border-purple-100 font-medium">{d.full_name || '—'}</td>
+                      <td className="px-2 py-1 border border-purple-100 text-gray-500">
+                        {d.booking_date ?? <span className="italic text-gray-400">not found</span>}
+                      </td>
+                      <td className="px-2 py-1 border border-purple-100 text-center">
+                        {d.within_window == null ? <span className="text-gray-400">—</span>
+                          : d.within_window ? <span className="text-green-600">✓</span>
+                          : <span className="text-red-500">✗</span>}
+                      </td>
+                      <td className={`px-2 py-1 border border-purple-100 rounded-sm font-medium ${decisionColor}`}>
+                        {d.decision}
+                      </td>
+                      <td className="px-2 py-1 border border-purple-100 text-center">{d.charges_count ?? 0}</td>
+                      <td className="px-2 py-1 border border-purple-100">
+                        {d.first_bond_amount != null ? `$${d.first_bond_amount}` : '—'}
+                      </td>
+                      <td className="px-2 py-1 border border-purple-100">
+                        {d.detail_url
+                          ? <a href={d.detail_url} target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline">view</a>
+                          : '—'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
@@ -1707,12 +1955,336 @@ function ScraperOpsPanelInner() {
 
       {tab === 'overview' && <OverviewTab />}
       {tab === 'run' && <ManualRunTab />}
-      {tab === 'discovery' && <FortBendDiscoveryTab />}
+      {tab === 'discovery' && (
+        <div className="space-y-8">
+          <FortBendDiscoveryTab />
+          <HarrisSheriffSpnEnrichmentPanel />
+        </div>
+      )}
       {tab === 'scheduler' && <SchedulerTab onSaved={() => setTab('overview')} />}
       {tab === 'runs' && <RunsTab mode="runs" />}
       {tab === 'errors' && <RunsTab mode="errors" />}
       {tab === 'readiness' && <DataHealthTab />}
     </SectionCard>
+  );
+}
+
+// ── Harris Sheriff SPN Enrichment panel ──────────────────────────────────────
+
+function HarrisSheriffSpnEnrichmentPanel() {
+  const [mode, setMode] = useState('batch'); // 'batch' | 'single'
+  const [spn, setSpn] = useState('');
+  const [limit, setLimit] = useState(25);
+  const [dryRun, setDryRun] = useState(true);
+  const [running, setRunning] = useState(false);
+  const [runPhase, setRunPhase] = useState(''); // human-readable step label
+  const [elapsed, setElapsed] = useState(0);    // seconds since run start
+  const [result, setResult] = useState(null);
+  const [confirming, setConfirming] = useState(false);
+  const elapsedRef = useRef(null);
+
+  const triggerRun = useTriggerRun();
+
+  function startElapsedTimer() {
+    setElapsed(0);
+    if (elapsedRef.current) clearInterval(elapsedRef.current);
+    elapsedRef.current = setInterval(() => setElapsed((s) => s + 1), 1000);
+  }
+  function stopElapsedTimer() {
+    if (elapsedRef.current) { clearInterval(elapsedRef.current); elapsedRef.current = null; }
+  }
+
+  async function handleRun() {
+    if (!dryRun && !confirming) { setConfirming(true); return; }
+    setConfirming(false);
+    setResult(null);
+    setRunning(true);
+    startElapsedTimer();
+
+    try {
+      if (mode === 'single') {
+        setRunPhase('Contacting Harris Sheriff JailInfo…');
+        const data = await sendJSON('/admin/ingestion/enrich/harris-sheriff', {
+          method: 'POST',
+          body: { spn, dry_run: dryRun },
+        });
+        setResult(data);
+      } else {
+        setRunPhase('Querying recent Harris records — this may take up to 60 s…');
+        const data = await triggerRun.mutateAsync({
+          source: 'harris_sheriff_enrichment',
+          dry_run: dryRun,
+          limit,
+          seed: 'recent_harris',
+        });
+        setResult(data);
+      }
+    } catch (err) {
+      let msg = err.message;
+      try { const b = JSON.parse(err.message.replace(/^Request failed \d+: /, '')); if (b?.message) msg = b.message; } catch { /* raw */ }
+      setResult({ ok: false, message: msg });
+    } finally {
+      stopElapsedTimer();
+      setRunning(false);
+      setRunPhase('');
+    }
+  }
+
+  const canRun = mode === 'batch' || (mode === 'single' && spn.trim().length >= 5);
+
+  return (
+    <div className="rounded-xl border border-purple-200 bg-purple-50 p-5 space-y-4">
+      <div>
+        <h3 className="text-base font-semibold text-purple-900">Harris Sheriff SPN Enrichment</h3>
+        <p className="text-sm text-purple-700 mt-0.5">
+          Query the Harris County Sheriff JailInfo site by SPN to verify custody status.
+          If a person is confirmed <strong>NOT IN JAIL</strong>, their Harris records are
+          automatically flagged as no longer a prospect (released or bailed).
+          Only records from the <strong>past 7 days</strong> are eligible for batch enrichment.
+        </p>
+      </div>
+
+      {/* Mode selector */}
+      <div className="flex gap-2">
+        {[['batch', 'Batch (recent Harris)'], ['single', 'Single SPN']].map(([m, label]) => (
+          <button
+            key={m}
+            type="button"
+            disabled={running}
+            onClick={() => { setMode(m); setResult(null); setConfirming(false); }}
+            className={`px-3 py-1.5 rounded text-sm font-medium border transition-colors disabled:pointer-events-none disabled:opacity-50 ${
+              mode === m
+                ? 'bg-purple-600 text-white border-purple-600'
+                : 'bg-white text-purple-700 border-purple-300 hover:bg-purple-50'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Inputs */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {mode === 'single' && (
+          <div>
+            <label className="block text-xs font-medium text-purple-800 mb-1">
+              SPN <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={spn}
+              disabled={running}
+              onChange={(e) => setSpn(e.target.value.replace(/\D/g, '').slice(0, 8))}
+              placeholder="e.g. 03334984"
+              maxLength={8}
+              className="w-full border border-purple-300 rounded px-3 py-1.5 text-sm focus:border-purple-500 focus:outline-none disabled:opacity-50"
+            />
+          </div>
+        )}
+        {mode === 'batch' && (
+          <div>
+            <label className="block text-xs font-medium text-purple-800 mb-1">Result Limit</label>
+            <input
+              type="number"
+              min={1}
+              max={50}
+              disabled={running}
+              value={limit}
+              onChange={(e) => setLimit(Math.max(1, Math.min(50, Number(e.target.value))))}
+              className="w-full border border-purple-300 rounded px-3 py-1.5 text-sm focus:border-purple-500 focus:outline-none disabled:opacity-50"
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Dry-run toggle */}
+      <label className="flex cursor-pointer select-none items-center gap-2">
+        <input
+          type="checkbox"
+          checked={dryRun}
+          disabled={running}
+          onChange={(e) => { setDryRun(e.target.checked); setConfirming(false); }}
+          className="h-4 w-4 rounded border-purple-300 accent-purple-600 disabled:opacity-50"
+        />
+        <span className="text-sm text-purple-800">
+          Dry run only — <span className="text-purple-500">no records written, no prospect flags set</span>
+        </span>
+      </label>
+
+      {!dryRun && !running && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+          <strong>⚠ Warning:</strong> Dry run is OFF. &ldquo;Not in jail&rdquo; results will set{' '}
+          <code className="text-xs">no_longer_prospect=true</code> on matching Harris records.
+          {confirming && <span className="ml-1 font-medium"> Click <strong>Confirm</strong> to proceed.</span>}
+        </div>
+      )}
+
+      {/* ── Running progress card ── */}
+      {running && (
+        <div className="rounded-xl border border-purple-300 bg-white px-4 py-4 space-y-3">
+          <div className="flex items-center gap-3">
+            {/* Animated spinner */}
+            <svg className="h-5 w-5 shrink-0 animate-spin text-purple-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            <div>
+              <p className="text-sm font-semibold text-purple-800">
+                {mode === 'single'
+                  ? `Running Sheriff SPN enrichment — ${spn}`
+                  : `Running batch SPN enrichment — limit ${limit}`}
+              </p>
+              <p className="text-xs text-purple-600 mt-0.5">{runPhase}</p>
+            </div>
+            <span className="ml-auto text-xs tabular-nums text-slate-400">{elapsed}s</span>
+          </div>
+          {/* Indeterminate progress bar */}
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-purple-100">
+            <div
+              className="h-full rounded-full bg-purple-500"
+              style={{ width: '40%', animation: 'indeterminate-progress 1.4s ease-in-out infinite' }}
+            />
+          </div>
+          <style>{`
+            @keyframes indeterminate-progress {
+              0%   { transform: translateX(-200%); width: 40%; }
+              100% { transform: translateX(350%);  width: 40%; }
+            }
+          `}</style>
+          {mode === 'batch' && (
+            <p className="text-xs text-slate-400 italic">
+              Each SPN requires a live HTTP request to the Sheriff site — batch may take up to 60 seconds.
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Run button row */}
+      {!running && (
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            disabled={running || !canRun}
+            onClick={handleRun}
+            className={`rounded-lg px-4 py-2 text-sm font-semibold transition-colors ${
+              !canRun
+                ? 'bg-purple-300 text-white cursor-not-allowed opacity-60'
+                : confirming
+                  ? 'border border-amber-400 bg-amber-100 text-amber-800 hover:bg-amber-200'
+                  : dryRun
+                    ? 'bg-purple-600 text-white hover:bg-purple-700'
+                    : 'border border-amber-500 bg-amber-600 text-white hover:bg-amber-700'
+            }`}
+          >
+            {confirming
+              ? '⚠ Confirm — write results'
+              : mode === 'single'
+                ? 'Run SPN Enrichment'
+                : 'Run Batch Enrichment'}
+          </button>
+          {confirming && (
+            <button
+              type="button"
+              onClick={() => setConfirming(false)}
+              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-500 hover:border-slate-400"
+            >
+              Cancel
+            </button>
+          )}
+          {mode === 'single' && !spn.trim() && (
+            <span className="text-xs text-red-500">SPN is required</span>
+          )}
+        </div>
+      )}
+
+      {/* ── Result card ── */}
+      {result && !running && (
+        <div className={`rounded-xl border p-4 space-y-3 ${
+          result.ok ? 'border-emerald-200 bg-emerald-50' : 'border-rose-200 bg-rose-50'
+        }`}>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-base">{result.ok ? '✅' : '❌'}</span>
+            <span className={`font-semibold text-sm ${result.ok ? 'text-emerald-800' : 'text-rose-800'}`}>
+              {result.ok
+                ? mode === 'single' ? 'Sheriff enrichment complete' : 'Batch enrichment complete'
+                : mode === 'single' ? 'Sheriff enrichment failed' : 'Batch enrichment failed'}
+            </span>
+            {result.dry_run && (
+              <span className="rounded-full border border-slate-300 bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
+                dry-run
+              </span>
+            )}
+            <span className="ml-auto text-xs text-slate-400 tabular-nums">{elapsed}s</span>
+          </div>
+
+          {/* Single-SPN result detail */}
+          {mode === 'single' && result.ok && (
+            <div className="space-y-2">
+              {result.custody_status === 'not_in_custody' && (
+                <div className="rounded-lg border border-amber-300 bg-amber-100 px-3 py-2.5 text-sm font-semibold text-amber-800">
+                  ⚠ {result.full_name || `SPN ${result.spn}`} IS NOT IN JAIL
+                  {!result.dry_run && (
+                    <span className="ml-1 text-amber-700 font-normal">— Harris records flagged as no longer a prospect</span>
+                  )}
+                </div>
+              )}
+              {result.custody_status === 'in_custody' && (
+                <div className="rounded-lg border border-blue-300 bg-blue-100 px-3 py-2.5 text-sm font-semibold text-blue-800">
+                  🔒 {result.full_name || `SPN ${result.spn}`} IS IN CUSTODY
+                </div>
+              )}
+              {(result.custody_status === 'no_match' || (!result.matched && result.custody_status == null)) && (
+                <div className="rounded-lg border border-slate-300 bg-slate-100 px-3 py-2.5 text-sm text-slate-600">
+                  No record found for SPN {result.spn}
+                </div>
+              )}
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-3">
+                {[
+                  ['SPN', result.spn],
+                  ['Matched', result.matched ? 'Yes' : 'No'],
+                  ['Written', result.dry_run ? '0 (dry-run)' : (result.written ?? 0)],
+                  ['Date of birth', result.dob],
+                  ['Age', result.age],
+                  ['Sex', result.sex],
+                  ['Race', result.race],
+                ].filter(([, v]) => v != null).map(([k, v]) => (
+                  <div key={k}><dt className="font-medium text-slate-500">{k}</dt><dd className="text-slate-800">{String(v ?? '—')}</dd></div>
+                ))}
+              </dl>
+            </div>
+          )}
+
+          {/* Batch result stats */}
+          {mode === 'batch' && result.ok && (
+            <dl className="grid grid-cols-3 gap-3 text-sm sm:grid-cols-6">
+              {[
+                ['Seen', result.seen ?? result.records_seen],
+                ['Matched', result.matched],
+                ['Written', result.dry_run ? '0 (dry)' : (result.written ?? result.records_written ?? 0)],
+                ['No match', result.unmatched],
+                ['Errors', result.errors, result.errors > 0 ? 'text-rose-600' : ''],
+                ['Skipped', result.skipped_cached, 'text-slate-500'],
+              ].map(([k, v, cls = '']) => (
+                <div key={k} className={cls}>
+                  <dt className="text-xs font-medium text-slate-500">{k}</dt>
+                  <dd className="text-base font-bold tabular-nums">{v ?? '—'}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+
+          {result.message && (
+            <p className={`text-xs ${result.ok ? 'text-emerald-600' : 'text-rose-600'}`}>{result.message}</p>
+          )}
+
+          {result.stdout_tail && (
+            <pre className="max-h-48 overflow-y-auto rounded-lg bg-slate-900 px-3 py-2 text-xs leading-relaxed text-emerald-300 whitespace-pre-wrap">
+              {result.stdout_tail}
+            </pre>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

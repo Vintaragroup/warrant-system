@@ -71,7 +71,9 @@ def emit_result(**kwargs) -> None:
     Emit a machine-readable result line as the final output of a scraper run.
     The Node backend parses this line first before falling back to regex.
     Format: INGESTION_RESULT_JSON={...}
+    Extra keyword args (e.g. date_searched) are merged into the payload.
     """
+    _reserved = {"ok", "source", "status", "seen", "written", "skipped", "errors", "dry_run", "message"}
     payload = {
         "ok": bool(kwargs.get("ok", False)),
         "source": kwargs.get("source"),
@@ -82,6 +84,7 @@ def emit_result(**kwargs) -> None:
         "errors": int(kwargs.get("errors") or 0),
         "dry_run": bool(kwargs.get("dry_run", False)),
         "message": kwargs.get("message"),
+        **{k: v for k, v in kwargs.items() if k not in _reserved},
     }
     print("INGESTION_RESULT_JSON=" + json.dumps(payload, separators=(",", ":")), flush=True)
 
@@ -118,11 +121,13 @@ _STAGING_MAP: Dict[str, str] = {
     # Lookups
     "brazoria_inmates":           "v2_lookup_results",
     "fortbend_inmates":           "v2_lookup_results",
-    "jefferson_events":           "v2_lookup_results",
+    "jefferson_events":           "v2_jefferson_events",
     # Endpoint cache (Galveston discovers its own POST endpoint)
     "galveston_p2c_endpoint":     "v2_galveston_p2c_endpoint",
     # Wharton
     "wharton_inmates":            "v2_wharton_events",
+    # Harris Sheriff enrichment (writes directly — no staging redirect needed)
+    "harris_sheriff_enrichments": "harris_sheriff_enrichments",
 }
 
 
@@ -384,6 +389,94 @@ def run_wharton(db, dry_run: bool, limit: int) -> int:
     return 0
 
 
+def run_harris_sheriff_enrichment(
+    db,
+    dry_run: bool,
+    spn: str = "",
+    seed: str = "",
+    window_days: int = 7,
+    limit: int = 25,
+) -> int:
+    """
+    Enrich Harris County inmate records via the Sheriff JailInfo site.
+
+    Single-SPN mode:   --spn 03334984
+    Batch mode:        --seed recent_harris  (pulls from v2_harris_reports, last 7 days max)
+
+    When dry_run=False and a person is confirmed NOT IN JAIL, their
+    v2_harris_reports records are flagged as no_longer_prospect=True.
+    """
+    from ingestion.harris_sheriff_enrichment import HarrisSheriffEnrichment  # noqa: PLC0415
+
+    # Hard cap: batch window never exceeds 7 days
+    effective_window = min(int(window_days), 7)
+
+    enricher = HarrisSheriffEnrichment(db, dry_run=dry_run)
+
+    if spn:
+        # ── Single-SPN mode ───────────────────────────────────────────────────
+        spn = str(spn).strip()
+        print(f"[harris_sheriff] single-SPN mode — spn={spn} dry_run={dry_run}")
+        result = enricher.enrich_by_spn(spn)
+        ok = result.get("ok", False)
+        custody_status = result.get("custody_status", "unknown")
+        full_name = result.get("full_name", "?")
+        released = custody_status == "not_in_custody"
+        print(
+            f"[harris_sheriff] SPN {spn}: ok={ok} status={custody_status} "
+            f"name={full_name}"
+            + (" => MARKED NO LONGER PROSPECT" if released and not dry_run else "")
+        )
+        emit_result(
+            ok=ok,
+            source="harris_sheriff_enrichment",
+            status="completed" if ok else "failed",
+            seen=1,
+            matched=1 if result.get("matched") else 0,
+            written=0 if dry_run else (1 if ok else 0),
+            errors=0 if ok else 1,
+            dry_run=dry_run,
+            custody_status=custody_status,
+            full_name=full_name,
+            released=released,
+            dob=result.get("dob"),
+            age=result.get("age"),
+            sex=result.get("sex"),
+            race=result.get("race"),
+            warnings=result.get("warnings") or [],
+            message=result.get("error") or None,
+        )
+        return 0 if ok else 1
+
+    # ── Batch mode ────────────────────────────────────────────────────────────
+    if not seed or seed == "recent_harris":
+        print(
+            f"[harris_sheriff] batch mode — seed=recent_harris "
+            f"window={effective_window}d limit={limit} dry_run={dry_run}"
+        )
+        stats = enricher.run_batch(window_days=effective_window, limit=limit)
+        emit_result(
+            ok=stats.get("errors", 0) == 0,
+            source="harris_sheriff_enrichment",
+            status="completed",
+            seen=stats.get("seen", 0),
+            matched=stats.get("matched", 0),
+            written=stats.get("written", 0),
+            errors=stats.get("errors", 0),
+            dry_run=dry_run,
+            unmatched=stats.get("unmatched", 0),
+            skipped_cached=stats.get("skipped_cached", 0),
+            window_days=stats.get("window_days", effective_window),
+            message=f"Harris Sheriff batch enrichment — window={stats.get('window_days', effective_window)}d",
+        )
+        return 0 if stats.get("errors", 0) == 0 else 1
+
+    msg = f"Unknown seed value: {seed!r}. Use 'recent_harris' or omit for batch mode."
+    print(f"[harris_sheriff] ERROR: {msg}", file=sys.stderr)
+    emit_result(ok=False, source="harris_sheriff_enrichment", status="failed", errors=1, dry_run=dry_run, message=msg)
+    return 1
+
+
 def run_fortbend_discovery(
     db,
     *,
@@ -395,6 +488,7 @@ def run_fortbend_discovery(
     first_name: str = "",
     window_days: int = 7,
     limit: int = 25,
+    verify_sample: int = 5,
 ) -> int:
     """
     Run Fort Bend lookup-discovery pipeline.
@@ -403,6 +497,7 @@ def run_fortbend_discovery(
     mode='name'    → single-name lookup  (last_name + optional first_name)
     mode='seed'    → names seeded from recent bulk county records
     mode='auto'    → iterate all aa–zz first/last prefix combinations (676 searches)
+    mode='verify'  → open detail pages and emit VERIFY_DETAIL_JSON evidence lines
     """
     from ingestion.fortbend_discovery import FortBendDiscovery  # noqa: PLC0415
 
@@ -424,6 +519,17 @@ def run_fortbend_discovery(
             print("PROGRESS_JSON=" + json.dumps(payload, separators=(',', ':')), flush=True)
         print(f"[fortbend] discovery auto mode — window={window_days}d limit={limit} dry_run={dry_run}")
         stats = discovery.run_auto(progress_callback=_progress_cb)
+    elif mode == 'verify':
+        print(f"[fortbend] verify mode \u2014 first={first_prefix!r} last={last_prefix!r} "
+              f"sample={verify_sample} window={window_days}d dry_run={dry_run}")
+        stats = discovery.run_verify(
+            first_prefix=first_prefix,
+            last_prefix=last_prefix,
+            verify_sample=verify_sample,
+        )
+        # Emit one VERIFY_DETAIL_JSON line per sampled detail page
+        for record in stats.get('verify_details', []):
+            print("VERIFY_DETAIL_JSON=" + json.dumps(record, separators=(',', ':')), flush=True)
     else:  # name mode (default)
         search_desc = last_name + (f", {first_name}" if first_name else "")
         print(f"[fortbend] discovery name mode — '{search_desc}' window={window_days}d limit={limit} dry_run={dry_run}")
@@ -438,7 +544,9 @@ def run_fortbend_discovery(
     stale_cached     = stats.get('stale_cached', 0)
     prefixes_checked = stats.get('prefixes_checked', 0)
     errors           = stats.get('errors', 0)
-
+    unknown_date     = stats.get('unknown_date', 0)
+    total_prefixes   = 676 if mode == 'auto' else None
+    completed_full_sweep = (mode == 'auto' and prefixes_checked >= 676)
     print(f"[fortbend] discovery complete — seen={seen} details_checked={details_checked} "
           f"recent_matches={recent_matches} stale_cached={stale_cached} "
           f"skipped={skipped} skipped_cached={skipped_cached} errors={errors} written={written}")
@@ -459,6 +567,10 @@ def run_fortbend_discovery(
             "recent_matches":  recent_matches,
             "stale_cached":    stale_cached,
             "prefixes_checked": prefixes_checked,
+            "total_prefixes":  total_prefixes,
+            "completed_full_sweep": completed_full_sweep,
+            "unknown_date":    unknown_date,
+            "mode":            mode,
         }, separators=(",", ":")),
         flush=True,
     )
@@ -500,7 +612,8 @@ def run_lookup(
     scraper = LookupCls(db)
 
     if not dry_run:
-        scraper.COLLECTION = "v2_lookup_results"
+        # Jefferson gets its own staging collection; other lookups share v2_lookup_results
+        scraper.COLLECTION = "v2_jefferson_events" if source == "jefferson_lookup" else "v2_lookup_results"
 
     county_label = source.replace("_lookup", "")
 
@@ -547,7 +660,10 @@ def run_lookup(
         )
         print(f"  [{status}] result[{i}]: {result_str}")
     n = len(results)
-    emit_result(ok=True, source=source, status="completed", seen=n, written=0 if dry_run else n, dry_run=dry_run)
+    extra = {"date_searched": booking_date} if source == "jefferson_lookup" and booking_date else {}
+    emit_result(ok=True, source=source, status="completed", seen=n, written=0 if dry_run else n, dry_run=dry_run,
+                message=f"Jefferson date scrape completed" if source == "jefferson_lookup" and booking_date else None,
+                **extra)
     return 0
 
 
@@ -564,12 +680,13 @@ def _check_feature_flags(source: str) -> None:
     dry_run_env = _flag("DRY_RUN", default=True)
 
     source_flags: Dict[str, str] = {
-        "galveston":       "ENABLE_V2_GALVESTON",
-        "harris_reports":  "ENABLE_V2_HARRIS_REPORTS",
-        "brazoria_lookup": "ENABLE_V2_LOOKUPS",
-        "fortbend_lookup": "ENABLE_V2_LOOKUPS",
-        "jefferson_lookup":"ENABLE_V2_LOOKUPS",
-        "wharton":         "ENABLE_V2_WHARTON",
+        "galveston":                  "ENABLE_V2_GALVESTON",
+        "harris_reports":              "ENABLE_V2_HARRIS_REPORTS",
+        "brazoria_lookup":             "ENABLE_V2_LOOKUPS",
+        "fortbend_lookup":             "ENABLE_V2_LOOKUPS",
+        "jefferson_lookup":            "ENABLE_V2_LOOKUPS",
+        "wharton":                     "ENABLE_V2_WHARTON",
+        "harris_sheriff_enrichment":   "ENABLE_V2_HARRIS_REPORTS",
     }
 
     flag_name = source_flags.get(source)
@@ -602,7 +719,7 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument(
         "--source",
         required=True,
-        choices=["galveston", "harris_reports", "wharton", "brazoria_lookup", "fortbend_lookup", "jefferson_lookup"],
+        choices=["galveston", "harris_reports", "wharton", "brazoria_lookup", "fortbend_lookup", "jefferson_lookup", "harris_sheriff_enrichment"],
         help="Which v2 scraper to run",
     )
     p.add_argument(
@@ -636,18 +753,53 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument(
         "--booking-date",
         default="",
+        dest="booking_date",
         help=(
-            "Booking date filter (YYYY-MM-DD, 'today', or 'yesterday'). "
+            "Booking date filter (YYYY-MM-DD, M/D/YYYY, 'today', or 'yesterday'). "
             "jefferson_lookup: supports date-only mode (no --last-name required). "
             "brazoria_lookup: additive filter — --last-name and --first-name still required."
         ),
     )
+    p.add_argument(
+        "--date",
+        default="",
+        dest="date_alias",
+        help="Alias for --booking-date. Supports 'today', 'yesterday', YYYY-MM-DD, or M/D/YYYY.",
+    )
+    p.add_argument(
+        "--days-back",
+        type=int,
+        default=1,
+        dest="days_back",
+        help=(
+            "(jefferson_lookup) Run for this many days ending today. "
+            "days-back=1 means today only; days-back=7 means today + past 6 days."
+        ),
+    )
+    # ── Harris Sheriff enrichment args ──────────────────────────────────────
+    p.add_argument(
+        "--spn",
+        default="",
+        help="Single SPN to enrich via Harris Sheriff JailInfo (harris_sheriff_enrichment only)",
+    )
+    p.add_argument(
+        "--seed",
+        default="",
+        help="Batch seed mode for harris_sheriff_enrichment. Use 'recent_harris' to enrich SPNs from recent Harris reports.",
+    )
     # ── Fort Bend discovery args ─────────────────────────────────────────────
     p.add_argument(
         "--mode",
-        choices=["name", "prefix", "seed", "auto"],
+        choices=["name", "prefix", "seed", "auto", "verify"],
         default="name",
-        help="fortbend_lookup discovery mode: name (default), prefix, seed, or auto (aa–zz)",
+        help="fortbend_lookup discovery mode: name (default), prefix, seed, auto (aa\u2013zz), or verify",
+    )
+    p.add_argument(
+        "--verify-sample",
+        type=int,
+        default=5,
+        dest="verify_sample",
+        help="Number of detail pages to open in verify mode (default: 5)",
     )
     p.add_argument(
         "--first-prefix",
@@ -714,6 +866,15 @@ def main() -> int:
         dry_run = _flag("DRY_RUN", default=True)
     else:
         dry_run = args.dry_run
+
+    # --date is an alias for --booking-date; both support M/D/YYYY
+    if args.date_alias and not args.booking_date:
+        args.booking_date = args.date_alias
+
+    # Jefferson: default to 'today' when no last_name and no date given
+    if args.source == "jefferson_lookup" and not args.last_name and not args.booking_date:
+        args.booking_date = "today"
+        print(f"[jefferson] no --last-name or --date given — defaulting to booking_date=today")
 
     _check_feature_flags(args.source)
 
@@ -819,7 +980,7 @@ def main() -> int:
              "brazoria_lookup": "brazoria_inmates",
              "fortbend_lookup": "fortbend_inmates",
              "jefferson_lookup": "jefferson_events"}.get(args.source, args.source),
-            "v2_lookup_results",
+            "v2_jefferson_events" if args.source == "jefferson_lookup" else "v2_lookup_results",
         )
         print(f"[v2] *** NON-DRY-RUN: staging-write mode ***")
         print(f"[v2] source={args.source} limit={args.limit}")
@@ -836,6 +997,15 @@ def main() -> int:
             exit_code = run_harris_reports(db, dry_run=dry_run, limit=args.limit, force_reingest=args.force_reingest)
         elif args.source == "wharton":
             exit_code = run_wharton(db, dry_run=dry_run, limit=args.limit)
+        elif args.source == "harris_sheriff_enrichment":
+            exit_code = run_harris_sheriff_enrichment(
+                db,
+                dry_run=dry_run,
+                spn=getattr(args, "spn", ""),
+                seed=getattr(args, "seed", ""),
+                window_days=min(getattr(args, "window_days", 7), 7),
+                limit=args.limit,
+            )
         else:
             booking_date = getattr(args, "booking_date", "")
             mode         = getattr(args, "mode", "name")
@@ -846,7 +1016,7 @@ def main() -> int:
             # ── Fort Bend discovery mode ──────────────────────────────────────
             is_fortbend_discovery = (
                 args.source == "fortbend_lookup"
-                and (mode in ("prefix", "seed", "auto") or first_prefix or last_prefix)
+                and (mode in ("prefix", "seed", "auto", "verify") or first_prefix or last_prefix)
             )
             if is_fortbend_discovery:
                 if mode == "prefix" and not (first_prefix or last_prefix):
@@ -865,10 +1035,11 @@ def main() -> int:
                         first_name=args.first_name,
                         window_days=window_days,
                         limit=args.limit,
+                        verify_sample=getattr(args, 'verify_sample', 5),
                     )
             # ── Standard lookup sources ───────────────────────────────────────
             elif True:
-                # jefferson_lookup allows either last_name or booking_date
+                # jefferson_lookup allows either last_name or booking_date (defaults to today)
                 need_last_name = not (args.source == "jefferson_lookup" and booking_date)
                 if need_last_name and not args.last_name:
                     msg = f"--last-name is required for {args.source}"
@@ -882,15 +1053,41 @@ def main() -> int:
                     emit_result(ok=False, source=args.source, status="failed", errors=1, dry_run=dry_run, message=msg)
                     exit_code = 1
                 else:
-                    exit_code = run_lookup(
-                        source=args.source,
-                        db=db,
-                        dry_run=dry_run,
-                        last_name=args.last_name,
-                        first_name=args.first_name,
-                        booking_date=booking_date,
-                        limit=args.limit,
-                    )
+                    # ── Jefferson --days-back multi-day loop ─────────────────
+                    days_back = getattr(args, "days_back", 1) if args.source == "jefferson_lookup" else 1
+                    if days_back > 1 and args.source == "jefferson_lookup":
+                        from datetime import date as _date, timedelta as _td  # noqa: PLC0415
+                        from zoneinfo import ZoneInfo  # noqa: PLC0415
+                        ct = ZoneInfo("America/Chicago")
+                        today_ct = __import__("datetime").datetime.now(ct).date()
+                        total_seen = total_written = 0
+                        last_date = None
+                        for day_offset in range(days_back):
+                            loop_date = (today_ct - _td(days=day_offset)).isoformat()
+                            print(f"[jefferson] days-back loop: scraping date {loop_date} "
+                                  f"({day_offset + 1}/{days_back})")
+                            exit_code = run_lookup(
+                                source=args.source,
+                                db=db,
+                                dry_run=dry_run,
+                                last_name=args.last_name,
+                                first_name=args.first_name,
+                                booking_date=loop_date,
+                                limit=args.limit,
+                            )
+                            last_date = loop_date
+                        # emit_result already called per iteration; print aggregate summary
+                        print(f"[jefferson] days-back complete: {days_back} days scraped")
+                    else:
+                        exit_code = run_lookup(
+                            source=args.source,
+                            db=db,
+                            dry_run=dry_run,
+                            last_name=args.last_name,
+                            first_name=args.first_name,
+                            booking_date=booking_date,
+                            limit=args.limit,
+                        )
     except Exception as exc:
         run_error = str(exc)
         exit_code = 1

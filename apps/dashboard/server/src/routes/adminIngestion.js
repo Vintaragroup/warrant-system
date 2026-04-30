@@ -39,6 +39,7 @@ const SUPPORTED_SOURCES = [
   'fortbend_lookup',
   'jefferson_lookup',
   'brazoria_lookup',
+  'harris_sheriff_enrichment',
 ];
 
 // Per-source maximum limit for manual runs
@@ -49,6 +50,7 @@ const SOURCE_MAX_LIMITS = {
   fortbend_lookup: 100,
   jefferson_lookup: 100,
   brazoria_lookup: 100,
+  harris_sheriff_enrichment: 50,
 };
 
 // Staging collection names per source (for status display)
@@ -57,8 +59,9 @@ const SOURCE_STAGING_COLLECTIONS = {
   harris_reports: 'v2_harris_reports',
   wharton: 'v2_wharton_events',
   fortbend_lookup: 'v2_lookup_results',
-  jefferson_lookup: 'v2_lookup_results',
+  jefferson_lookup: 'v2_jefferson_events',
   brazoria_lookup: 'v2_lookup_results',
+  harris_sheriff_enrichment: 'harris_sheriff_enrichments',
 };
 
 const SOURCE_LIVE_COLLECTIONS = {
@@ -323,12 +326,16 @@ function _spawnAutoDiscovery(jobId, pyArgs, childEnv, createdBy, redactedCmd) {
 
     const structured = parseStructuredResult(stdoutBuf, stdoutBuf);
     const finalStatus = exitCode === 0 ? 'completed' : 'failed';
+    const finalPrefixesChecked = structured?.prefixes_checked ?? job.prefixes_checked ?? 0;
+    const completedFullSweep = finalStatus === 'completed' && finalPrefixesChecked >= 676;
     _updateJob(jobId, {
       status: finalStatus,
       completed_at: new Date().toISOString(),
       seen: structured?.seen ?? job.seen,
       written: structured?.written ?? job.written,
-      prefixes_checked: structured?.prefixes_checked ?? job.prefixes_checked,
+      prefixes_checked: finalPrefixesChecked,
+      prefixes_total: 676,
+      completed_full_sweep: completedFullSweep,
       percent_complete: finalStatus === 'completed' ? 100 : job.percent_complete,
       stdout_tail: tailOutput(redactSecrets(stdoutBuf)),
       stderr_tail: tailOutput(redactSecrets(stderrBuf)),
@@ -629,6 +636,10 @@ r.post('/run', async (req, res) => {
     firstPrefix = '',
     lastPrefix = '',
     windowDays = 7,
+    verifySample = 5,
+    // Harris Sheriff enrichment params
+    spn = '',
+    seed = '',
   } = req.body || {};
 
   // Accept both `discoveryMode` (new) and `mode` (legacy) field names
@@ -654,13 +665,20 @@ r.post('/run', async (req, res) => {
     });
   }
 
+  // Jefferson: if running from bulk (no last_name, no booking_date), default to today.
+  // This allows the bulk button to trigger jefferson without manual params.
+  const effectiveBookingDate = (source === 'jefferson_lookup' && !lastName && !bookingDate)
+    ? 'today'
+    : bookingDate;
+
   // Lookup sources require last_name OR (jefferson only) booking_date
   // Fort Bend discovery modes (prefix/seed) don't need last_name
   const isLookup = source.endsWith('_lookup');
-  const jeffersonDateMode = source === 'jefferson_lookup' && !!bookingDate;
+  const jeffersonDateMode = source === 'jefferson_lookup' && (!!effectiveBookingDate || !lastName);
   const isFortbendDiscovery =
     source === 'fortbend_lookup' &&
-    (discoveryMode === 'prefix' || discoveryMode === 'seed' || discoveryMode === 'auto' || firstPrefix || lastPrefix);
+    (discoveryMode === 'prefix' || discoveryMode === 'seed' || discoveryMode === 'auto' ||
+     discoveryMode === 'verify' || firstPrefix || lastPrefix);
   if (isLookup && !lastName && !jeffersonDateMode && !isFortbendDiscovery) {
     return res.status(400).json({
       ok: false,
@@ -683,6 +701,11 @@ r.post('/run', async (req, res) => {
   }
 
   const limit = clampLimit(source, limitParam);
+  // For Fort Bend auto-discovery, limit=0 means full aa–zz sweep (no row cap).
+  // clampLimit converts 0→20 via `Number(0)||20`, so we bypass it for this case.
+  const effectiveLimit = (source === 'fortbend_lookup' && discoveryMode === 'auto' && Number(limitParam) <= 0)
+    ? 0
+    : limit;
   const createdBy = req.user?.uid || req.user?.email || 'admin';
 
   // ── Locate pipeline root ────────────────────────────────────────────────────
@@ -708,7 +731,7 @@ r.post('/run', async (req, res) => {
   const pyArgs = [
     path.join(PIPELINE_ROOT, 'scripts', 'run_ingestion_v2.py'),
     '--source', source,
-    '--limit', String(limit),
+    '--limit', String(effectiveLimit),
     '--trigger', 'manual',
     '--created-by', createdBy,
   ];
@@ -722,7 +745,7 @@ r.post('/run', async (req, res) => {
   if (force) pyArgs.push('--force');
   if (firstName) { pyArgs.push('--first-name', firstName); }
   if (lastName) { pyArgs.push('--last-name', lastName); }
-  if (bookingDate) { pyArgs.push('--booking-date', bookingDate); }
+  if (effectiveBookingDate) { pyArgs.push('--booking-date', effectiveBookingDate); }
 
   // Fort Bend discovery additional args
   if (source === 'fortbend_lookup') {
@@ -730,10 +753,21 @@ r.post('/run', async (req, res) => {
     if (firstPrefix) { pyArgs.push('--first-prefix', String(firstPrefix)); }
     if (lastPrefix) { pyArgs.push('--last-prefix', String(lastPrefix)); }
     if (windowDays && Number(windowDays) !== 7) { pyArgs.push('--window-days', String(Number(windowDays))); }
+    if (discoveryMode === 'verify') { pyArgs.push('--verify-sample', String(Number(verifySample) || 5)); }
+  }
+
+  // Harris Sheriff enrichment additional args
+  if (source === 'harris_sheriff_enrichment') {
+    if (spn) { pyArgs.push('--spn', String(spn).trim()); }
+    else {
+      // Batch mode — always seed from recent_harris, always cap window at 7 days
+      pyArgs.push('--seed', seed || 'recent_harris');
+      pyArgs.push('--window-days', '7');
+    }
   }
 
   // Redacted command for logging (never include secrets)
-  const redactedCmd = `python3 scripts/run_ingestion_v2.py --source ${source} --limit ${limit} --trigger manual${dryRun ? ' --dry-run' : ' --no-dry-run'}`;
+  const redactedCmd = `python3 scripts/run_ingestion_v2.py --source ${source} --limit ${effectiveLimit} --trigger manual${dryRun ? ' --dry-run' : ' --no-dry-run'}`;
 
   // ── Async background job: Fort Bend auto-discovery ─────────────────────────
   if (isFortbendDiscovery && discoveryMode === 'auto') {
@@ -815,24 +849,38 @@ r.post('/run', async (req, res) => {
   const structured = parseStructuredResult(stdout, stdout);
   let recordsSeen, recordsWritten, skipped, runMessage;
   let detailsChecked = null, recentMatches = null, staleCached = null;
-  let prefixesChecked = null, skippedCached = null;
+  let prefixesChecked = null, skippedCached = null, unknownDate = null;
+  let dateSearched = null;
   if (structured) {
     recordsSeen    = structured.seen ?? null;
     recordsWritten = structured.written ?? null;
     skipped        = structured.skipped ?? 0;
     runMessage     = structured.message ?? null;
+    dateSearched   = structured.date_searched ?? null;
     // Fort Bend discovery extra fields
     detailsChecked  = structured.details_checked  ?? null;
     recentMatches   = structured.recent_matches   ?? null;
     staleCached     = structured.stale_cached     ?? null;
     prefixesChecked = structured.prefixes_checked ?? null;
     skippedCached   = structured.skipped_cached   ?? null;
+    unknownDate     = structured.unknown_date     ?? null;
   } else {
     const counts = parseOutputCounts(stdout, stdout, dryRun);
     recordsSeen    = counts.seen;
     recordsWritten = counts.written;
     skipped        = 0;
     runMessage     = null;
+  }
+
+  // Parse VERIFY_DETAIL_JSON lines emitted per detail page
+  const verificationDetails = [];
+  for (const line of stdout.split('\n')) {
+    if (line.startsWith('VERIFY_DETAIL_JSON=')) {
+      try {
+        const detail = JSON.parse(line.slice('VERIFY_DETAIL_JSON='.length));
+        if (verificationDetails.length < 25) verificationDetails.push(detail);
+      } catch { /* ignore malformed line */ }
+    }
   }
 
   // Write audit record for every manual admin-triggered run
@@ -876,12 +924,17 @@ r.post('/run', async (req, res) => {
     records_seen: recordsSeen,
     records_written: recordsWritten,
     message: runMessage,
+    date_searched: dateSearched,
     // Fort Bend discovery extra fields (null for other sources)
     details_checked:  detailsChecked,
     recent_matches:   recentMatches,
     stale_cached:     staleCached,
     prefixes_checked: prefixesChecked,
     skipped_cached:   skippedCached,
+    unknown_date:     unknownDate,
+    // Fort Bend verify mode
+    verification_details: verificationDetails.length > 0 ? verificationDetails : undefined,
+    verification_sample_count: verificationDetails.length > 0 ? verificationDetails.length : undefined,
     command: redactedCmd,
     stdout_tail: tailOutput(redactSecrets(stdout)),
     stderr_tail: tailOutput(redactSecrets(stderr)),
@@ -932,12 +985,73 @@ r.post('/run-all', async (req, res) => {
   const createdBy = req.user?.uid || req.user?.email || 'admin';
   const results = [];
 
-  // Run non-lookup sources; skip lookup sources in bulk mode (require name params)
-  const bulkSources = ['galveston', 'harris_reports', 'wharton'];
-  const skippedLookup = ['fortbend_lookup', 'jefferson_lookup', 'brazoria_lookup'];
+  // Run all bulk sources: galveston, harris_reports, wharton, jefferson_lookup (synchronous),
+  // and fortbend_lookup (async aa–zz discovery job).
+  const bulkSources = ['galveston', 'harris_reports', 'wharton', 'jefferson_lookup', 'fortbend_lookup'];
+  const skippedLookup = ['brazoria_lookup'];
 
   for (const source of bulkSources) {
+    // ── Fort Bend: queue async auto-discovery (aa–zz prefix sweep) ───────────────
+    if (source === 'fortbend_lookup') {
+      const fbPyArgs = [
+        path.join(PIPELINE_ROOT, 'scripts', 'run_ingestion_v2.py'),
+        '--source', 'fortbend_lookup',
+        '--limit', '0',
+        '--mode', 'auto',
+        '--trigger', 'manual',
+        '--created-by', createdBy,
+        dryRun ? '--dry-run' : '--no-dry-run',
+      ];
+      const fbEnv = {
+        ...process.env,
+        PYTHONPATH: PIPELINE_ROOT,
+        USE_V2_INGESTION: dryRun ? 'false' : 'true',
+        DRY_RUN: dryRun ? 'true' : 'false',
+      };
+      const fbCmd = `python3 scripts/run_ingestion_v2.py --source fortbend_lookup --limit 0 --mode auto --trigger manual${dryRun ? ' --dry-run' : ' --no-dry-run'}`;
+      const fbJob = _createJob({ source: 'fortbend_lookup', mode: 'auto', dry_run: dryRun, created_by: createdBy });
+      _spawnAutoDiscovery(fbJob.job_id, fbPyArgs, fbEnv, createdBy, fbCmd);
+      // Write a 'running' audit record for the start of the Fort Bend bulk job
+      try {
+        const db = getDb();
+        await writeAuditRecord(db, {
+          source: 'fortbend_lookup',
+          trigger: dryRun ? 'manual_bulk_dry_run' : 'manual_all',
+          status: 'running',
+          dry_run: dryRun,
+          started_at: new Date().toISOString(),
+          completed_at: null,
+          records_seen: null,
+          records_written: null,
+          exit_code: null,
+          command_summary: fbCmd,
+          created_by: createdBy,
+          job_id: fbJob.job_id,
+          mode: 'auto',
+          scrape_type: 'discovery_bulk',
+          data_confidence: 'high_discovery',
+        });
+      } catch { /* best-effort */ }
+      results.push({
+        source: 'fortbend_lookup',
+        status: 'queued',
+        job_id: fbJob.job_id,
+        seen: null,
+        written: null,
+        error: null,
+        message: 'Fort Bend full discovery sweep started',
+        mode: 'auto',
+      });
+      continue;
+    }
+
     const limit = clampLimit(source, limitParam);
+    // Jefferson bulk: search today as date mode
+    const bulkExtraArgs = [];
+    if (source === 'jefferson_lookup') {
+      bulkExtraArgs.push('--booking-date', 'today');
+    }
+
     const pyArgs = [
       path.join(PIPELINE_ROOT, 'scripts', 'run_ingestion_v2.py'),
       '--source', source,
@@ -945,6 +1059,7 @@ r.post('/run-all', async (req, res) => {
       '--trigger', 'manual',
       '--created-by', createdBy,
       dryRun ? '--dry-run' : '--no-dry-run',
+      ...bulkExtraArgs,
     ];
     const childEnv = {
       ...process.env,
@@ -981,12 +1096,13 @@ r.post('/run-all', async (req, res) => {
       });
 
       const structured = parseStructuredResult(stdout, stdoutHead);
-      let seen, written, srcSkipped, srcMessage;
+      let seen, written, srcSkipped, srcMessage, srcDateSearched;
       if (structured) {
         seen = structured.seen ?? null;
         written = structured.written ?? null;
         srcSkipped = structured.skipped ?? 0;
         srcMessage = structured.message ?? null;
+        srcDateSearched = structured.date_searched ?? null;
       } else {
         const counts = parseOutputCounts(stdout, stdoutHead, dryRun);
         seen = counts.seen;
@@ -1021,7 +1137,7 @@ r.post('/run-all', async (req, res) => {
         console.error(`[adminIngestion] /run-all audit write failed for ${source}:`, auditErr.message);
       }
 
-      results.push({ source, status: srcStatus, seen, written, error: srcError });
+      results.push({ source, status: srcStatus, seen, written, error: srcError, date_searched: srcDateSearched ?? null });
     } catch (err) {
       // Write failure audit even when spawn itself throws
       try {
@@ -1049,8 +1165,6 @@ r.post('/run-all', async (req, res) => {
   // Lookup sources cannot run in bulk mode — report as skipped with appropriate messages
   const skipTs = new Date().toISOString();
   const lookupSkipMessages = {
-    fortbend_lookup:  'Use Lookup Discovery tab to run Fort Bend with prefix/name/seed mode.',
-    jefferson_lookup: 'Requires name/date params — use Run Individual Source.',
     brazoria_lookup:  'Requires name + first_name — use Run Individual Source.',
   };
   for (const source of skippedLookup) {
@@ -1430,6 +1544,118 @@ r.post('/jobs/:jobId/cancel', (req, res) => {
   if (child) { child.kill('SIGTERM'); _jobProcesses.delete(req.params.jobId); }
   _updateJob(req.params.jobId, { status: 'cancelled', completed_at: new Date().toISOString() });
   return res.json({ ok: true, job: _jobStore.get(req.params.jobId) });
+});
+
+// ── GET /api/admin/ingestion/enrichment/harris-sheriff/:spn ───────────────────
+// Returns the stored enrichment document for a given SPN (if any).
+
+r.get('/enrichment/harris-sheriff/:spn', async (req, res) => {
+  try {
+    const db = getDb();
+    const spn = String(req.params.spn || '').trim();
+    if (!spn) {
+      return res.status(400).json({ ok: false, error: 'MISSING_SPN', message: 'spn is required' });
+    }
+    const doc = await db.collection('harris_sheriff_enrichments').findOne(
+      { spn },
+      { projection: { _id: 0 } },
+    );
+    return res.json({ ok: true, enrichment: doc ?? null });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: 'SERVER_ERROR', message: err.message });
+  }
+});
+
+// ── POST /api/admin/ingestion/enrich/harris-sheriff ───────────────────────────
+// Runs a single-SPN enrichment synchronously. Accepts { spn, dry_run }.
+// When dry_run=false and the person is NOT IN JAIL, v2_harris_reports records
+// are automatically flagged as no_longer_prospect=true.
+
+r.post('/enrich/harris-sheriff', async (req, res) => {
+  const { spn: spnParam = '', dry_run: dryRunParam = true } = req.body || {};
+
+  const spn = String(spnParam || '').trim().replace(/\D/g, '').padStart(8, '0');
+  if (!spn || spn === '00000000') {
+    return res.status(400).json({ ok: false, error: 'MISSING_SPN', message: 'spn is required' });
+  }
+
+  const dryRun = dryRunParam !== false && dryRunParam !== 'false';
+  const allowNonDryRun = String(process.env.ALLOW_ADMIN_NON_DRY_RUN || 'false').toLowerCase() === 'true';
+  if (!dryRun && !allowNonDryRun) {
+    return res.status(403).json({
+      ok: false,
+      error: 'NON_DRY_RUN_BLOCKED',
+      message: 'Non-dry-run is disabled. Set ALLOW_ADMIN_NON_DRY_RUN=true to enable writes from the admin UI.',
+    });
+  }
+
+  try {
+    const { existsSync } = await import('node:fs');
+    if (!existsSync(path.join(PIPELINE_ROOT, 'scripts', 'run_ingestion_v2.py'))) {
+      return res.status(503).json({ ok: false, error: 'PIPELINE_NOT_FOUND' });
+    }
+  } catch (err) {
+    return res.status(503).json({ ok: false, error: 'PIPELINE_CHECK_FAILED', message: err.message });
+  }
+
+  const createdBy = req.user?.uid || req.user?.email || 'admin';
+  const pyArgs = [
+    path.join(PIPELINE_ROOT, 'scripts', 'run_ingestion_v2.py'),
+    '--source', 'harris_sheriff_enrichment',
+    '--spn', spn,
+    '--limit', '1',
+    '--trigger', 'manual',
+    '--created-by', createdBy,
+    dryRun ? '--dry-run' : '--no-dry-run',
+  ];
+  const childEnv = {
+    ...process.env,
+    PYTHONPATH: PIPELINE_ROOT,
+    USE_V2_INGESTION: dryRun ? 'false' : 'true',
+    DRY_RUN: dryRun ? 'true' : 'false',
+  };
+  const redactedCmd = `python3 scripts/run_ingestion_v2.py --source harris_sheriff_enrichment --spn ${spn}${dryRun ? ' --dry-run' : ' --no-dry-run'}`;
+
+  let stdout = '';
+  let stderr = '';
+  let exitCode = null;
+  try {
+    await new Promise((resolve, reject) => {
+      const child = spawn('python3', pyArgs, {
+        cwd: PIPELINE_ROOT,
+        env: childEnv,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      child.stdout.on('data', (c) => { stdout += c.toString(); if (stdout.length > OUTPUT_TAIL_CHARS * 2) stdout = stdout.slice(-OUTPUT_TAIL_CHARS * 2); });
+      child.stderr.on('data', (c) => { stderr += c.toString(); if (stderr.length > OUTPUT_TAIL_CHARS * 2) stderr = stderr.slice(-OUTPUT_TAIL_CHARS * 2); });
+      child.on('close', (code) => { exitCode = code; resolve(); });
+      child.on('error', reject);
+      const timer = setTimeout(() => { child.kill('SIGTERM'); reject(new Error('Timed out after 60 seconds')); }, 60_000);
+      child.on('close', () => clearTimeout(timer));
+    });
+  } catch (spawnErr) {
+    return res.status(500).json({ ok: false, error: 'SPAWN_FAILED', message: spawnErr.message, command: redactedCmd });
+  }
+
+  const structured = parseStructuredResult(stdout, stdout);
+
+  return res.json({
+    ok: exitCode === 0,
+    spn,
+    dry_run: dryRun,
+    custody_status: structured?.custody_status ?? null,
+    full_name: structured?.full_name ?? null,
+    dob: structured?.dob ?? null,
+    age: structured?.age ?? null,
+    sex: structured?.sex ?? null,
+    race: structured?.race ?? null,
+    released: structured?.released ?? false,
+    matched: (structured?.matched ?? 0) > 0,
+    exit_code: exitCode,
+    command: redactedCmd,
+    stdout_tail: tailOutput(redactSecrets(stdout)),
+    stderr_tail: tailOutput(redactSecrets(stderr)),
+  });
 });
 
 export default r;

@@ -8,6 +8,12 @@ import { listMessages, resendMessage as queueResendMessage } from '../services/m
 import { assertPermission as ensurePermission, filterByDepartment, hasPermission } from './utils/authz.js';
 import { listProviders as listEnrichmentProviders, getProvider as getEnrichmentProvider, getDefaultProviderId } from '../lib/enrichment/registry.js';
 import { splitName, nextExpiry } from '../lib/enrichment/utils.js';
+import {
+  V2_CASE_COLLECTIONS,
+  buildNormalizeStages,
+  buildV2WindowFilter,
+  buildCountyStage,
+} from '../lib/v2Collections.js';
 
 // County collections mapping (read directly from simple_* collections)
 const COUNTY_COLLECTIONS = [
@@ -16,6 +22,16 @@ const COUNTY_COLLECTIONS = [
   'simple_galveston',
   'simple_harris',
   'simple_jefferson',
+];
+
+// V2 pipeline collections — used as fallback in GET /cases/:id so that records
+// displayed by the dashboard (which reads v2_* collections) can be resolved.
+const V2_COUNTY_COLLECTIONS = [
+  'v2_galveston_events',
+  'v2_harris_reports',
+  'v2_wharton_events',
+  'v2_lookup_results',
+  'v2_jefferson_events',
 ];
 
 const COUNTY_MAP = new Map([
@@ -349,218 +365,124 @@ r.get('/stats', async (req, res) => {
       : 'none';
     const cacheKey = `cases:stats:v1:${rolesKey}:${deptKey}`;
 
-    const { fromCache, data } = await withCache(cacheKey, async () => {
-      const startOfToday = new Date();
-      startOfToday.setHours(0, 0, 0, 0);
-      const endOfToday = new Date(startOfToday);
-      endOfToday.setDate(endOfToday.getDate() + 1);
-      const upcomingEnd = new Date(startOfToday);
-      upcomingEnd.setDate(upcomingEnd.getDate() + 7);
+    const { fromCache, data } = await withCache(cacheKey, async () => {      const scopedMatch = scopedCaseFilter(req, {});
 
-      const scopedMatch = scopedCaseFilter(req, {});
-      const pipeline = [];
-      if (Object.keys(scopedMatch).length) {
-        pipeline.push({ $match: scopedMatch });
-      }
+      // ── V2 stats pipeline ────────────────────────────────────────────────────
+      // Query v2_* pipeline collections (current data) instead of simple_harris.
+      // CRM-specific fields (followUpAt, assignedTo, documents) don't exist in v2_*
+      // so those facets return 0. Attention counts use bond_label / _upsert_key.anchor.
 
-      pipeline.push({
-        $facet: {
-          stages: [
-            {
-              $group: {
-                _id: { $ifNull: ['$crm_stage', 'new'] },
-                count: { $sum: 1 },
+      const db = mongoose.connection.db;
+      if (!db) throw new Error('Database not connected');
+
+      const normalizeStages = buildNormalizeStages();
+
+      // Default window: last 60 days (matches Cases page DEFAULT_CASE_WINDOW_DAYS)
+      const sixtyDaysAgo = new Date();
+      sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+      const ymd60d = sixtyDaysAgo.toISOString().slice(0, 10);
+
+      // Compute attention flags as boolean fields in-pipeline
+      const attentionSetStage = {
+        $set: {
+          _refer_to_magistrate: {
+            $or: [
+              { $regexMatch: { input: { $ifNull: ['$bond_label', ''] }, regex: 'REFER TO MAGISTRATE', options: 'i' } },
+              { $regexMatch: { input: { $ifNull: ['$bond', ''] }, regex: 'REFER TO MAGISTRATE', options: 'i' } },
+            ],
+          },
+          _letter_suffix: {
+            $and: [
+              { $gt: [{ $strLenCP: { $ifNull: ['$_upsert_key.anchor', ''] } }, 0] },
+              { $not: [{ $regexMatch: { input: { $ifNull: ['$_upsert_key.anchor', '0'] }, regex: '^[0-9]+$' } }] },
+            ],
+          },
+        },
+      };
+
+      // Per-collection pipeline: normalize → county → attention flags → scoping → date window
+      const perCollPipelineStats = (collName) => [
+        ...normalizeStages,
+        buildCountyStage(collName),
+        attentionSetStage,
+        ...(Object.keys(scopedMatch).length ? [{ $match: scopedMatch }] : []),
+        { $match: { booking_date_n: { $gte: ymd60d } } },
+      ];
+
+      const [baseStatsColl, ...restStatsColl] = V2_CASE_COLLECTIONS;
+
+      const facetPipeline = [
+        ...perCollPipelineStats(baseStatsColl),
+        ...restStatsColl.map((coll) => ({
+          $unionWith: { coll, pipeline: perCollPipelineStats(coll) },
+        })),
+        {
+          $facet: {
+            // CRM stages — v2 docs have no crm_stage, all default to 'new'
+            stages: [
+              { $group: { _id: { $ifNull: ['$crm_stage', 'new'] }, count: { $sum: 1 } } },
+            ],
+            // Follow-ups — v2 docs have no crm_details.followUpAt; return zeroes
+            followUps: [
+              {
+                $group: {
+                  _id: null,
+                  overdue:      { $sum: 0 },
+                  dueToday:     { $sum: 0 },
+                  upcoming:     { $sum: 0 },
+                  unscheduled:  { $sum: 1 },
+                },
               },
-            },
-          ],
-          followUps: [
-            {
-              $group: {
-                _id: null,
-                overdue: {
-                  $sum: {
-                    $cond: [
-                      {
-                        $and: [
-                          { $ne: ['$crm_details.followUpAt', null] },
-                          { $lt: ['$crm_details.followUpAt', startOfToday] },
-                        ],
-                      },
-                      1,
-                      0,
-                    ],
-                  },
-                },
-                dueToday: {
-                  $sum: {
-                    $cond: [
-                      {
-                        $and: [
-                          { $gte: ['$crm_details.followUpAt', startOfToday] },
-                          { $lt: ['$crm_details.followUpAt', endOfToday] },
-                        ],
-                      },
-                      1,
-                      0,
-                    ],
-                  },
-                },
-                upcoming: {
-                  $sum: {
-                    $cond: [
-                      {
-                        $and: [
-                          { $gte: ['$crm_details.followUpAt', endOfToday] },
-                          { $lt: ['$crm_details.followUpAt', upcomingEnd] },
-                        ],
-                      },
-                      1,
-                      0,
-                    ],
-                  },
-                },
-                unscheduled: {
-                  $sum: {
+            ],
+            // Checklist — not implemented for v2 docs; return zeroes
+            checklist: [
+              { $limit: 1 },
+              { $project: { totalPending: { $literal: 0 }, requiredPending: { $literal: 0 }, casesMissingRequired: { $literal: 0 } } },
+            ],
+            // Assignments — v2 docs have no crm_details.assignedTo; all unassigned
+            assignments: [
+              {
+                $group: {
+                  _id: {
                     $cond: [
                       {
                         $or: [
-                          { $eq: ['$crm_details.followUpAt', null] },
-                          { $not: ['$crm_details.followUpAt'] },
+                          { $eq: [{ $ifNull: ['$crm_details.assignedTo', ''] }, ''] },
+                          { $eq: ['$crm_details.assignedTo', null] },
                         ],
                       },
-                      1,
-                      0,
+                      'unassigned',
+                      'assigned',
                     ],
                   },
+                  count: { $sum: 1 },
                 },
               },
-            },
-          ],
-          checklist: [
-            {
-              $project: {
-                documents: { $ifNull: ['$crm_details.documents', []] },
-              },
-            },
-            {
-              $project: {
-                totalPending: {
-                  $size: {
-                    $filter: {
-                      input: '$documents',
-                      as: 'doc',
-                      cond: { $ne: ['$$doc.status', 'completed'] },
-                    },
-                  },
-                },
-                requiredPending: {
-                  $size: {
-                    $filter: {
-                      input: '$documents',
-                      as: 'doc',
-                      cond: {
-                        $and: [
-                          { $eq: ['$$doc.required', true] },
-                          { $ne: ['$$doc.status', 'completed'] },
-                        ],
-                      },
-                    },
-                  },
+            ],
+            // Attention — computed from bond_label / anchor in attentionSetStage
+            attention: [
+              {
+                $group: {
+                  _id: null,
+                  needsAttention:     { $sum: { $cond: [{ $or: ['$_refer_to_magistrate', '$_letter_suffix'] }, 1, 0] } },
+                  referToMagistrate:  { $sum: { $cond: ['$_refer_to_magistrate', 1, 0] } },
+                  letterSuffix:       { $sum: { $cond: ['$_letter_suffix', 1, 0] } },
                 },
               },
-            },
-            {
-              $group: {
-                _id: null,
-                totalPending: { $sum: '$totalPending' },
-                requiredPending: { $sum: '$requiredPending' },
-                casesMissingRequired: {
-                  $sum: {
-                    $cond: [{ $gt: ['$requiredPending', 0] }, 1, 0],
-                  },
-                },
-              },
-            },
-          ],
-          assignments: [
-            {
-              $project: {
-                owner: {
-                  $cond: [
-                    {
-                      $or: [
-                        { $eq: [{ $ifNull: ['$crm_details.assignedTo', ''] }, ''] },
-                        { $eq: ['$crm_details.assignedTo', null] },
-                      ],
-                    },
-                    'unassigned',
-                    'assigned',
-                  ],
-                },
-              },
-            },
-            {
-              $group: {
-                _id: '$owner',
-                count: { $sum: 1 },
-              },
-            },
-          ],
-          tags: [
-            {
-              $project: {
-                manual_tags: { $ifNull: ['$manual_tags', []] },
-              },
-            },
-            { $unwind: { path: '$manual_tags', preserveNullAndEmptyArrays: false } },
-            {
-              $group: {
-                _id: '$manual_tags',
-                count: { $sum: 1 },
-              },
-            },
-          ],
-          attention: [
-            {
-              $project: {
-                needs_attention: { $eq: ['$needs_attention', true] },
-                attention_reasons: { $ifNull: ['$attention_reasons', []] },
-              },
-            },
-            {
-              $group: {
-                _id: null,
-                needsAttention: {
-                  $sum: { $cond: ['$needs_attention', 1, 0] },
-                },
-                referToMagistrate: {
-                  $sum: {
-                    $cond: [
-                      { $in: ['refer_to_magistrate', '$attention_reasons'] },
-                      1,
-                      0,
-                    ],
-                  },
-                },
-                letterSuffix: {
-                  $sum: {
-                    $cond: [
-                      { $in: ['letter_suffix_case', '$attention_reasons'] },
-                      1,
-                      0,
-                    ],
-                  },
-                },
-              },
-            },
-          ],
+            ],
+          },
         },
-      });
+      ];
 
-      const agg = Case.aggregate(pipeline).option({ maxTimeMS: MAX_DB_MS, allowDiskUse: true });
-
-      const [result] = await withTimeout(agg.exec(), MAX_DB_MS, 'stats.aggregate').catch((err) => {
-        console.error('GET /cases/stats aggregate failed', err?.message);
+      const [result] = await withTimeout(
+        db.collection(baseStatsColl)
+          .aggregate(facetPipeline, { allowDiskUse: true })
+          .maxTimeMS(MAX_DB_MS)
+          .toArray(),
+        MAX_DB_MS,
+        'stats.aggregate v2'
+      ).catch((err) => {
+        console.error('GET /cases/stats v2 aggregate failed', err?.message);
         return [{}];
       });
 
@@ -694,95 +616,42 @@ r.get('/', async (req, res) => {
     if (county) filter.county = county;
     if (status) filter.status = status;
 
-    // Text search (ensure a text index on relevant fields: full_name, offense, case_number, etc.)
-    if (query) filter.$text = { $search: query };
+    // Text search: skip $text for now (v2_* collections may not have text index)
+    // if (query) filter.$text = { $search: query };
 
-    // Date window based on booking time: support rolling windows via ?window=24h|48h|72h
-    const WINDOW_SET = new Set(['24h','48h','72h']);
-    const now = Date.now();
-    let useExprWindow = false;
-    if (windowId && WINDOW_SET.has(String(windowId).toLowerCase())) {
-      const id = String(windowId).toLowerCase();
-      const sinceHours = id === '24h' ? 24 : id === '48h' ? 48 : 72;
-      const prevHours  = id === '24h' ? null : id === '48h' ? 24 : 48;
-      const since = new Date(now - sinceHours * 3600000);
-      const until = prevHours != null ? new Date(now - prevHours * 3600000) : new Date();
-      // Build $expr comparing coalesced booking_dt to [since, until)
-      filter.$expr = {
-        $and: [
-          { $gte: [
-            {
-              $let: {
-                vars: { ba: '$bookedAt', iso: '$booking_date_iso', ymd: '$booking_date' },
-                in: {
-                  $let: {
-                    vars: {
-                      baD: { $cond: [ { $eq: [ { $type: '$$ba' }, 'date' ] }, '$$ba', null ] },
-                      isoD: { $cond: [ { $eq: [ { $type: '$$iso' }, 'date' ] }, '$$iso', null ] },
-                      ymdD: {
-                        $cond: [
-                          { $and: [ { $ne: ['$$ymd', null] }, { $ne: ['$$ymd', ''] } ] },
-                          { $dateFromString: { dateString: '$$ymd', format: '%Y-%m-%d', timezone: 'America/Chicago', onError: null, onNull: null } },
-                          null
-                        ]
-                      }
-                    },
-                    in: { $ifNull: ['$$baD', { $ifNull: ['$$isoD', '$$ymdD'] }] }
-                  }
-                }
-              }
-            }, since ] },
-          { $lt: [
-            {
-              $let: {
-                vars: { ba: '$bookedAt', iso: '$booking_date_iso', ymd: '$booking_date' },
-                in: {
-                  $let: {
-                    vars: {
-                      baD: { $cond: [ { $eq: [ { $type: '$$ba' }, 'date' ] }, '$$ba', null ] },
-                      isoD: { $cond: [ { $eq: [ { $type: '$$iso' }, 'date' ] }, '$$iso', null ] },
-                      ymdD: {
-                        $cond: [
-                          { $and: [ { $ne: ['$$ymd', null] }, { $ne: ['$$ymd', ''] } ] },
-                          { $dateFromString: { dateString: '$$ymd', format: '%Y-%m-%d', timezone: 'America/Chicago', onError: null, onNull: null } },
-                          null
-                        ]
-                      }
-                    },
-                    in: { $ifNull: ['$$baD', { $ifNull: ['$$isoD', '$$ymdD'] }] }
-                  }
-                }
-              }
-            }, until ] },
-        ]
-      };
-      useExprWindow = true;
+    // Date window: use time_bucket_v2 (indexed) for short windows; booking_date_n range for others.
+    // NOTE: filter fields referencing booking_date_n / bond_amount_n are applied AFTER the
+    // normalization $set stages in the aggregation pipeline.
+    const v2WindowFilter = buildV2WindowFilter(windowId);
+    if (v2WindowFilter) {
+      Object.assign(filter, v2WindowFilter);
     }
-    // Date window on normalized booking_date (YYYY-MM-DD) for non-rolling cases
-    if (!useExprWindow && (startDate || endDate)) {
-      filter.booking_date = {};
-      if (startDate) filter.booking_date.$gte = String(startDate);
-      if (endDate) filter.booking_date.$lte = String(endDate);
+
+    // Short-window filter uses indexed time_bucket_v2 field (set above via buildV2WindowFilter)
+    // Date range on computed booking_date_n (applied after normalization stages)
+    if (!v2WindowFilter && (startDate || endDate)) {
+      filter.booking_date_n = {};
+      if (startDate) filter.booking_date_n.$gte = String(startDate);
+      if (endDate) filter.booking_date_n.$lte = String(endDate);
     }
     // Safety default: for attention scans with no explicit window, restrict to last 30 days
-    if ((attention === '1' || attention === 'true' || attention === true) && !startDate && !endDate) {
+    if ((attention === '1' || attention === 'true' || attention === true) && !startDate && !endDate && !v2WindowFilter) {
       const dt = new Date();
       dt.setDate(dt.getDate() - 30);
       const ymd = dt.toISOString().slice(0, 10);
-      filter.booking_date = { ...(filter.booking_date || {}), $gte: ymd };
+      filter.booking_date_n = { ...(filter.booking_date_n || {}), $gte: ymd };
     }
 
-    // Bond range on normalized bond_amount
+    // Bond range on normalized bond_amount_n (applied after normalization stages)
     const minBondNum = Number(minBond);
     const maxBondNum = Number(maxBond);
     if (!Number.isNaN(minBondNum) || !Number.isNaN(maxBondNum)) {
-      filter.bond_amount = {};
-      if (!Number.isNaN(minBondNum)) filter.bond_amount.$gte = minBondNum;
-      if (!Number.isNaN(maxBondNum)) filter.bond_amount.$lte = maxBondNum;
+      filter.bond_amount_n = {};
+      if (!Number.isNaN(minBondNum)) filter.bond_amount_n.$gte = minBondNum;
+      if (!Number.isNaN(maxBondNum)) filter.bond_amount_n.$lte = maxBondNum;
     }
 
-    // Additional filters
-    if (timeBucket) filter.time_bucket = timeBucket;
+    // Additional filters (time_bucket_v2 already set above via buildV2WindowFilter)
     const limitNum = Math.min(Number(limit) || 25, 500);
     if (bondLabel || bondLabelAlias) filter.bond_label = bondLabel || bondLabelAlias;
     if (attention === '1' || attention === 'true' || attention === true) {
@@ -803,9 +672,12 @@ r.get('/', async (req, res) => {
       filter.crm_stage = String(stage).toLowerCase();
     }
 
-    // Sorting
-    const allowedSort = new Set(['booking_date', 'bond_amount']);
-    const sortField = allowedSort.has(String(sortBy)) ? String(sortBy) : 'booking_date';
+    // Sorting — always on normalized booking_date_n (v2 path)
+    const allowedSort = new Set(['booking_date', 'booking_date_n', 'bond_amount', 'bond_amount_n']);
+    const rawSortField = allowedSort.has(String(sortBy)) ? String(sortBy) : 'booking_date_n';
+    const sortField = rawSortField === 'booking_date' ? 'booking_date_n'
+      : rawSortField === 'bond_amount' ? 'bond_amount_n'
+      : rawSortField;
     const sortDir = String(order).toLowerCase() === 'asc' ? 1 : -1;
 
     // Select the key fields we actually use in the UI
@@ -851,92 +723,95 @@ r.get('/', async (req, res) => {
       bond: 1,
     };
 
+    // scopedFilter applies department scoping if the user has scoped (non-global) access.
+    // For v2_* collections, CRM fields (crm_details.assignedDepartment, etc.) don't exist,
+    // so scoped users will see 0 results until CRM data is synced into v2_* collections.
     const scopedFilter = scopedCaseFilter(req, filter);
 
     const wantCount = !noCount || !TRUE_SET.has(String(noCount).toLowerCase());
 
-    // Query directly from county collections (simple_harris, simple_jefferson, etc.)
-    // instead of a normalized 'cases' collection
+    // ── V2 collection query ───────────────────────────────────────────────────
+    // Query v2_* pipeline collections (current booking data) using $unionWith +
+    // normalization stages.  The old simple_* loop has been replaced.
     const db = mongoose.connection.db;
     if (!db) {
       return res.status(503).json({ error: 'Database not connected' });
     }
 
-    // Determine which collection(s) to query
-    let collections = [];
+    // If a specific county is requested, filter the collection list to the
+    // relevant one(s).  Fort Bend is in v2_lookup_results alongside jefferson/brazoria.
+    const V2_COUNTY_TO_COLLS = new Map([
+      ['galveston',  ['v2_galveston_events']],
+      ['harris',     ['v2_harris_reports']],
+      ['fortbend',   ['v2_lookup_results']],
+      ['jefferson',  ['v2_lookup_results', 'v2_jefferson_events']],
+      ['brazoria',   ['v2_lookup_results']],
+      ['wharton',    ['v2_wharton_events']],
+    ]);
+    let collectionsToQuery = V2_CASE_COLLECTIONS;
     if (county) {
-      const collName = COUNTY_MAP.get(String(county).toLowerCase());
-      if (collName) {
-        collections = [collName];
+      const mapped = V2_COUNTY_TO_COLLS.get(String(county).toLowerCase());
+      if (mapped) {
+        collectionsToQuery = mapped;
       } else {
         return res.status(400).json({ error: `Unknown county: ${county}` });
       }
-    } else {
-      // Query all county collections if no specific county is provided
-      collections = COUNTY_COLLECTIONS;
     }
 
-    // Build aggregation pipeline for all collections
+    const normalizeStages = buildNormalizeStages();
+
+    // Per-collection pipeline: normalize → county lowercase → filter
+    const perCollPipeline = (collName) => [
+      ...normalizeStages,
+      buildCountyStage(collName),
+      { $match: scopedFilter },
+    ];
+
+    const [baseCollection, ...restCollections] = collectionsToQuery;
+
+    // List pipeline: normalize → match → $unionWith siblings → sort → limit → project
+    const listPipeline = [
+      ...perCollPipeline(baseCollection),
+      ...restCollections.map((coll) => ({
+        $unionWith: { coll, pipeline: perCollPipeline(coll) },
+      })),
+      { $sort: { [sortField]: sortDir, _id: -1 } },
+      { $limit: limitNum },
+      { $project: projection },
+    ];
+
     let items = [];
     let totalCount = 0;
 
-    for (const collName of collections) {
-      const coll = db.collection(collName);
-      
-      // Build the aggregation pipeline
-      const pipeline = [
-        { $match: scopedFilter },
-      ];
-
-      if (useExprWindow) {
-        pipeline.push({ $match: filter });
-      }
-
-      pipeline.push(
-        { $sort: { [sortField]: sortDir, booking_date: -1, _id: -1 } },
-        { $project: projection }
+    try {
+      items = await withTimeout(
+        db.collection(baseCollection).aggregate(listPipeline).maxTimeMS(MAX_DB_MS).toArray(),
+        MAX_DB_MS,
+        'cases list v2'
       );
-
-      // Apply limit only for single collection queries
-      if (collections.length === 1) {
-        pipeline.push({ $limit: limitNum });
-      }
-
-      try {
-        const collItems = await withTimeout(
-          coll.aggregate(pipeline).maxTimeMS(MAX_DB_MS).toArray(),
-          MAX_DB_MS,
-          `cases aggregate from ${collName}`
-        );
-        items = items.concat(collItems);
-      } catch (e) {
-        console.warn(`cases: aggregate from ${collName} failed`, e?.message);
-      }
-
-      // Get count for this collection
-      if (wantCount) {
-        try {
-          const count = await withTimeout(
-            coll.countDocuments(scopedFilter),
-            MAX_DB_MS,
-            `cases count from ${collName}`
-          );
-          totalCount += count;
-        } catch (e) {
-          console.warn(`cases: count from ${collName} failed`, e?.message);
-        }
-      }
+    } catch (e) {
+      console.warn('cases: v2 list aggregate failed', e?.message);
     }
 
-    // If querying multiple collections, sort and limit combined results
-    if (collections.length > 1) {
-      items.sort((a, b) => {
-        const aVal = a[sortField];
-        const bVal = b[sortField];
-        const cmp = aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
-        return sortDir === 1 ? cmp : -cmp;
-      });
-      items = items.slice(0, limitNum);
+    // Count pipeline: same match, no sort/limit/project
+    if (wantCount) {
+      const countPipeline = [
+        ...perCollPipeline(baseCollection),
+        ...restCollections.map((coll) => ({
+          $unionWith: { coll, pipeline: perCollPipeline(coll) },
+        })),
+        { $count: 'total' },
+      ];
+      try {
+        const countResult = await withTimeout(
+          db.collection(baseCollection).aggregate(countPipeline).maxTimeMS(MAX_DB_MS).toArray(),
+          MAX_DB_MS,
+          'cases count v2'
+        );
+        totalCount = countResult[0]?.total ?? 0;
+      } catch (e) {
+        console.warn('cases: v2 count aggregate failed', e?.message);
+      }
     }
 
     const caseIds = items.map((item) => item._id).filter(Boolean);
@@ -1186,8 +1061,8 @@ r.get('/by-case-number/:caseNumber', async (req, res) => {
     const query = { $or: orClauses };
     const db = mongoose.connection.db;
 
-    // Search across all county collections for any identifier match
-    for (const collName of COUNTY_COLLECTIONS) {
+    // Search across all county collections (simple_* first, then v2_*)
+    for (const collName of [...COUNTY_COLLECTIONS, ...V2_COUNTY_COLLECTIONS]) {
       const coll = db.collection(collName);
       const doc = await coll.findOne(query);
       if (doc) {
@@ -1195,7 +1070,7 @@ r.get('/by-case-number/:caseNumber', async (req, res) => {
           _id: doc._id,
           case_number: doc.case_number,
           full_name: doc.full_name,
-          county: collName.replace('simple_', '').toUpperCase(),
+          county: (doc.county || collName.replace(/^(simple_|v2_)/, '').replace(/_events$|_reports$|_lookup_results$/, '')).toUpperCase(),
         });
       }
     }
@@ -1227,8 +1102,10 @@ r.get('/:id', async (req, res) => {
     const db = mongoose.connection.db;
     let doc = null;
     
-    // Search county collections for the case by _id
-    for (const collName of COUNTY_COLLECTIONS) {
+    // Search simple_* county collections first, then v2_* pipeline collections as fallback.
+    // The dashboard list views read from v2_* collections, so their _ids must be resolved here too.
+    const allCollsToSearch = [...COUNTY_COLLECTIONS, ...V2_COUNTY_COLLECTIONS];
+    for (const collName of allCollsToSearch) {
       const coll = db.collection(collName);
       const found = await withTimeout(
         coll.findOne({ _id: objectId }),
