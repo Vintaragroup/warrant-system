@@ -19,6 +19,8 @@ CLI usage
   python3 scripts/run_ingestion_v2.py --source galveston --dry-run --limit 20
   python3 scripts/run_ingestion_v2.py --source harris_reports --dry-run --limit 1
   python3 scripts/run_ingestion_v2.py --source fortbend_lookup --last-name SMITH --dry-run
+  python3 scripts/run_ingestion_v2.py --source fortbend_lookup --mode prefix --first-prefix a --last-prefix a --window-days 7 --limit 25 --dry-run
+  python3 scripts/run_ingestion_v2.py --source fortbend_lookup --mode seed --window-days 7 --limit 50 --dry-run
   python3 scripts/run_ingestion_v2.py --source jefferson_lookup --last-name SMITH --dry-run
   python3 scripts/run_ingestion_v2.py --source brazoria_lookup --last-name SMITH --first-name JOHN --dry-run
 
@@ -62,6 +64,26 @@ def _flag(name: str, default: bool = False) -> bool:
 
 def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def emit_result(**kwargs) -> None:
+    """
+    Emit a machine-readable result line as the final output of a scraper run.
+    The Node backend parses this line first before falling back to regex.
+    Format: INGESTION_RESULT_JSON={...}
+    """
+    payload = {
+        "ok": bool(kwargs.get("ok", False)),
+        "source": kwargs.get("source"),
+        "status": kwargs.get("status", "unknown"),
+        "seen": int(kwargs.get("seen") or 0),
+        "written": int(kwargs.get("written") or 0),
+        "skipped": int(kwargs.get("skipped") or 0),
+        "errors": int(kwargs.get("errors") or 0),
+        "dry_run": bool(kwargs.get("dry_run", False)),
+        "message": kwargs.get("message"),
+    }
+    print("INGESTION_RESULT_JSON=" + json.dumps(payload, separators=(",", ":")), flush=True)
 
 
 def _resolve_booking_date(val: str) -> str:
@@ -197,6 +219,7 @@ def run_galveston(db, dry_run: bool, limit: int) -> int:
             )
             print(f"  [{status}] {event_str}")
         print(f"[galveston] dry-run summary: ok={ok} warn={warn} skip={skip}")
+        emit_result(ok=True, source="galveston", status="completed", seen=ok, written=0, skipped=skip, errors=warn, dry_run=True)
         return 0
 
     # Non-dry-run: redirect writes to staging collection
@@ -208,6 +231,7 @@ def run_galveston(db, dry_run: bool, limit: int) -> int:
         if stored >= limit:
             break
     print(f"[galveston] stored {stored} events")
+    emit_result(ok=True, source="galveston", status="completed", seen=stored, written=stored, dry_run=False)
     return 0
 
 
@@ -227,6 +251,8 @@ def run_harris_reports(db, dry_run: bool, limit: int, force_reingest: bool = Fal
         reports = ingestor.fetch_report_list()
         print(f"[harris] found {len(reports)} reports on datasets page")
 
+        total_rows = 0
+        total_reports = 0
         for meta in reports[:limit]:
             print(f"\n[harris] downloading: {meta['filename']} ({meta['kind']}, {meta['group']})")
             try:
@@ -237,6 +263,8 @@ def run_harris_reports(db, dry_run: bool, limit: int, force_reingest: bool = Fal
 
             rows = list(ingestor.parse_report(content, meta))
             print(f"  parsed {len(rows)} rows")
+            total_rows += len(rows)
+            total_reports += 1
 
             ok = warn = 0
             for raw in rows[:5]:
@@ -258,6 +286,8 @@ def run_harris_reports(db, dry_run: bool, limit: int, force_reingest: bool = Fal
                 )
                 print(f"  [{status}] {record_str}")
             print(f"  sample: ok={ok} warn={warn}")
+        emit_result(ok=True, source="harris_reports", status="completed", seen=total_rows, written=0, dry_run=True,
+                    message=f"{total_reports} report(s) sampled, {total_rows} rows parsed")
         return 0
 
     # Non-dry-run: override store_record to redirect to staging collection
@@ -296,6 +326,7 @@ def run_harris_reports(db, dry_run: bool, limit: int, force_reingest: bool = Fal
         stored += 1
         print(f"  stored record #{stored}: {result}")
     print(f"[harris] total records stored: {stored}")
+    emit_result(ok=True, source="harris_reports", status="completed", seen=stored, written=stored, dry_run=False)
     return 0
 
 
@@ -337,6 +368,7 @@ def run_wharton(db, dry_run: bool, limit: int) -> int:
             )
             print(f"  [{status}] {event_str}")
         print(f"[wharton] dry-run summary: ok={ok} warn={warn} skip={skip}")
+        emit_result(ok=True, source="wharton", status="completed", seen=ok, written=0, skipped=skip, errors=warn, dry_run=True)
         return 0
 
     # Non-dry-run: redirect writes to staging collection
@@ -348,7 +380,89 @@ def run_wharton(db, dry_run: bool, limit: int) -> int:
         if stored >= limit:
             break
     print(f"[wharton] stored {stored} events")
+    emit_result(ok=True, source="wharton", status="completed", seen=stored, written=stored, dry_run=False)
     return 0
+
+
+def run_fortbend_discovery(
+    db,
+    *,
+    dry_run: bool,
+    mode: str,
+    first_prefix: str = "",
+    last_prefix: str = "",
+    last_name: str = "",
+    first_name: str = "",
+    window_days: int = 7,
+    limit: int = 25,
+) -> int:
+    """
+    Run Fort Bend lookup-discovery pipeline.
+
+    mode='prefix'  → prefix-pair search (first_prefix + last_prefix)
+    mode='name'    → single-name lookup  (last_name + optional first_name)
+    mode='seed'    → names seeded from recent bulk county records
+    mode='auto'    → iterate all aa–zz first/last prefix combinations (676 searches)
+    """
+    from ingestion.fortbend_discovery import FortBendDiscovery  # noqa: PLC0415
+
+    discovery = FortBendDiscovery(db, dry_run=dry_run, window_days=window_days, limit=limit)
+
+    if mode == 'prefix':
+        print(f"[fortbend] discovery prefix mode — first_prefix={first_prefix!r} last_prefix={last_prefix!r} "
+              f"window={window_days}d limit={limit} dry_run={dry_run}")
+        stats = discovery.run_prefix(first_prefix=first_prefix, last_prefix=last_prefix)
+    elif mode == 'seed':
+        print(f"[fortbend] discovery seed mode — window={window_days}d limit={limit} dry_run={dry_run}")
+        stats = discovery.run_seed(seed_source='recent_bulk')
+    elif mode == 'auto':
+        import time as _time
+        _auto_start = _time.time()
+        def _progress_cb(data):
+            payload = dict(data)
+            payload['elapsed_seconds'] = round(_time.time() - _auto_start, 1)
+            print("PROGRESS_JSON=" + json.dumps(payload, separators=(',', ':')), flush=True)
+        print(f"[fortbend] discovery auto mode — window={window_days}d limit={limit} dry_run={dry_run}")
+        stats = discovery.run_auto(progress_callback=_progress_cb)
+    else:  # name mode (default)
+        search_desc = last_name + (f", {first_name}" if first_name else "")
+        print(f"[fortbend] discovery name mode — '{search_desc}' window={window_days}d limit={limit} dry_run={dry_run}")
+        stats = discovery.run_name(last_name=last_name, first_name=first_name)
+
+    seen             = stats.get('seen', 0)
+    written          = stats.get('written', 0)
+    skipped          = stats.get('skipped', 0)
+    skipped_cached   = stats.get('skipped_cached', 0)
+    details_checked  = stats.get('details_checked', 0)
+    recent_matches   = stats.get('recent_matches', 0)
+    stale_cached     = stats.get('stale_cached', 0)
+    prefixes_checked = stats.get('prefixes_checked', 0)
+    errors           = stats.get('errors', 0)
+
+    print(f"[fortbend] discovery complete — seen={seen} details_checked={details_checked} "
+          f"recent_matches={recent_matches} stale_cached={stale_cached} "
+          f"skipped={skipped} skipped_cached={skipped_cached} errors={errors} written={written}")
+
+    print(
+        "INGESTION_RESULT_JSON=" + json.dumps({
+            "ok":              errors == 0,
+            "source":          "fortbend_lookup",
+            "status":          "completed",
+            "seen":            seen,
+            "written":         written,
+            "skipped":         skipped,
+            "skipped_cached":  skipped_cached,
+            "errors":          errors,
+            "dry_run":         dry_run,
+            "message":         "Fort Bend discovery completed",
+            "details_checked": details_checked,
+            "recent_matches":  recent_matches,
+            "stale_cached":    stale_cached,
+            "prefixes_checked": prefixes_checked,
+        }, separators=(",", ":")),
+        flush=True,
+    )
+    return 0 if errors == 0 else 1
 
 
 def run_lookup(
@@ -432,6 +546,8 @@ def run_lookup(
             indent=2,
         )
         print(f"  [{status}] result[{i}]: {result_str}")
+    n = len(results)
+    emit_result(ok=True, source=source, status="completed", seen=n, written=0 if dry_run else n, dry_run=dry_run)
     return 0
 
 
@@ -525,6 +641,32 @@ def _parse_args() -> argparse.Namespace:
             "jefferson_lookup: supports date-only mode (no --last-name required). "
             "brazoria_lookup: additive filter — --last-name and --first-name still required."
         ),
+    )
+    # ── Fort Bend discovery args ─────────────────────────────────────────────
+    p.add_argument(
+        "--mode",
+        choices=["name", "prefix", "seed", "auto"],
+        default="name",
+        help="fortbend_lookup discovery mode: name (default), prefix, seed, or auto (aa–zz)",
+    )
+    p.add_argument(
+        "--first-prefix",
+        default="",
+        dest="first_prefix",
+        help="First-name prefix for fortbend_lookup prefix-discovery mode (e.g. 'a')",
+    )
+    p.add_argument(
+        "--last-prefix",
+        default="",
+        dest="last_prefix",
+        help="Last-name prefix for fortbend_lookup prefix-discovery mode (e.g. 'a')",
+    )
+    p.add_argument(
+        "--window-days",
+        type=int,
+        default=7,
+        dest="window_days",
+        help="Recency window in days for fortbend_lookup discovery (default: 7)",
     )
     # ── Scheduler integration flags ──────────────────────────────────────────
     p.add_argument(
@@ -628,6 +770,8 @@ def main() -> int:
                 command=f"run_ingestion_v2.py --source {args.source} --trigger {args.trigger}",
             )
             finish_run(audit_db, skip_run_id, status="skipped", skip_reason=skip_reason)
+            emit_result(ok=True, source=args.source, status="skipped", skipped=1, dry_run=dry_run,
+                        message=skip_reason or "schedule skip")
             return 0
 
         # Create audit record before execution (only if Mongo is still reachable)
@@ -694,36 +838,64 @@ def main() -> int:
             exit_code = run_wharton(db, dry_run=dry_run, limit=args.limit)
         else:
             booking_date = getattr(args, "booking_date", "")
-            # jefferson_lookup allows either last_name or booking_date
-            need_last_name = not (args.source == "jefferson_lookup" and booking_date)
-            if need_last_name and not args.last_name:
-                print(
-                    f"[v2] ERROR: --last-name is required for {args.source}",
-                    file=sys.stderr,
-                )
-                exit_code = 1
-            # brazoria_lookup requires first_name (Tyler rejects searches without it)
-            elif args.source == "brazoria_lookup" and not args.first_name:
-                print(
-                    "[v2] ERROR: --first-name is required for brazoria_lookup "
-                    "(Tyler PublicAccess rejects name searches without a first name)",
-                    file=sys.stderr,
-                )
-                exit_code = 1
-            else:
-                exit_code = run_lookup(
-                    source=args.source,
-                    db=db,
-                    dry_run=dry_run,
-                    last_name=args.last_name,
-                    first_name=args.first_name,
-                    booking_date=booking_date,
-                    limit=args.limit,
-                )
+            mode         = getattr(args, "mode", "name")
+            first_prefix = getattr(args, "first_prefix", "")
+            last_prefix  = getattr(args, "last_prefix", "")
+            window_days  = getattr(args, "window_days", 7)
+
+            # ── Fort Bend discovery mode ──────────────────────────────────────
+            is_fortbend_discovery = (
+                args.source == "fortbend_lookup"
+                and (mode in ("prefix", "seed", "auto") or first_prefix or last_prefix)
+            )
+            if is_fortbend_discovery:
+                if mode == "prefix" and not (first_prefix or last_prefix):
+                    msg = "fortbend_lookup prefix mode requires --first-prefix and/or --last-prefix"
+                    print(f"[v2] ERROR: {msg}", file=sys.stderr)
+                    emit_result(ok=False, source=args.source, status="failed", errors=1, dry_run=dry_run, message=msg)
+                    exit_code = 1
+                else:
+                    exit_code = run_fortbend_discovery(
+                        db,
+                        dry_run=dry_run,
+                        mode=mode,
+                        first_prefix=first_prefix,
+                        last_prefix=last_prefix,
+                        last_name=args.last_name,
+                        first_name=args.first_name,
+                        window_days=window_days,
+                        limit=args.limit,
+                    )
+            # ── Standard lookup sources ───────────────────────────────────────
+            elif True:
+                # jefferson_lookup allows either last_name or booking_date
+                need_last_name = not (args.source == "jefferson_lookup" and booking_date)
+                if need_last_name and not args.last_name:
+                    msg = f"--last-name is required for {args.source}"
+                    print(f"[v2] ERROR: {msg}", file=sys.stderr)
+                    emit_result(ok=False, source=args.source, status="failed", errors=1, dry_run=dry_run, message=msg)
+                    exit_code = 1
+                # brazoria_lookup requires first_name (Tyler rejects searches without it)
+                elif args.source == "brazoria_lookup" and not args.first_name:
+                    msg = "brazoria_lookup requires both last_name and first_name"
+                    print(f"[v2] ERROR: {msg}", file=sys.stderr)
+                    emit_result(ok=False, source=args.source, status="failed", errors=1, dry_run=dry_run, message=msg)
+                    exit_code = 1
+                else:
+                    exit_code = run_lookup(
+                        source=args.source,
+                        db=db,
+                        dry_run=dry_run,
+                        last_name=args.last_name,
+                        first_name=args.first_name,
+                        booking_date=booking_date,
+                        limit=args.limit,
+                    )
     except Exception as exc:
         run_error = str(exc)
         exit_code = 1
         print(f"[v2] UNHANDLED ERROR: {exc}", file=sys.stderr)
+        emit_result(ok=False, source=args.source, status="failed", errors=1, dry_run=dry_run, message=str(exc))
 
     # ── Finish audit record ───────────────────────────────────────────────────
     if run_id is not None and audit_db is not None:

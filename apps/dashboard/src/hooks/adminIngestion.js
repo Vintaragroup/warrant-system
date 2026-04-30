@@ -97,3 +97,14 @@ export function useIngestionReadiness({ days = 3 } = {}, options = {}) {
     ...options,
   });
 }
+
+export function useCancelJob() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (jobId) =>
+      sendJSON(`/admin/ingestion/jobs/${encodeURIComponent(jobId)}/cancel`, { method: 'POST', body: {} }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['ingestion', 'jobs'] });
+    },
+  });
+}

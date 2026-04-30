@@ -1,4 +1,4 @@
-import { useState, useEffect, Component } from 'react';
+import { useState, useEffect, useRef, Component } from 'react';
 import { SectionCard, DataTable } from '../components/PageToolkit';
 import {
   useIngestionStatus,
@@ -10,7 +10,9 @@ import {
   usePauseSource,
   useResumeSource,
   useIngestionReadiness,
+  useCancelJob,
 } from '../hooks/adminIngestion';
+import { getJSON } from '../hooks/dashboard';
 
 // ── Error boundary ─────────────────────────────────────────────────────────────
 
@@ -62,6 +64,7 @@ const LOOKUP_SOURCES = new Set(['fortbend_lookup', 'jefferson_lookup', 'brazoria
 const TABS = [
   { id: 'overview', label: 'Overview' },
   { id: 'run', label: 'Run Now' },
+  { id: 'discovery', label: 'Lookup Discovery' },
   { id: 'scheduler', label: 'Scheduler' },
   { id: 'runs', label: 'Run History' },
   { id: 'errors', label: 'Errors' },
@@ -176,7 +179,7 @@ function OverviewTab() {
               <th className="px-4 py-3">Source</th>
               <th className="px-4 py-3">Schedule</th>
               <th className="px-4 py-3">Mode</th>
-              <th className="px-4 py-3">Schedule</th>
+              <th className="px-4 py-3">Interval</th>
               <th className="px-4 py-3">Last run</th>
               <th className="px-4 py-3">Last success</th>
               <th className="px-4 py-3">Last error</th>
@@ -454,8 +457,8 @@ function ManualRunTab() {
                     {(r.written ?? 0) > 0
                       ? `✅ wrote ${r.written}`
                       : dryRun
-                        ? `seen ${r.seen ?? '?'}`
-                        : `seen ${r.seen ?? '?'} (all up to date)`}
+                        ? `seen ${r.seen != null ? r.seen : 'unavailable'}`
+                        : `seen ${r.seen != null ? r.seen : 'unavailable'} (all up to date)`}
                   </span>
                 )}
                 {r.status === 'failed' && r.error && (
@@ -685,6 +688,333 @@ function ManualRunTab() {
   );
 }
 
+// ── Lookup Discovery tab ──────────────────────────────────────────────────────
+
+function FortBendDiscoveryTab() {
+  const [mode, setMode] = useState('prefix');
+  const [firstPrefix, setFirstPrefix] = useState('a');
+  const [lastPrefix, setLastPrefix] = useState('a');
+  const [lastName, setLastName] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [windowDays, setWindowDays] = useState(7);
+  const [limit, setLimit] = useState(25);
+  const [dryRun, setDryRun] = useState(true);
+  const [result, setResult] = useState(null);
+  const [confirming, setConfirming] = useState(false);
+
+  const [jobId, setJobId] = useState(null);
+  const [jobProgress, setJobProgress] = useState(null);
+  const pollingRef = useRef(null);
+
+  const triggerRun = useTriggerRun();
+  const cancelJob = useCancelJob();
+  const running = triggerRun.isPending || (jobProgress && ['queued', 'running'].includes(jobProgress.status));
+
+  const buildPayload = (modeOverride) => {
+    const effectiveMode = modeOverride ?? mode;
+    return {
+      source: 'fortbend_lookup',
+      dry_run: dryRun,
+      limit,
+      discoveryMode: effectiveMode,
+      firstPrefix: effectiveMode === 'prefix' ? firstPrefix : '',
+      lastPrefix: effectiveMode === 'prefix' ? lastPrefix : '',
+      first_name: effectiveMode === 'name' ? firstName : '',
+      last_name: effectiveMode === 'name' ? lastName : '',
+      windowDays,
+    };
+  };
+
+  useEffect(() => {
+    if (!jobId) return;
+    const poll = async () => {
+      try {
+        const data = await getJSON(`/admin/ingestion/jobs/${jobId}`);
+        if (data?.job) {
+          setJobProgress(data.job);
+          if (['completed', 'failed', 'cancelled'].includes(data.job.status)) {
+            clearInterval(pollingRef.current);
+            pollingRef.current = null;
+            if (data.job.status === 'completed') {
+              setResult({ ok: true, ...data.job });
+            } else {
+              setResult({ ok: false, message: `Auto discovery ${data.job.status}` });
+            }
+            setJobProgress(null);
+          }
+        }
+      } catch (err) {
+        console.error('[FortBendDiscovery] poll error:', err);
+      }
+    };
+    poll();
+    pollingRef.current = setInterval(poll, 3000);
+    return () => { if (pollingRef.current) clearInterval(pollingRef.current); };
+  }, [jobId]);
+
+  const handleRun = (modeOverride) => {
+    const effectiveMode = modeOverride ?? mode;
+    if (!dryRun && !confirming) { setConfirming(true); return; }
+    setConfirming(false);
+    setResult(null);
+    setJobId(null);
+    setJobProgress(null);
+    if (pollingRef.current) { clearInterval(pollingRef.current); pollingRef.current = null; }
+    triggerRun.mutate(buildPayload(effectiveMode), {
+      onSuccess: (data) => {
+        if (data.job_id) {
+          setJobId(data.job_id);
+          setJobProgress({ job_id: data.job_id, status: data.status || 'queued',
+            prefixes_total: 676, prefixes_checked: 0, percent_complete: 0 });
+        } else {
+          setResult(data);
+        }
+      },
+      onError: (err) => setResult({ ok: false, message: err.message || 'Request failed' }),
+    });
+  };
+
+  return (
+    <div className="space-y-4 p-4">
+      <div>
+        <h3 className="text-base font-semibold text-gray-900 mb-1">Fort Bend Lookup Discovery</h3>
+        <p className="text-sm text-gray-500">
+          Search Fort Bend jail records, filter by recency window, and cache stale profiles.
+        </p>
+      </div>
+
+      {/* Mode selector */}
+      <div>
+        <label className="block text-xs font-medium text-gray-700 mb-1">Mode</label>
+        <div className="flex gap-2 flex-wrap">
+          {['prefix', 'name', 'seed', 'auto'].map((m) => (
+            <button
+              key={m}
+              onClick={() => setMode(m)}
+              className={`px-3 py-1.5 rounded text-sm font-medium border transition-colors ${
+                mode === m
+                  ? 'bg-indigo-600 text-white border-indigo-600'
+                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              {m === 'auto' ? 'Auto (aa–zz)' : m.charAt(0).toUpperCase() + m.slice(1)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Prefix inputs */}
+      {mode === 'prefix' && (
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">First Name Prefix</label>
+            <input
+              type="text"
+              value={firstPrefix}
+              onChange={(e) => setFirstPrefix(e.target.value)}
+              placeholder="e.g. a"
+              className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Last Name Prefix</label>
+            <input
+              type="text"
+              value={lastPrefix}
+              onChange={(e) => setLastPrefix(e.target.value)}
+              placeholder="e.g. a"
+              className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Name inputs */}
+      {mode === 'name' && (
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Last Name <span className="text-red-500">*</span></label>
+            <input
+              type="text"
+              value={lastName}
+              onChange={(e) => setLastName(e.target.value)}
+              placeholder="e.g. SMITH"
+              className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">First Name</label>
+            <input
+              type="text"
+              value={firstName}
+              onChange={(e) => setFirstName(e.target.value)}
+              placeholder="optional"
+              className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Seed description */}
+      {mode === 'seed' && (
+        <p className="text-sm text-gray-600 bg-gray-50 rounded p-3 border border-gray-200">
+          Seed mode pulls names from recent Galveston, Harris, and Wharton bulk records (last 30 days) and searches Fort Bend for matches.
+        </p>
+      )}
+
+      {/* Auto mode description */}
+      {mode === 'auto' && (
+        <p className="text-sm text-gray-600 bg-blue-50 rounded p-3 border border-blue-200">
+          Auto mode iterates all 676 first×last prefix combinations (aa through zz), checking the stale
+          cache before fetching each detail page. Use <strong>Result Limit</strong> to cap total rows processed.
+        </p>
+      )}
+
+      {/* Window + limit */}
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Recency Window (days)</label>
+          <input
+            type="number"
+            min={1}
+            max={90}
+            value={windowDays}
+            onChange={(e) => setWindowDays(Number(e.target.value))}
+            className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Result Limit</label>
+          <input
+            type="number"
+            min={1}
+            max={200}
+            value={limit}
+            onChange={(e) => setLimit(Number(e.target.value))}
+            className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm"
+          />
+        </div>
+      </div>
+
+      {/* Dry run toggle */}
+      <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+        <input
+          type="checkbox"
+          checked={dryRun}
+          onChange={(e) => { setDryRun(e.target.checked); setConfirming(false); }}
+          className="rounded"
+        />
+        <span className="font-medium">Dry run</span>
+        <span className="text-gray-500">(no writes)</span>
+      </label>
+
+      {/* Confirm warning */}
+      {confirming && (
+        <div className="bg-yellow-50 border border-yellow-300 rounded p-3 text-sm text-yellow-800">
+          <strong>Live write mode.</strong> This will write records to MongoDB. Click Run again to confirm.
+        </div>
+      )}
+
+      {/* Run button */}
+      <div className="flex gap-2 flex-wrap items-center">
+        <button
+          onClick={() => handleRun()}
+          disabled={running || (mode === 'name' && !lastName)}
+          className="px-4 py-2 rounded bg-indigo-600 text-white text-sm font-medium disabled:opacity-50 hover:bg-indigo-700 transition-colors"
+        >
+          {running ? 'Running…' : confirming ? 'Confirm Run (live write)' : 'Run Discovery'}
+        </button>
+        {/* Prominent quick-launch for auto mode */}
+        <button
+          onClick={() => handleRun('auto')}
+          disabled={running}
+          className="px-4 py-2 rounded bg-green-600 text-white text-sm font-medium disabled:opacity-50 hover:bg-green-700 transition-colors"
+        >
+          {running && (mode === 'auto' || jobProgress) ? 'Running Auto Discovery…' : 'Run Automated Discovery (aa–zz)'}
+        </button>
+      </div>
+
+      {/* Progress card (while auto job is running) */}
+      {jobProgress && ['queued', 'running'].includes(jobProgress.status) && (
+        <div className="rounded border border-blue-200 bg-blue-50 p-4 text-sm">
+          <div className="flex items-center justify-between mb-2">
+            <span className="font-semibold text-blue-800">
+              Auto Discovery — {jobProgress.status === 'queued' ? 'Starting…' : 'Running'}
+            </span>
+            <button
+              onClick={() => cancelJob.mutate(jobId)}
+              className="px-3 py-1 rounded bg-red-600 text-white text-xs font-medium hover:bg-red-700 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+          {/* Progress bar */}
+          <div className="w-full bg-blue-200 rounded-full h-2 mb-2">
+            <div
+              className="bg-blue-600 h-2 rounded-full transition-all duration-500"
+              style={{ width: (jobProgress.percent_complete || 0) + '%' }}
+            />
+          </div>
+          <div className="flex justify-between text-xs text-blue-700 mb-2">
+            <span>{jobProgress.prefixes_checked || 0} / {jobProgress.prefixes_total || 676} prefixes</span>
+            <span>{(jobProgress.percent_complete || 0).toFixed(1)}%</span>
+            {jobProgress.current_prefix && <span>Current: <strong>{jobProgress.current_prefix}</strong></span>}
+          </div>
+          <div className="flex gap-4 text-xs text-blue-600 mb-2">
+            {jobProgress.elapsed_seconds > 0 && (
+              <span>Elapsed: {Math.floor(jobProgress.elapsed_seconds / 60)}m {Math.round(jobProgress.elapsed_seconds % 60)}s</span>
+            )}
+            {jobProgress.estimated_seconds_remaining != null && (
+              <span>ETA: ~{Math.floor(jobProgress.estimated_seconds_remaining / 60)}m {Math.round(jobProgress.estimated_seconds_remaining % 60)}s</span>
+            )}
+          </div>
+          <div className="grid grid-cols-4 gap-2 text-xs">
+            {[
+              ['Seen', jobProgress.seen],
+              ['Matched', jobProgress.recent_matches],
+              ['Written', jobProgress.written],
+              ['Errors', jobProgress.errors],
+            ].map(([label, val]) => (
+              <div key={label} className="bg-white rounded border border-blue-200 p-1.5 text-center">
+                <div className="font-bold text-gray-900">{val ?? 0}</div>
+                <div className="text-gray-500">{label}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Result card */}
+      {result && (
+        <div className={`rounded border p-4 text-sm ${result.ok ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+          <div className="font-semibold mb-2">{result.ok ? '✓ Completed' : '✗ Failed'}</div>
+          {result.message && <p className="text-gray-700 mb-3">{result.message}</p>}
+          <div className="grid grid-cols-3 gap-2 text-xs">
+            {[
+              ['Prefixes Checked', result.prefixes_checked],
+              ['Seen', result.seen],
+              ['Details Checked', result.details_checked],
+              ['Recent Matches', result.recent_matches],
+              ['Written', result.written],
+              ['Stale Cached', result.stale_cached],
+              ['Skipped (cached)', result.skipped_cached],
+              ['Skipped (no URL)', result.skipped],
+            ].map(([label, val]) => (
+              <div key={label} className="bg-white rounded border border-gray-200 p-2 text-center">
+                <div className="font-bold text-gray-900">{val ?? '—'}</div>
+                <div className="text-gray-500 mt-0.5">{label}</div>
+              </div>
+            ))}
+          </div>
+          {result.dry_run && (
+            <p className="text-xs text-gray-500 mt-2 italic">Dry run — no records were written.</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Scheduler tab ─────────────────────────────────────────────────────────────
 
 function SchedulerForm({ source, cfg, onSave, saving, onPause, onResume, pausing, resuming }) {
@@ -884,7 +1214,10 @@ function SchedulerTab({ onSaved }) {
     updateConfig(
       { source, patch },
       {
-        onSuccess: () => setSaveMsg({ ok: true, text: `✓ Schedule saved for ${source}. Open the Overview tab to see the updated schedule status.` }),
+        onSuccess: () => {
+          setSaveMsg({ ok: true, text: `✓ Schedule saved for ${source}. Open the Overview tab to see the updated schedule status.` });
+          if (onSaved) setTimeout(onSaved, 1200);
+        },
         onError: (err) => {
           let msg = err.message;
           try {
@@ -1337,7 +1670,7 @@ function AdminStatusBanner() {
   return (
     <div className="mb-4 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
       <span>⚠</span>
-      <span>No recent successful scraper runs — run scrapers to refresh dashboard data.</span>
+      <span>No recent live (non-dry) scraper runs recorded — run bulk scrapers with dry run OFF to populate data health.</span>
     </div>
   );
 }
@@ -1374,6 +1707,7 @@ function ScraperOpsPanelInner() {
 
       {tab === 'overview' && <OverviewTab />}
       {tab === 'run' && <ManualRunTab />}
+      {tab === 'discovery' && <FortBendDiscoveryTab />}
       {tab === 'scheduler' && <SchedulerTab onSaved={() => setTab('overview')} />}
       {tab === 'runs' && <RunsTab mode="runs" />}
       {tab === 'errors' && <RunsTab mode="errors" />}

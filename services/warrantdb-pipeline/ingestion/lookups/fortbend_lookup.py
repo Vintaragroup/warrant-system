@@ -136,7 +136,14 @@ class FortBendLookup(LookupScraper):
     def fetch_detail(self, detail_url: str) -> Dict[str, Any]:
         """
         Fetch and parse a Fort Bend jail detail page.
-        Ported from fetch_fort_bend_detail() in ingestion/fortbend_jail.py.
+
+        Page structure (as of 2025):
+          - Profile card: <div class="card-body"> containing <h6> elements with
+            "<b>Label: </b> Value" pairs for Name, Jail ID, Age, Race, Sex.
+            NOTE: booking_date and DOB are NOT present on this page.
+          - Charges table: <table id="BookingsTable"> with columns:
+            Agency, Authority, Warrant Number, JUS, Charge Description,
+            LVL, Bail Type, Bail Amount, Fines, Disposition.
         """
         scraped_at = _utcnow_iso()
 
@@ -156,36 +163,49 @@ class FortBendLookup(LookupScraper):
             "bond_amount":       None,
         }
 
-        # Property pairs from two-column table rows
-        prop_map: Dict[str, str] = {}
-        for tr in soup.select("tr"):
-            cells = tr.find_all("td")
-            if len(cells) >= 2:
-                label = cells[0].get_text(strip=True).lower().rstrip(":").strip()
-                value = cells[1].get_text(strip=True)
-                if label and value:
-                    prop_map[label] = value
+        # ── Profile card (h6 elements inside .card-body) ──────────────────────
+        # Format: <h6><b>Label: </b> Value</h6>
+        # Fields available: Name, Jail ID, Age, Race, Sex
+        # NOTE: booking_date and DOB are NOT exposed by the Fort Bend portal.
+        card_body = soup.select_one(".card-body")
+        if card_body:
+            for h6 in card_body.select("h6"):
+                text = h6.get_text(" ", strip=True)
+                if ":" not in text:
+                    continue
+                label, _, value = text.partition(":")
+                label = label.strip().lower()
+                value = value.strip()
+                if not value:
+                    continue
+                if "name" in label and "jail" not in label:
+                    raw_name = value.strip()
+                    if "," in raw_name:
+                        parts = raw_name.split(",", 1)
+                        result["last_name"]  = parts[0].strip().upper()
+                        result["first_name"] = parts[1].strip().upper()
+                        result["full_name"]  = f"{result['last_name']}, {result['first_name']}"
+                    else:
+                        result["full_name"] = raw_name.upper()
+                elif "jail id" in label or "jail_id" in label:
+                    result["jail_id"] = value
+                elif "age" in label:
+                    result["age"] = value
+                elif "race" in label:
+                    result["race"] = value
+                elif "sex" in label or "gender" in label:
+                    result["sex"] = value
 
-        def _g(*keys: str) -> Optional[str]:
-            for k in keys:
-                if k in prop_map and prop_map[k]:
-                    return prop_map[k]
-            return None
+        # booking_date is NOT available anywhere on the Fort Bend portal.
+        # It is absent from both the search results and the detail page.
+        # Do NOT set result["booking_date"] here.
 
-        result["full_name"]      = _g("name", "inmate name") or None
-        result["dob"]            = _parse_date(_g("date of birth", "dob"))
-        result["race"]           = _g("race")
-        result["sex"]            = _g("sex", "gender")
-        result["booking_number"] = _g("booking number", "booking #", "booking no")
-        result["booking_date"]   = _parse_date(_g("booking date", "date booked", "admit date", "booked date"))
-        result["agency"]         = _g("arresting agency", "agency")
-
-        # Strip None values so they don't overwrite existing base fields in _merge_detail
+        # Strip None values
         result = {k: v for k, v in result.items() if v is not None or k in ("detail_url", "detail_fetched_at", "charges", "bond_amount")}
 
-        # ── Charges table ─────────────────────────────────────────────────────
-        # Ported from fetch_fort_bend_detail: find charge/offense/description table,
-        # fall back to widest table by column count.
+        # ── Charges table (id="BookingsTable") ────────────────────────────────
+        # Columns: Agency, Authority, Warrant Number, JUS, Charge Description,
+        #          LVL, Bail Type, Bail Amount, Fines, Disposition
         def _headers_for(table: Any) -> List[str]:
             heads = [th.get_text(strip=True) for th in table.select("thead th")]
             if not heads:
@@ -197,15 +217,15 @@ class FortBendLookup(LookupScraper):
         charges: List[Dict[str, Any]] = []
         bond_values: List[int] = []
 
+        # Prefer the named BookingsTable; fall back to any table with charge columns
+        target_tbl = soup.select_one("#BookingsTable") or soup.select_one("table")
         candidate_tbls = soup.select("table")
-        target_tbl = None
-        for t in candidate_tbls:
-            heads = _headers_for(t)
-            if any(x in heads for x in ("charge", "charge description", "offense", "description")):
-                target_tbl = t
-                break
-        if target_tbl is None and candidate_tbls:
-            target_tbl = max(candidate_tbls, key=lambda t: len(_headers_for(t)))
+        if not target_tbl:
+            for t in candidate_tbls:
+                heads = _headers_for(t)
+                if any(x in heads for x in ("charge description", "charge", "offense")):
+                    target_tbl = t
+                    break
 
         if target_tbl:
             heads = _headers_for(target_tbl)
@@ -218,33 +238,23 @@ class FortBendLookup(LookupScraper):
                 for i, h in enumerate(heads):
                     charge[h] = cells[i] if i < len(cells) else None
 
-                # Normalize snake_case keys and parse bail_amount_int
+                # Normalize to snake_case keys
                 norm: Dict[str, Any] = {}
                 for k, v in charge.items():
                     norm[k.replace(" ", "_")] = v
                 charge.update(norm)
-                if "bail_amount" in norm:
-                    charge["bail_amount_int"] = _to_int_money(norm["bail_amount"])
 
-                for key in ("bond", "bond amount", "bond amt", "bond ($)",
-                             "amount", "set bond", "bail amount"):
-                    if key in charge:
-                        v = _to_int_money(charge.get(key))
+                # Parse bail/bond amount
+                for key in ("bail_amount", "bail amount", "bond amount", "bond"):
+                    raw_v = charge.get(key) or charge.get(key.replace(" ", "_"))
+                    if raw_v:
+                        v = _to_int_money(str(raw_v))
                         if v:
+                            charge["bail_amount_int"] = v
                             bond_values.append(v)
+                            break
 
                 charges.append(charge)
-
-        # Text fallback
-        if not bond_values:
-            txt_full = soup.get_text(" ", strip=True)
-            m2 = re.search(
-                r"total\s+bond[^$0-9]*\$?\s*([0-9][0-9,]*)", txt_full, flags=re.I
-            )
-            if m2:
-                v = _to_int_money(m2.group(1))
-                if v:
-                    bond_values.append(v)
 
         bond_total = (
             sum(bond_values) if len(bond_values) > 1 else (bond_values[0] if bond_values else None)
@@ -303,13 +313,12 @@ class FortBendLookup(LookupScraper):
     def _parse_results(self, html: str, scraped_at: str) -> List[Dict[str, Any]]:
         """
         Parse Fort Bend jailinq results table.
-        Ported from search_fort_bend() in ingestion/fortbend_jail.py.
 
-        Fort Bend columns (may be shifted when tds[0] is a booking number):
-          tds[0] = name (or booking_number if all-digits)
-          tds[1] = id / VarJailID (or name if tds[0] was booking_number)
-          tds[2] = dob / VarJailID (or id)
-          tds[3] = booking_date
+        Actual columns on the live site (verified 2025):
+          Booking Number | Name (with detail link) | Jail ID | Race | Sex
+
+        NOTE: booking_date and DOB are NOT present in search results.
+              They are also absent from the detail page.
         """
         soup = BeautifulSoup(html, "lxml")
         rows: List[Dict[str, Any]] = []
@@ -320,11 +329,10 @@ class FortBendLookup(LookupScraper):
             candidates = soup.select("table")
             for tbl in candidates:
                 hdrs = [th.get_text(strip=True).lower() for th in tbl.select("th")]
-                if any("name" in h for h in hdrs) and any("booking" in h for h in hdrs):
+                if any("name" in h for h in hdrs) and any("jail" in h or "booking" in h for h in hdrs):
                     results_tbl = tbl
                     break
             if not results_tbl and candidates:
-                # fallback: widest table
                 results_tbl = max(
                     candidates,
                     key=lambda t: len(t.select("thead th, tr:first-child th, tr:first-child td")),
@@ -332,6 +340,25 @@ class FortBendLookup(LookupScraper):
 
         if not results_tbl:
             return rows
+
+        # Detect column positions from headers
+        header_cells = results_tbl.select("thead th")
+        headers = [th.get_text(strip=True).lower() for th in header_cells]
+
+        def _col(*names: str) -> Optional[int]:
+            for name in names:
+                for i, h in enumerate(headers):
+                    if name in h:
+                        return i
+            return None
+
+        col_booking_number = _col("booking number", "booking #", "booking no")
+        col_name           = _col("name")
+        col_jail_id        = _col("jail id", "jail_id", "inmate id")
+        col_race           = _col("race")
+        col_sex            = _col("sex", "gender")
+        col_dob            = _col("dob", "date of birth", "birth")
+        col_booking_date   = _col("booking date", "date booked", "admit date", "booked")
 
         body_rows = results_tbl.select("tbody tr") or [
             tr for tr in results_tbl.select("tr") if tr.find_all("td")
@@ -344,40 +371,41 @@ class FortBendLookup(LookupScraper):
 
             vals = [td.get_text(strip=True) for td in tds]
 
+            def _v(col: Optional[int]) -> Optional[str]:
+                if col is None or col >= len(vals):
+                    return None
+                s = vals[col].strip()
+                return s if s else None
+
             name_link = tr.select_one("td a[href]")
             detail_href = name_link.get("href") if name_link else None
             detail_url = urljoin(BASE, detail_href) if detail_href else None
 
+            name_raw = _v(col_name) or ""
+            last_name: Optional[str] = None
+            first_name: Optional[str] = None
+            if "," in name_raw:
+                parts = name_raw.split(",", 1)
+                last_name  = parts[0].strip().upper() or None
+                first_name = parts[1].strip().upper() or None
+            elif name_raw:
+                last_name = name_raw.upper()
+
             row: Dict[str, Any] = {
-                "scraped_at":   scraped_at,
-                "name":         vals[0] if len(vals) > 0 else None,
-                "id":           vals[1] if len(vals) > 1 else None,
-                "dob":          vals[2] if len(vals) > 2 else None,
-                "booking_date": vals[3] if len(vals) > 3 else None,
-                "detail_url":   detail_url,
+                "scraped_at":      scraped_at,
+                "last_name":       last_name,
+                "first_name":      first_name,
+                "booking_number":  _v(col_booking_number),
+                "id":              _v(col_jail_id),
+                "race":            _v(col_race),
+                "sex":             _v(col_sex),
+                "dob":             _v(col_dob),            # None on Fort Bend
+                "booking_date":    _v(col_booking_date),   # None on Fort Bend
+                "detail_url":      detail_url,
             }
 
-            # Column shift: if tds[0] is all-digit and tds[1] contains a comma
-            # → tds[0] is booking_number, tds[1] is name
-            if (
-                isinstance(row["name"], str)
-                and row["name"].isdigit()
-                and isinstance(row["id"], str)
-                and "," in row["id"]
-            ):
-                row["booking_number"] = row["name"]
-                row["name"] = row["id"]
-                row["id"]   = row["dob"]
-                row["dob"]  = None
-
-            # Normalize name
-            name = (row.pop("name", "") or "").strip()
-            if "," in name:
-                parts = name.split(",", 1)
-                row["last_name"]  = parts[0].strip().upper()
-                row["first_name"] = parts[1].strip().upper()
-            else:
-                row["last_name"] = name.upper() or None
+            # Remove None values except required keys
+            row = {k: v for k, v in row.items() if v is not None or k in ("scraped_at", "detail_url")}
 
             rows.append(row)
 

@@ -23,6 +23,8 @@
 
 import { Router } from 'express';
 import { spawn } from 'node:child_process';
+import { createInterface } from 'node:readline';
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import mongoose from 'mongoose';
 
@@ -73,6 +75,46 @@ const INGESTION_RUNS_COLLECTION = 'ingestion_runs';
 
 // Max tail bytes stored/returned per run output
 const OUTPUT_TAIL_CHARS = 4000;
+
+// ── Job Store ─────────────────────────────────────────────────────────────────
+const _jobStore = new Map();      // jobId → job object
+const _jobProcesses = new Map();  // jobId → ChildProcess (while running)
+const JOBS_COLLECTION = 'ingestion_jobs';
+
+function _createJob({ source, mode, dry_run, created_by = 'admin' }) {
+  const jobId = randomUUID();
+  const job = {
+    job_id: jobId, status: 'queued', source, mode, dry_run, created_by,
+    current_prefix: null, prefixes_total: 676, prefixes_checked: 0,
+    percent_complete: 0, elapsed_seconds: 0, estimated_seconds_remaining: null,
+    seen: 0, details_checked: 0, recent_matches: 0, written: 0,
+    stale_cached: 0, skipped_cached: 0, skipped: 0, errors: 0,
+    started_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    completed_at: null, stdout_tail: '', stderr_tail: '',
+  };
+  _jobStore.set(jobId, job);
+  _persistJob(job).catch(() => {});
+  return job;
+}
+
+function _updateJob(jobId, updates) {
+  const job = _jobStore.get(jobId);
+  if (!job) return null;
+  Object.assign(job, updates, { updated_at: new Date().toISOString() });
+  if (updates.status || updates.completed_at) { _persistJob(job).catch(() => {}); }
+  return job;
+}
+
+async function _persistJob(job) {
+  try {
+    const db = getDb();
+    await db.collection(JOBS_COLLECTION).replaceOne(
+      { job_id: job.job_id },
+      { ...job, _persisted_at: new Date().toISOString() },
+      { upsert: true },
+    );
+  } catch { /* best-effort */ }
+}
 
 // Pipeline root — set PIPELINE_ROOT env var to the absolute path of
 // services/warrantdb-pipeline. Falls back to a relative path from the
@@ -165,16 +207,37 @@ function isStale(latestAt, source) {
 // ── Output count parser ─────────────────────────────────────────────────────
 
 /**
+ * Parse the structured INGESTION_RESULT_JSON line emitted by run_ingestion_v2.py.
+ * Returns the parsed object, or null if not found / malformed.
+ */
+function parseStructuredResult(stdout, stdoutHead) {
+  const combined = `${stdoutHead || ''}\n${stdout || ''}`;
+  const lines = combined.split(/\r?\n/);
+  const resultLine = [...lines].reverse().find((line) =>
+    line.startsWith('INGESTION_RESULT_JSON='),
+  );
+  if (!resultLine) return null;
+  try {
+    return JSON.parse(resultLine.slice('INGESTION_RESULT_JSON='.length));
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Parse seen/written record counts from Python script stdout.
  * Handles galveston, harris, and wharton output formats.
+ * Used as fallback when structured JSON is not available.
  */
 function parseOutputCounts(stdout, stdoutHead, dryRun) {
   let seen = null;
   let written = null;
-  const dryRunSummaryMatch = stdout.match(/dry-run summary: ok=(\d+)/i);
-  const harrisFoundMatch   = (stdoutHead || stdout).match(/found (\d+) reports on datasets page/i);
-  const storedEventsMatch  = stdout.match(/stored (\d+) events/i);
-  const harrisStoredMatch  = stdout.match(/total records stored[: ]+(\d+)/i);
+  // Combine head + tail so count lines at either end are found
+  const fullSearch = (stdoutHead || '') + '\n' + (stdout || '');
+  const dryRunSummaryMatch = fullSearch.match(/dry-run summary: ok=(\d+)/i);
+  const harrisFoundMatch   = fullSearch.match(/found (\d+) reports on datasets page/i);
+  const storedEventsMatch  = fullSearch.match(/stored (\d+) events/i);
+  const harrisStoredMatch  = fullSearch.match(/total records stored[: ]+(\d+)/i);
   if (dryRun) {
     if (dryRunSummaryMatch) seen = parseInt(dryRunSummaryMatch[1], 10);
     else if (harrisFoundMatch) seen = parseInt(harrisFoundMatch[1], 10);
@@ -203,6 +266,103 @@ async function writeAuditRecord(db, record) {
   } catch (err) {
     console.error('[adminIngestion] audit write failed:', err.message);
   }
+}
+
+// ── Background job runner for Fort Bend auto-discovery ────────────────────────
+function _spawnAutoDiscovery(jobId, pyArgs, childEnv, createdBy, redactedCmd) {
+  _updateJob(jobId, { status: 'running' });
+
+  const child = spawn('python3', pyArgs, {
+    cwd: PIPELINE_ROOT,
+    env: childEnv,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  _jobProcesses.set(jobId, child);
+
+  const rl = createInterface({ input: child.stdout, crlfDelay: Infinity });
+  let stderrBuf = '';
+  let stdoutBuf = '';
+
+  rl.on('line', (line) => {
+    stdoutBuf += line + '\n';
+    if (stdoutBuf.length > OUTPUT_TAIL_CHARS * 2) stdoutBuf = stdoutBuf.slice(-OUTPUT_TAIL_CHARS * 2);
+
+    if (line.startsWith('PROGRESS_JSON=')) {
+      try {
+        const p = JSON.parse(line.slice('PROGRESS_JSON='.length));
+        const checked = p.prefixes_checked || 0;
+        const total = 676;
+        const elapsed = p.elapsed_seconds || 0;
+        const pct = Math.round((checked / total) * 1000) / 10;
+        const avgPerPrefix = checked > 0 ? elapsed / checked : 0;
+        const remaining = avgPerPrefix > 0 ? Math.round(avgPerPrefix * (total - checked)) : null;
+        _updateJob(jobId, {
+          current_prefix: (p.current_prefix || '').toUpperCase() || null,
+          prefixes_checked: checked,
+          percent_complete: pct,
+          elapsed_seconds: elapsed,
+          estimated_seconds_remaining: remaining,
+          seen: p.seen || 0, details_checked: p.details_checked || 0,
+          recent_matches: p.recent_matches || 0, written: p.written || 0,
+          stale_cached: p.stale_cached || 0, skipped_cached: p.skipped_cached || 0,
+          skipped: p.skipped || 0, errors: p.errors || 0,
+        });
+      } catch { /* ignore parse errors */ }
+    }
+  });
+
+  child.stderr.on('data', (chunk) => {
+    stderrBuf += chunk.toString();
+    if (stderrBuf.length > OUTPUT_TAIL_CHARS * 2) stderrBuf = stderrBuf.slice(-OUTPUT_TAIL_CHARS * 2);
+  });
+
+  child.on('close', (exitCode) => {
+    _jobProcesses.delete(jobId);
+    const job = _jobStore.get(jobId);
+    if (!job || job.status === 'cancelled') return;
+
+    const structured = parseStructuredResult(stdoutBuf, stdoutBuf);
+    const finalStatus = exitCode === 0 ? 'completed' : 'failed';
+    _updateJob(jobId, {
+      status: finalStatus,
+      completed_at: new Date().toISOString(),
+      seen: structured?.seen ?? job.seen,
+      written: structured?.written ?? job.written,
+      prefixes_checked: structured?.prefixes_checked ?? job.prefixes_checked,
+      percent_complete: finalStatus === 'completed' ? 100 : job.percent_complete,
+      stdout_tail: tailOutput(redactSecrets(stdoutBuf)),
+      stderr_tail: tailOutput(redactSecrets(stderrBuf)),
+    });
+
+    try {
+      const db = getDb();
+      writeAuditRecord(db, {
+        source: job.source,
+        trigger: job.dry_run ? 'manual_dry_run' : 'manual',
+        status: finalStatus === 'completed' ? 'success' : 'failed',
+        dry_run: job.dry_run,
+        started_at: job.started_at,
+        completed_at: new Date().toISOString(),
+        records_seen: structured?.seen ?? job.seen,
+        records_written: structured?.written ?? job.written,
+        exit_code: exitCode,
+        command_summary: redactedCmd,
+        created_by: createdBy,
+        job_id: jobId,
+      });
+    } catch { /* ignore */ }
+  });
+
+  // Hard timeout: 35 minutes for full aa-zz run
+  const timer = setTimeout(() => {
+    child.kill('SIGTERM');
+    _updateJob(jobId, {
+      status: 'failed',
+      completed_at: new Date().toISOString(),
+      stderr_tail: 'Job timed out after 35 minutes',
+    });
+  }, 35 * 60 * 1000);
+  child.on('close', () => clearTimeout(timer));
 }
 
 // ── GET /api/admin/ingestion/status ──────────────────────────────────────────
@@ -463,7 +623,16 @@ r.post('/run', async (req, res) => {
     booking_date: bookingDate = '',
     force = false,
     bulk = false,
+    // Fort Bend discovery params
+    mode: legacyMode,
+    discoveryMode: discoveryModeParam,
+    firstPrefix = '',
+    lastPrefix = '',
+    windowDays = 7,
   } = req.body || {};
+
+  // Accept both `discoveryMode` (new) and `mode` (legacy) field names
+  const discoveryMode = discoveryModeParam || legacyMode || 'name';
 
   // ── Validation ──────────────────────────────────────────────────────────────
   if (!source) {
@@ -486,15 +655,21 @@ r.post('/run', async (req, res) => {
   }
 
   // Lookup sources require last_name OR (jefferson only) booking_date
+  // Fort Bend discovery modes (prefix/seed) don't need last_name
   const isLookup = source.endsWith('_lookup');
   const jeffersonDateMode = source === 'jefferson_lookup' && !!bookingDate;
-  if (isLookup && !lastName && !jeffersonDateMode) {
+  const isFortbendDiscovery =
+    source === 'fortbend_lookup' &&
+    (discoveryMode === 'prefix' || discoveryMode === 'seed' || discoveryMode === 'auto' || firstPrefix || lastPrefix);
+  if (isLookup && !lastName && !jeffersonDateMode && !isFortbendDiscovery) {
     return res.status(400).json({
       ok: false,
       error: 'MISSING_LAST_NAME',
       message: source === 'jefferson_lookup'
         ? `jefferson_lookup requires last_name or booking_date (source=${source})`
-        : `last_name is required for lookup sources (source=${source})`,
+        : source === 'fortbend_lookup'
+          ? 'fortbend_lookup requires last_name, prefix pair, or mode=seed'
+          : `last_name is required for lookup sources (source=${source})`,
     });
   }
 
@@ -549,8 +724,29 @@ r.post('/run', async (req, res) => {
   if (lastName) { pyArgs.push('--last-name', lastName); }
   if (bookingDate) { pyArgs.push('--booking-date', bookingDate); }
 
+  // Fort Bend discovery additional args
+  if (source === 'fortbend_lookup') {
+    if (discoveryMode && discoveryMode !== 'name') { pyArgs.push('--mode', discoveryMode); }
+    if (firstPrefix) { pyArgs.push('--first-prefix', String(firstPrefix)); }
+    if (lastPrefix) { pyArgs.push('--last-prefix', String(lastPrefix)); }
+    if (windowDays && Number(windowDays) !== 7) { pyArgs.push('--window-days', String(Number(windowDays))); }
+  }
+
   // Redacted command for logging (never include secrets)
   const redactedCmd = `python3 scripts/run_ingestion_v2.py --source ${source} --limit ${limit} --trigger manual${dryRun ? ' --dry-run' : ' --no-dry-run'}`;
+
+  // ── Async background job: Fort Bend auto-discovery ─────────────────────────
+  if (isFortbendDiscovery && discoveryMode === 'auto') {
+    const job = _createJob({ source, mode: 'auto', dry_run: dryRun, created_by: createdBy });
+    const asyncEnv = {
+      ...process.env,
+      PYTHONPATH: PIPELINE_ROOT,
+      USE_V2_INGESTION: dryRun ? 'false' : 'true',
+      DRY_RUN: dryRun ? 'true' : 'false',
+    };
+    _spawnAutoDiscovery(job.job_id, pyArgs, asyncEnv, createdBy, redactedCmd);
+    return res.json({ ok: true, job_id: job.job_id, status: 'queued' });
+  }
 
   const startedAtMs = Date.now();
   const startedAt = new Date().toISOString();
@@ -614,7 +810,30 @@ r.post('/run', async (req, res) => {
   }
 
   const status = exitCode === 0 ? 'success' : 'failed';
-  const { seen: recordsSeen, written: recordsWritten } = parseOutputCounts(stdout, stdout, dryRun);
+
+  // Prefer structured JSON result emitted by the Python script
+  const structured = parseStructuredResult(stdout, stdout);
+  let recordsSeen, recordsWritten, skipped, runMessage;
+  let detailsChecked = null, recentMatches = null, staleCached = null;
+  let prefixesChecked = null, skippedCached = null;
+  if (structured) {
+    recordsSeen    = structured.seen ?? null;
+    recordsWritten = structured.written ?? null;
+    skipped        = structured.skipped ?? 0;
+    runMessage     = structured.message ?? null;
+    // Fort Bend discovery extra fields
+    detailsChecked  = structured.details_checked  ?? null;
+    recentMatches   = structured.recent_matches   ?? null;
+    staleCached     = structured.stale_cached     ?? null;
+    prefixesChecked = structured.prefixes_checked ?? null;
+    skippedCached   = structured.skipped_cached   ?? null;
+  } else {
+    const counts = parseOutputCounts(stdout, stdout, dryRun);
+    recordsSeen    = counts.seen;
+    recordsWritten = counts.written;
+    skipped        = 0;
+    runMessage     = null;
+  }
 
   // Write audit record for every manual admin-triggered run
   try {
@@ -632,9 +851,11 @@ r.post('/run', async (req, res) => {
       duration_ms: Date.now() - startedAtMs,
       records_seen: recordsSeen,
       records_written: recordsWritten,
+      skipped,
       exit_code: exitCode,
       command_summary: redactedCmd,
       created_by: createdBy,
+      message: runMessage,
       error: exitCode !== 0 ? tailOutput(redactSecrets(stderr || stdout)).slice(0, 500) : null,
     });
   } catch (auditErr) {
@@ -649,8 +870,18 @@ r.post('/run', async (req, res) => {
     limit,
     status,
     exit_code: exitCode,
+    seen: recordsSeen,
+    written: recordsWritten,
+    skipped,
     records_seen: recordsSeen,
     records_written: recordsWritten,
+    message: runMessage,
+    // Fort Bend discovery extra fields (null for other sources)
+    details_checked:  detailsChecked,
+    recent_matches:   recentMatches,
+    stale_cached:     staleCached,
+    prefixes_checked: prefixesChecked,
+    skipped_cached:   skippedCached,
     command: redactedCmd,
     stdout_tail: tailOutput(redactSecrets(stdout)),
     stderr_tail: tailOutput(redactSecrets(stderr)),
@@ -749,7 +980,20 @@ r.post('/run-all', async (req, res) => {
         child.on('close', () => clearTimeout(timer));
       });
 
-      const { seen, written } = parseOutputCounts(stdout, stdoutHead, dryRun);
+      const structured = parseStructuredResult(stdout, stdoutHead);
+      let seen, written, srcSkipped, srcMessage;
+      if (structured) {
+        seen = structured.seen ?? null;
+        written = structured.written ?? null;
+        srcSkipped = structured.skipped ?? 0;
+        srcMessage = structured.message ?? null;
+      } else {
+        const counts = parseOutputCounts(stdout, stdoutHead, dryRun);
+        seen = counts.seen;
+        written = counts.written;
+        srcSkipped = 0;
+        srcMessage = null;
+      }
       const srcStatus = exitCode === 0 ? 'completed' : 'failed';
       const srcError  = exitCode !== 0 ? tailOutput(redactSecrets(stderr || stdout)).slice(0, 300) : null;
 
@@ -766,9 +1010,11 @@ r.post('/run-all', async (req, res) => {
           duration_ms: Date.now() - sourceStartedAtMs,
           records_seen: seen,
           records_written: written,
+          skipped: srcSkipped,
           exit_code: exitCode,
           command_summary: `python3 scripts/run_ingestion_v2.py --source ${source} --limit ${limit} --trigger manual${dryRun ? ' --dry-run' : ' --no-dry-run'}`,
           created_by: createdBy,
+          message: srcMessage,
           error: srcError,
         });
       } catch (auditErr) {
@@ -800,9 +1046,15 @@ r.post('/run-all', async (req, res) => {
     }
   }
 
-  // Lookup sources cannot run in bulk mode — report as skipped
+  // Lookup sources cannot run in bulk mode — report as skipped with appropriate messages
   const skipTs = new Date().toISOString();
+  const lookupSkipMessages = {
+    fortbend_lookup:  'Use Lookup Discovery tab to run Fort Bend with prefix/name/seed mode.',
+    jefferson_lookup: 'Requires name/date params — use Run Individual Source.',
+    brazoria_lookup:  'Requires name + first_name — use Run Individual Source.',
+  };
   for (const source of skippedLookup) {
+    const skipMsg = lookupSkipMessages[source] || 'Requires name/date params — use Run Individual Source.';
     try {
       const db = getDb();
       await writeAuditRecord(db, {
@@ -818,7 +1070,7 @@ r.post('/run-all', async (req, res) => {
         exit_code: null,
         command_summary: null,
         created_by: createdBy,
-        skip_reason: 'Lookup sources require a name/date parameter — use Run Individual Source.',
+        skip_reason: skipMsg,
         error: null,
       });
     } catch (auditErr) {
@@ -829,7 +1081,7 @@ r.post('/run-all', async (req, res) => {
       status: 'skipped',
       seen: null,
       written: null,
-      error: 'Lookup sources require a name/date parameter — use Run Individual Source.',
+      error: skipMsg,
     });
   }
 
@@ -1151,5 +1403,33 @@ function flattenPatch(obj, prefix = '') {
   }
   return out;
 }
+
+// ── GET /api/admin/ingestion/jobs ────────────────────────────────────────────
+r.get('/jobs', (req, res) => {
+  const jobs = Array.from(_jobStore.values())
+    .sort((a, b) => b.started_at.localeCompare(a.started_at))
+    .slice(0, 20);
+  return res.json({ ok: true, jobs });
+});
+
+// ── GET /api/admin/ingestion/jobs/:jobId ─────────────────────────────────────
+r.get('/jobs/:jobId', (req, res) => {
+  const job = _jobStore.get(req.params.jobId);
+  if (!job) return res.status(404).json({ ok: false, error: 'JOB_NOT_FOUND', message: `Job ${req.params.jobId} not found` });
+  return res.json({ ok: true, job });
+});
+
+// ── POST /api/admin/ingestion/jobs/:jobId/cancel ──────────────────────────────
+r.post('/jobs/:jobId/cancel', (req, res) => {
+  const job = _jobStore.get(req.params.jobId);
+  if (!job) return res.status(404).json({ ok: false, error: 'JOB_NOT_FOUND' });
+  if (!['queued', 'running'].includes(job.status)) {
+    return res.json({ ok: true, message: `Job already ${job.status}`, job });
+  }
+  const child = _jobProcesses.get(req.params.jobId);
+  if (child) { child.kill('SIGTERM'); _jobProcesses.delete(req.params.jobId); }
+  _updateJob(req.params.jobId, { status: 'cancelled', completed_at: new Date().toISOString() });
+  return res.json({ ok: true, job: _jobStore.get(req.params.jobId) });
+});
 
 export default r;
