@@ -61,11 +61,19 @@ def _parse_date(s):
 
 
 def _resolve_filter_date(booking_date):
+    """
+    Resolve 'today'/'yesterday' to a date string using Central Time, which
+    matches the timezone used in the Jefferson feed's BookingDate field.
+    Explicit date strings (YYYY-MM-DD, M/D/YYYY) are returned as-is.
+    """
     token = booking_date.strip().lower()
-    if token == "today":
-        return date.today().isoformat()
-    if token == "yesterday":
-        return (date.today() - timedelta(days=1)).isoformat()
+    if token in ("today", "yesterday"):
+        from zoneinfo import ZoneInfo  # noqa: PLC0415
+        ct = ZoneInfo("America/Chicago")
+        local_date = datetime.now(ct).date()
+        if token == "yesterday":
+            local_date = local_date - timedelta(days=1)
+        return local_date.isoformat()
     return _parse_date(booking_date)
 
 
