@@ -396,6 +396,7 @@ def run_harris_sheriff_enrichment(
     seed: str = "",
     window_days: int = 7,
     limit: int = 25,
+    force: bool = False,
 ) -> int:
     """
     Enrich Harris County inmate records via the Sheriff JailInfo site.
@@ -408,10 +409,26 @@ def run_harris_sheriff_enrichment(
     """
     from ingestion.harris_sheriff_enrichment import HarrisSheriffEnrichment  # noqa: PLC0415
 
-    # Hard cap: batch window never exceeds 7 days
-    effective_window = min(int(window_days), 7)
+    # No hard cap here — caller is responsible for reasonable limits
+    effective_window = int(window_days)
 
-    enricher = HarrisSheriffEnrichment(db, dry_run=dry_run)
+    # Harris enrichment reads from v2_harris_reports and harris_sheriff_enrichments
+    # regardless of dry_run mode.  When dry_run=True the caller passes _NullDb()
+    # which returns [] for all finds — so we always connect to the real database
+    # for reads and let HarrisSheriffEnrichment respect dry_run for writes.
+    if hasattr(db, "_db"):
+        # _StagingDb wrapper — unwrap to get the raw pymongo database
+        read_db = db._db
+    else:
+        # _NullDb or unknown — obtain a real connection for reads
+        from storage.mongo_client import get_db as _get_real_db  # noqa: PLC0415
+        try:
+            read_db = _get_real_db()
+        except Exception as exc:
+            print(f"[harris_sheriff] WARNING: could not obtain real db for reads: {exc}", file=sys.stderr)
+            read_db = db
+
+    enricher = HarrisSheriffEnrichment(read_db, dry_run=dry_run)
 
     if spn:
         # ── Single-SPN mode ───────────────────────────────────────────────────
@@ -454,7 +471,7 @@ def run_harris_sheriff_enrichment(
             f"[harris_sheriff] batch mode — seed=recent_harris "
             f"window={effective_window}d limit={limit} dry_run={dry_run}"
         )
-        stats = enricher.run_batch(window_days=effective_window, limit=limit)
+        stats = enricher.run_batch(window_days=effective_window, limit=limit, force=force)
         emit_result(
             ok=stats.get("errors", 0) == 0,
             source="harris_sheriff_enrichment",
@@ -467,6 +484,10 @@ def run_harris_sheriff_enrichment(
             unmatched=stats.get("unmatched", 0),
             skipped_cached=stats.get("skipped_cached", 0),
             window_days=stats.get("window_days", effective_window),
+            docs_scanned=stats.get("docs_scanned", 0),
+            docs_with_spn=stats.get("docs_with_spn", 0),
+            unique_spns=stats.get("unique_spns", 0),
+            eligible_spns=stats.get("eligible_spns", 0),
             message=f"Harris Sheriff batch enrichment — window={stats.get('window_days', effective_window)}d",
         )
         return 0 if stats.get("errors", 0) == 0 else 1
@@ -1003,8 +1024,9 @@ def main() -> int:
                 dry_run=dry_run,
                 spn=getattr(args, "spn", ""),
                 seed=getattr(args, "seed", ""),
-                window_days=min(getattr(args, "window_days", 7), 7),
+                window_days=getattr(args, "window_days", 7),
                 limit=args.limit,
+                force=getattr(args, "force", False),
             )
         else:
             booking_date = getattr(args, "booking_date", "")

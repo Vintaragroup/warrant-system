@@ -1975,6 +1975,8 @@ function HarrisSheriffSpnEnrichmentPanel() {
   const [mode, setMode] = useState('batch'); // 'batch' | 'single'
   const [spn, setSpn] = useState('');
   const [limit, setLimit] = useState(25);
+  const [windowDays, setWindowDays] = useState(7);
+  const [force, setForce] = useState(false);
   const [dryRun, setDryRun] = useState(true);
   const [running, setRunning] = useState(false);
   const [runPhase, setRunPhase] = useState(''); // human-readable step label
@@ -2015,6 +2017,8 @@ function HarrisSheriffSpnEnrichmentPanel() {
           source: 'harris_sheriff_enrichment',
           dry_run: dryRun,
           limit,
+          windowDays,
+          force,
           seed: 'recent_harris',
         });
         setResult(data);
@@ -2040,7 +2044,6 @@ function HarrisSheriffSpnEnrichmentPanel() {
           Query the Harris County Sheriff JailInfo site by SPN to verify custody status.
           If a person is confirmed <strong>NOT IN JAIL</strong>, their Harris records are
           automatically flagged as no longer a prospect (released or bailed).
-          Only records from the <strong>past 7 days</strong> are eligible for batch enrichment.
         </p>
       </div>
 
@@ -2087,10 +2090,24 @@ function HarrisSheriffSpnEnrichmentPanel() {
             <input
               type="number"
               min={1}
-              max={50}
+              max={500}
               disabled={running}
               value={limit}
-              onChange={(e) => setLimit(Math.max(1, Math.min(50, Number(e.target.value))))}
+              onChange={(e) => setLimit(Math.max(1, Math.min(500, Number(e.target.value))))}
+              className="w-full border border-purple-300 rounded px-3 py-1.5 text-sm focus:border-purple-500 focus:outline-none disabled:opacity-50"
+            />
+          </div>
+        )}
+        {mode === 'batch' && (
+          <div>
+            <label className="block text-xs font-medium text-purple-800 mb-1">Window (days)</label>
+            <input
+              type="number"
+              min={1}
+              max={90}
+              disabled={running}
+              value={windowDays}
+              onChange={(e) => setWindowDays(Math.max(1, Math.min(90, Number(e.target.value))))}
               className="w-full border border-purple-300 rounded px-3 py-1.5 text-sm focus:border-purple-500 focus:outline-none disabled:opacity-50"
             />
           </div>
@@ -2110,6 +2127,21 @@ function HarrisSheriffSpnEnrichmentPanel() {
           Dry run only — <span className="text-purple-500">no records written, no prospect flags set</span>
         </span>
       </label>
+
+      {mode === 'batch' && (
+        <label className="flex cursor-pointer select-none items-center gap-2">
+          <input
+            type="checkbox"
+            checked={force}
+            disabled={running}
+            onChange={(e) => setForce(e.target.checked)}
+            className="h-4 w-4 rounded border-purple-300 accent-orange-500 disabled:opacity-50"
+          />
+          <span className="text-sm text-purple-800">
+            Force re-check — <span className="text-purple-500">re-enrich SPNs even if recently checked</span>
+          </span>
+        </label>
+      )}
 
       {!dryRun && !running && (
         <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-800">
@@ -2256,21 +2288,45 @@ function HarrisSheriffSpnEnrichmentPanel() {
 
           {/* Batch result stats */}
           {mode === 'batch' && result.ok && (
-            <dl className="grid grid-cols-3 gap-3 text-sm sm:grid-cols-6">
-              {[
-                ['Seen', result.seen ?? result.records_seen],
-                ['Matched', result.matched],
-                ['Written', result.dry_run ? '0 (dry)' : (result.written ?? result.records_written ?? 0)],
-                ['No match', result.unmatched],
-                ['Errors', result.errors, result.errors > 0 ? 'text-rose-600' : ''],
-                ['Skipped', result.skipped_cached, 'text-slate-500'],
-              ].map(([k, v, cls = '']) => (
-                <div key={k} className={cls}>
-                  <dt className="text-xs font-medium text-slate-500">{k}</dt>
-                  <dd className="text-base font-bold tabular-nums">{v ?? '—'}</dd>
-                </div>
-              ))}
-            </dl>
+            <div className="space-y-3">
+              {/* Discovery diagnostics */}
+              {(result.docs_scanned != null || result.unique_spns != null) && (
+                <dl className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4 rounded-lg border border-purple-200 bg-purple-50 px-3 py-2">
+                  {[
+                    ['Docs scanned', result.docs_scanned],
+                    ['With SPN', result.docs_with_spn],
+                    ['Unique SPNs', result.unique_spns],
+                    ['Eligible', result.eligible_spns],
+                  ].map(([k, v]) => (
+                    <div key={k}>
+                      <dt className="text-xs font-medium text-purple-600">{k}</dt>
+                      <dd className="text-sm font-bold tabular-nums text-purple-900">{v ?? '—'}</dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
+              {/* Enrichment results */}
+              <dl className="grid grid-cols-3 gap-3 text-sm sm:grid-cols-6">
+                {[
+                  ['Seen', result.seen ?? result.records_seen],
+                  ['Matched', result.matched],
+                  ['Written', result.dry_run ? '0 (dry)' : (result.written ?? result.records_written ?? 0)],
+                  ['No match', result.unmatched],
+                  ['Errors', result.errors, result.errors > 0 ? 'text-rose-600' : ''],
+                  ['Skipped', result.skipped_cached, 'text-slate-500'],
+                ].map(([k, v, cls = '']) => (
+                  <div key={k} className={cls}>
+                    <dt className="text-xs font-medium text-slate-500">{k}</dt>
+                    <dd className="text-base font-bold tabular-nums">{v ?? '—'}</dd>
+                  </div>
+                ))}
+              </dl>
+              {limit > 100 && (
+                <p className="text-xs text-amber-600 italic">
+                  ⚠ Large batches can take several minutes. Each SPN requires a live request to the Sheriff site.
+                </p>
+              )}
+            </div>
           )}
 
           {result.message && (

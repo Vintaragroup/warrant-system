@@ -50,7 +50,7 @@ const SOURCE_MAX_LIMITS = {
   fortbend_lookup: 100,
   jefferson_lookup: 100,
   brazoria_lookup: 100,
-  harris_sheriff_enrichment: 50,
+  harris_sheriff_enrichment: 500,
 };
 
 // Staging collection names per source (for status display)
@@ -760,9 +760,11 @@ r.post('/run', async (req, res) => {
   if (source === 'harris_sheriff_enrichment') {
     if (spn) { pyArgs.push('--spn', String(spn).trim()); }
     else {
-      // Batch mode — always seed from recent_harris, always cap window at 7 days
+      // Batch mode — seed from recent_harris, respect caller's window
       pyArgs.push('--seed', seed || 'recent_harris');
-      pyArgs.push('--window-days', '7');
+      const wd = Math.min(Math.max(1, Number(windowDays) || 7), 90);
+      pyArgs.push('--window-days', String(wd));
+      if (force) pyArgs.push('--force');
     }
   }
 
@@ -826,11 +828,12 @@ r.post('/run', async (req, res) => {
       });
       child.on('error', (err) => reject(err));
 
-      // Hard timeout: 5 minutes max for a manual run
+      // Hard timeout: longer for enrichment sources that make one HTTP request per record
+      const timeoutMs = source === 'harris_sheriff_enrichment' ? 25 * 60 * 1000 : 5 * 60 * 1000;
       const timer = setTimeout(() => {
         child.kill('SIGTERM');
-        reject(new Error('Run timed out after 5 minutes'));
-      }, 5 * 60 * 1000);
+        reject(new Error(`Run timed out after ${timeoutMs / 60000} minutes`));
+      }, timeoutMs);
 
       child.on('close', () => clearTimeout(timer));
     });
@@ -851,6 +854,7 @@ r.post('/run', async (req, res) => {
   let detailsChecked = null, recentMatches = null, staleCached = null;
   let prefixesChecked = null, skippedCached = null, unknownDate = null;
   let dateSearched = null;
+  let docsScanned = null, docsWithSpn = null, uniqueSpns = null, eligibleSpns = null;
   if (structured) {
     recordsSeen    = structured.seen ?? null;
     recordsWritten = structured.written ?? null;
@@ -864,6 +868,11 @@ r.post('/run', async (req, res) => {
     prefixesChecked = structured.prefixes_checked ?? null;
     skippedCached   = structured.skipped_cached   ?? null;
     unknownDate     = structured.unknown_date     ?? null;
+    // Harris Sheriff enrichment diagnostics
+    docsScanned  = structured.docs_scanned  ?? null;
+    docsWithSpn  = structured.docs_with_spn ?? null;
+    uniqueSpns   = structured.unique_spns   ?? null;
+    eligibleSpns = structured.eligible_spns ?? null;
   } else {
     const counts = parseOutputCounts(stdout, stdout, dryRun);
     recordsSeen    = counts.seen;
@@ -935,6 +944,11 @@ r.post('/run', async (req, res) => {
     // Fort Bend verify mode
     verification_details: verificationDetails.length > 0 ? verificationDetails : undefined,
     verification_sample_count: verificationDetails.length > 0 ? verificationDetails.length : undefined,
+    // Harris Sheriff enrichment diagnostics
+    docs_scanned:  docsScanned,
+    docs_with_spn: docsWithSpn,
+    unique_spns:   uniqueSpns,
+    eligible_spns: eligibleSpns,
     command: redactedCmd,
     stdout_tail: tailOutput(redactSecrets(stdout)),
     stderr_tail: tailOutput(redactSecrets(stderr)),

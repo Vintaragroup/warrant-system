@@ -32,8 +32,8 @@ JAIL_INFO_URL = "https://www.harriscountyso.org/JailInfo/FindSomeoneInJail"
 RECHECK_ACTIVE_HOURS = 24        # Re-check in-custody records every 24 hours
 RECHECK_INACTIVE_HOURS = 7 * 24  # Re-check released/no_match records every 7 days
 
-# Hard cap on how far back batch mode looks (days)
-MAX_WINDOW_DAYS = 7
+# Maximum allowed window for batch mode (days) — can be overridden by caller
+MAX_WINDOW_DAYS = 90
 
 
 class HarrisSheriffEnrichment:
@@ -251,6 +251,19 @@ class HarrisSheriffEnrichment:
         }
 
     @staticmethod
+    def _normalize_spn(value) -> Optional[str]:
+        """
+        Validate and normalize an SPN value.
+        Returns a zero-padded 8-digit string if valid, else None.
+        Only accepts values that are entirely numeric (after stripping) and
+        at least 3 digits long, to filter out corrupt values like 'KESEY MENDEZ'.
+        """
+        if value is None:
+            return None
+        s = re.sub(r"[^0-9]", "", str(value).strip())
+        return s.zfill(8) if len(s) >= 3 else None
+
+    @staticmethod
     def _extract_timestamp(page_text: str) -> Optional[str]:
         """Extract 'INFORMATION ACCURATE AS OF ...' timestamp from page text."""
         ts_match = re.search(
@@ -391,17 +404,20 @@ class HarrisSheriffEnrichment:
 
     # ── Batch runner ──────────────────────────────────────────────────────────
 
-    def run_batch(self, window_days: int = 7, limit: int = 25) -> Dict[str, Any]:
+    def run_batch(
+        self,
+        window_days: int = 7,
+        limit: int = 25,
+        force: bool = False,
+    ) -> Dict[str, Any]:
         """
         Enrich SPNs from recent Harris reports.
 
-        Only considers records scraped within the past MAX_WINDOW_DAYS days
-        (hard capped at 7 — records older than 7 days are no longer actionable
-        prospects for bail-bond purposes).
-
-        Skips SPNs that were recently enriched based on recheck policy.
+        window_days — how far back to look (capped at MAX_WINDOW_DAYS=90).
+        limit       — max SPNs to enrich per run.
+        force       — if True, skip the recheck-interval cache and re-enrich
+                      even recently enriched SPNs.
         """
-        # Hard cap: never look further back than MAX_WINDOW_DAYS
         effective_window = min(int(window_days), MAX_WINDOW_DAYS)
 
         cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=effective_window)
@@ -409,30 +425,47 @@ class HarrisSheriffEnrichment:
 
         print(
             f"[harris_sheriff] batch mode — window={effective_window}d "
-            f"cutoff={cutoff_iso} limit={limit} dry_run={self.dry_run}"
+            f"cutoff={cutoff_iso} limit={limit} dry_run={self.dry_run} force={force}"
         )
 
-        # Gather SPNs from recent Harris reports
+        # ── Gather SPNs from recent Harris reports ─────────────────────────────
+        docs_scanned = 0
+        docs_with_spn = 0
         try:
             cursor = self.db[self.HARRIS_REPORTS_COLLECTION].find(
-                {
-                    "spn": {"$exists": True, "$ne": None, "$ne": ""},
-                    "scraped_at": {"$gte": cutoff_iso},
-                },
+                {"scraped_at": {"$gte": cutoff_iso}},
                 {"spn": 1},
             )
-            all_spns = list({str(doc["spn"]).strip() for doc in cursor if doc.get("spn")})
+            raw_spns: set = set()
+            for doc in cursor:
+                docs_scanned += 1
+                raw_val = doc.get("spn")
+                spn_norm = self._normalize_spn(raw_val)
+                if spn_norm:
+                    docs_with_spn += 1
+                    raw_spns.add(spn_norm)
+            all_spns = list(raw_spns)
         except Exception as exc:
             print(f"[harris_sheriff] could not query harris_reports: {exc}", file=sys.stderr)
-            return {"seen": 0, "matched": 0, "unmatched": 0, "written": 0, "errors": 1}
+            return {
+                "seen": 0, "matched": 0, "unmatched": 0, "written": 0, "errors": 1,
+                "docs_scanned": 0, "docs_with_spn": 0, "unique_spns": 0, "eligible_spns": 0,
+            }
 
-        print(f"[harris_sheriff] found {len(all_spns)} unique SPNs in window")
+        unique_spns = len(all_spns)
+        print(
+            f"[harris_sheriff] scanned {docs_scanned} docs — "
+            f"{docs_with_spn} with valid SPN — {unique_spns} unique SPNs"
+        )
 
-        # Filter out recently enriched SPNs
+        # ── Filter out recently enriched SPNs (unless force=True) ──────────────
         now = dt.datetime.now(dt.timezone.utc)
         eligible_spns: List[str] = []
         skipped_cached = 0
         for spn in all_spns:
+            if force:
+                eligible_spns.append(spn)
+                continue
             try:
                 existing = self.db[self.COLLECTION].find_one(
                     {"spn": spn}, {"custody_status": 1, "last_checked_at": 1}
@@ -457,8 +490,9 @@ class HarrisSheriffEnrichment:
                 pass  # If cache check fails, include the SPN
             eligible_spns.append(spn)
 
+        eligible_count = len(eligible_spns)
         print(
-            f"[harris_sheriff] {len(eligible_spns)} eligible SPNs "
+            f"[harris_sheriff] {eligible_count} eligible SPNs "
             f"({skipped_cached} skipped — recently enriched)"
         )
 
@@ -509,4 +543,8 @@ class HarrisSheriffEnrichment:
             "errors": errors,
             "skipped_cached": skipped_cached,
             "window_days": effective_window,
+            "docs_scanned": docs_scanned,
+            "docs_with_spn": docs_with_spn,
+            "unique_spns": unique_spns,
+            "eligible_spns": eligible_count,
         }
