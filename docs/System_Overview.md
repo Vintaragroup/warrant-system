@@ -70,38 +70,31 @@ MongoDB Atlas: persons, custody_events, inquiries, cases, logs, checkins
 All tool endpoints require the header `Authorization: Bearer <TELNYX_TOOL_TOKEN>`.
 
 - `POST /telnyx/find_person`
-
   - Input: `{ full_name: string, dob?: string, county?: string }`
   - Looks up via `simple_*` collections first, then `persons`/`custody_events`.
   - Output: `{ found, person?, latest_custody? }`.
 
 - `POST /telnyx/get_bail_status`
-
   - Input: `{ person_id? | full_name (+dob?) }`
   - Returns `{ found, has_custody, total_bond, amount_numeric, eligible, needs_human_review }`.
 
 - `POST /telnyx/create_bail_inquiry`
-
   - Input: `{ person_id? | inmate_name|full_name, caller_name, caller_phone(E.164), relationship?, intends_to_post?, notes? }`
   - Persists to `inquiries` and logs the event.
 
 - `POST /telnyx/attach_caller`
-
   - Input: `{ person_id? | full_name(+dob?), caller_name, caller_phone(E.164), relationship?, intends_to_post?, notes? }`
   - Always creates `inquiries` record.
   - If `person_id` resolves to a `cases` document, appends a `crm_contacts` entry to the case.
 
 - `POST /telnyx/transfer_target`
-
   - Input: `{ county?: string }` → Returns a single E.164 route based on `OFFICE_ROUTES_JSON` (fallback to `DEFAULT_OFFICE_NUMBER`).
 
 - `POST /telnyx/transfer_plan`
-
   - Input: `{ county?: string, lang?: string }` → Returns ordered `numbers[]` based on `OFFICES_SCHEDULE_JSON` rules and app timezone.
   - `GET /telnyx/schedule_status` (diagnostic) shows parsed schedule and a sample plan.
 
 - `POST /telnyx/notify_agent`
-
   - Input: `{ to_phone(E.164), county?, inmate?, bail?, caller?, summary? }`
   - Sends a short SMS summary to the on‑call agent.
 
