@@ -1254,7 +1254,7 @@ async def warm_transfer_plan(payload: Dict[str, Any], request: Request):
     topic = payload.get("topic") or payload.get("subject")
     urgency = payload.get("urgency")
     
-    return _compute_warm_transfer_plan(
+    plan = _compute_warm_transfer_plan(
         county=county,
         lang=lang,
         inmate=inmate,
@@ -1264,6 +1264,26 @@ async def warm_transfer_plan(payload: Dict[str, Any], request: Request):
         topic=topic,
         urgency=urgency
     )
+
+    if not plan.get("numbers"):
+        _missing: list[str] = []
+        if not county:
+            _missing.append("county")
+        logs.insert_one({
+            "type": "telnyx_warm_transfer_plan_error",
+            "ts": int(time.time()),
+            "county": county,
+            "lang": lang,
+            "error": "no_routing_numbers_resolved",
+            "missing_fields": _missing
+        })
+        return {
+            "success": False,
+            "error": "No routing numbers could be resolved for the given county and schedule",
+            "missing_fields": _missing
+        }
+
+    return plan
 
 @router.get("/hold_music")
 async def hold_music(request: Request):
@@ -1666,8 +1686,23 @@ async def playback_start(payload: Dict[str, Any], request: Request):
     audio_url = (payload.get("audio_url") or "").strip()
     loop = payload.get("loop", True)
     
-    if not call_control_id or not audio_url:
-        raise HTTPException(400, "Provide 'call_control_id' and 'audio_url'")
+    _missing: list[str] = []
+    if not call_control_id:
+        _missing.append("call_control_id")
+    if not audio_url:
+        _missing.append("audio_url")
+    if _missing:
+        logs.insert_one({
+            "type": "telnyx_playback_start_error",
+            "ts": int(time.time()),
+            "error": "missing_required_fields",
+            "missing_fields": _missing
+        })
+        return {
+            "success": False,
+            "error": f"Required fields missing: {', '.join(_missing)}",
+            "missing_fields": _missing
+        }
 
     ccid_trim = call_control_id.strip()
     if ccid_trim.lower() in {"call_control_id", "{{call_control_id}}"} or " " in ccid_trim:
@@ -1677,7 +1712,11 @@ async def playback_start(payload: Dict[str, Any], request: Request):
             "call_control_id": ccid_trim,
             "error": "placeholder_call_control_id"
         })
-        raise HTTPException(400, "Invalid call_control_id placeholder detected")
+        return {
+            "success": False,
+            "error": "Invalid call_control_id: placeholder value detected",
+            "missing_fields": ["call_control_id"]
+        }
 
     if not re.match(r"^v[0-9].*", ccid_trim):
         logs.insert_one({
@@ -2074,8 +2113,18 @@ async def handle_office_hold(payload: Dict[str, Any], request: Request):
     inmate_name = (payload.get("inmate_full_name") or "").strip()
     
     if not call_control_id:
-        raise HTTPException(400, "call_control_id required")
-    
+        logs.insert_one({
+            "type": "telnyx_handle_office_hold_error",
+            "ts": int(time.time()),
+            "error": "missing_required_fields",
+            "missing_fields": ["call_control_id"]
+        })
+        return {
+            "success": False,
+            "error": "call_control_id is required",
+            "missing_fields": ["call_control_id"]
+        }
+
     logs.insert_one({
         "type": "telnyx_office_hold_detected",
         "call_control_id": call_control_id,

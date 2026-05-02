@@ -2,6 +2,23 @@
 
 This document summarizes how the AI Agent service works, how the Telnyx webhooks and tool endpoints are wired, and how it connects to MongoDB Atlas.
 
+## Source of Truth
+
+Executable behavior is defined by these files:
+
+- `app/main.py`
+- `app/telnyx_tools.py`
+- `app/config.py`
+- `app/db.py`
+
+Supporting ground-truth references:
+
+- `docs/Ground_Truth_Foundation_Report.md`
+- `docs/System_Flow_Ground_Truth.md`
+- `docs/Docs_Code_Gap_Analysis.md`
+
+If this document conflicts with the executable code above, treat the code as authoritative.
+
 ## Purpose
 
 The service bridges Telnyx AI Assistant tools and your data layer:
