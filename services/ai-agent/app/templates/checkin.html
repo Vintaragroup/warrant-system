@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bond Compliance</title>
+  <style>
+    body{font:16px -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,system-ui,sans-serif;margin:0;padding:24px;line-height:1.35;background:#f7f7f9}
+    .card{max-width:720px;margin:0 auto;background:#fff;border-radius:14px;box-shadow:0 6px 22px rgba(0,0,0,.06);padding:20px}
+    button{padding:14px 16px;border-radius:10px;border:0;background:#111;color:#fff;font-weight:600}
+    .ghost{background:#eee;color:#111}
+    .muted{color:#555;font-size:0.9rem}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Immediate Bond Compliance Check</h1>
+    <p>Under your signed agreement, you must provide your current location upon request. Select <b>Continue</b> to proceed.</p>
+    <div id="ui">
+      <button id="go">Continue</button>
+      <button id="decline" class="ghost" style="margin-left:8px">Decline</button>
+      <p id="msg" class="muted"></p>
+    </div>
+  </div>
+  <script>
+    const tok = new URL(location).searchParams.get('tok');
+    const msg = (t)=>document.getElementById('msg').textContent=t;
+
+    document.getElementById('decline').onclick = async () => {
+      try { await fetch('/api/refusal?tok='+encodeURIComponent(tok), {method:'POST'}); } catch(e){}
+      msg('Your refusal has been recorded.');
+    };
+
+    document.getElementById('go').onclick = async () => {
+      msg('Requesting location…');
+      let loc=null, locErr='';
+      try {
+        loc = await new Promise((res, rej) =>
+          navigator.geolocation.getCurrentPosition(
+            p => res({lat:p.coords.latitude,lng:p.coords.longitude,acc:p.coords.accuracy}),
+            e => rej(e),
+            { enableHighAccuracy:true, timeout:15000, maximumAge:0 }
+          )
+        );
+      } catch(e){ locErr = e.message; }
+
+      let photoBlob = null;
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:"user" } });
+        const v = document.createElement('video'); v.srcObject = stream; await v.play();
+        const c = document.createElement('canvas'); c.width = v.videoWidth||640; c.height = v.videoHeight||480;
+        c.getContext('2d').drawImage(v,0,0,c.width,c.height);
+        photoBlob = await new Promise(r=>c.toBlob(r,'image/jpeg',0.85));
+        stream.getTracks().forEach(t=>t.stop());
+      } catch(e){}
+
+      const form = new FormData();
+      form.append('token', tok);
+      if (photoBlob) form.append('photo', photoBlob, 'selfie.jpg');
+      form.append('loc', JSON.stringify(loc));
+      form.append('loc_error', locErr);
+
+      const r = await fetch('/api/checkin', { method:'POST', body:form });
+      msg(r.ok ? 'Check‑in received. Thank you.' : 'Upload failed.');
+    };
+  </script>
+</body>
+</html>
