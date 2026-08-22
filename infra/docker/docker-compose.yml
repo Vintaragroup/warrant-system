@@ -154,7 +154,10 @@ services:
       - SMTP_PASS=${DASHBOARD_SMTP_PASS}
       - EMAIL_FROM=${DASHBOARD_EMAIL_FROM}
       - APP_NAME=${DASHBOARD_APP_NAME:-Bail Bonds Dashboard}
-      - GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/firebase
+      - GOOGLE_OAUTH_CLIENT_ID=${DASHBOARD_GOOGLE_OAUTH_CLIENT_ID}
+      - GOOGLE_OAUTH_CLIENT_SECRET=${DASHBOARD_GOOGLE_OAUTH_CLIENT_SECRET}
+      - API_PUBLIC_URL=${DASHBOARD_API_PUBLIC_URL:-http://localhost:8080}
+      - SESSION_SECRET=${DASHBOARD_SESSION_SECRET:-dev-only-insecure-session-secret}
     ports:
       - "${DASHBOARD_API_PORT:-8080}:${DASHBOARD_API_PORT:-8080}"
     # /api/health/light is the liveness probe — always 200, no DB calls.
@@ -168,16 +171,14 @@ services:
     depends_on:
       - dashboard-mongo
       - dashboard-redis
-    secrets:
-      - firebase
     command: node src/index.js
 
   # ─── warrantdb-pipeline ──────────────────────────────────────────────────────
   #
   # FUTURE DIRECTION — Shared Mongo replica set
   # ─────────────────────────────────────────────
-  # The three separate Mongo services below (ie-mongo, dashboard-mongo, pipeline-mongo)
-  # are intended to be consolidated into a single shared replica set:
+  # The separate Mongo services below (ie-mongo, dashboard-mongo, pipeline-mongo,
+  # ai-agent-mongo) are intended to be consolidated into a single shared replica set:
   #
   #   warrant-mongo:
   #     image: mongo:7
@@ -187,6 +188,9 @@ services:
   #   - warrantdb          (bail-bonds-dashboard)
   #   - inmate_enrichment  (inmate-enrichment api + worker)
   #   - warrantdb_pipeline (warrantdb-pipeline api)
+  #   - ai_agent           (ai-agent) — must stay a distinct database even after
+  #     consolidation; it has its own `checkins` collection that would collide
+  #     with the dashboard's `checkins` collection under the same database.
   #
   # Future shared URI pattern:
   #   mongodb://warrant-mongo:27017/?replicaSet=rs0
@@ -220,12 +224,75 @@ services:
     depends_on:
       - pipeline-mongo
 
-secrets:
-  firebase:
-    file: ../../apps/dashboard/server/.secrets/firebase.json
+  # ─── ai-agent ─────────────────────────────────────────────────────────────
+  #
+  # Deliberately on its own Mongo instance/database, not shared with
+  # dashboard-mongo — it has its own `checkins` collection (compliance
+  # check-in flow) which would collide with the dashboard's own `checkins`
+  # collection (GPS check-in pings) if pointed at the same database.
+
+  ai-agent-mongo:
+    image: mongo:7
+    restart: unless-stopped
+    ports:
+      - "27020:27017"
+    volumes:
+      - ai-agent-mongo-data:/data/db
+
+  ai-agent-api:
+    build:
+      context: ../../services/ai-agent
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      - MONGO_URI=${AI_AGENT_MONGO_URI:-mongodb://ai-agent-mongo:27017/ai_agent}
+      - MONGO_DB=${AI_AGENT_MONGO_DB:-ai_agent}
+      - APP_ENV=${AI_AGENT_APP_ENV:-development}
+      - SECRET_KEY=${AI_AGENT_SECRET_KEY:-dev-only-insecure-secret}
+      - BASE_URL=${AI_AGENT_BASE_URL:-http://localhost:8082}
+      - TELNYX_API_KEY=${AI_AGENT_TELNYX_API_KEY}
+      - TELNYX_MESSAGING_FROM_NUMBER=${AI_AGENT_TELNYX_MESSAGING_FROM_NUMBER}
+      - TELNYX_MESSAGING_PROFILE_ID=${AI_AGENT_TELNYX_MESSAGING_PROFILE_ID}
+      - TELNYX_TOOL_TOKEN=${AI_AGENT_TELNYX_TOOL_TOKEN:-dev-only-placeholder-token}
+      - TELNYX_WEBHOOK_SECRET=${AI_AGENT_TELNYX_WEBHOOK_SECRET}
+      - TWILIO_ACCOUNT_SID=${AI_AGENT_TWILIO_ACCOUNT_SID}
+      - TWILIO_AUTH_TOKEN=${AI_AGENT_TWILIO_AUTH_TOKEN}
+      - TWILIO_FROM_NUMBER=${AI_AGENT_TWILIO_FROM_NUMBER}
+      - TWILIO_MESSAGING_SERVICE_SID=${AI_AGENT_TWILIO_MESSAGING_SERVICE_SID}
+      - TWILIO_USE_WHATSAPP=${AI_AGENT_TWILIO_USE_WHATSAPP:-false}
+      - TWILIO_WHATSAPP_FROM=${AI_AGENT_TWILIO_WHATSAPP_FROM}
+      - AWS_ACCESS_KEY_ID=${AI_AGENT_AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AI_AGENT_AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AI_AGENT_AWS_REGION:-us-east-2}
+      - S3_BUCKET=${AI_AGENT_S3_BUCKET}
+      - ONCALL_AGENTS_JSON=${AI_AGENT_ONCALL_AGENTS_JSON}
+      - OFFICE_ROUTES_JSON=${AI_AGENT_OFFICE_ROUTES_JSON}
+      - DEFAULT_OFFICE_NUMBER=${AI_AGENT_DEFAULT_OFFICE_NUMBER}
+      - STATIC_TRANSFER_NUMBERS_JSON=${AI_AGENT_STATIC_TRANSFER_NUMBERS_JSON}
+      - OFFICE_CALLER_ID=${AI_AGENT_OFFICE_CALLER_ID}
+      - OFFICES_SCHEDULE_JSON=${AI_AGENT_OFFICES_SCHEDULE_JSON}
+      - APP_TZ=${AI_AGENT_APP_TZ:-America/Chicago}
+      - DIAL_ATTEMPT_TIMEOUT_SEC=${AI_AGENT_DIAL_ATTEMPT_TIMEOUT_SEC:-20}
+      - TRANSFER_ACCEPT_DIGIT=${AI_AGENT_TRANSFER_ACCEPT_DIGIT:-1}
+      - TRANSFER_DECLINE_DIGIT=${AI_AGENT_TRANSFER_DECLINE_DIGIT:-2}
+      - HOLD_MUSIC_URL=${AI_AGENT_HOLD_MUSIC_URL}
+      - IP_GEO_PROVIDER=${AI_AGENT_IP_GEO_PROVIDER:-none}
+      - IP_GEO_TOKEN=${AI_AGENT_IP_GEO_TOKEN}
+      - IP_GEO_TTL_SEC=${AI_AGENT_IP_GEO_TTL_SEC:-86400}
+    ports:
+      - "${AI_AGENT_API_PORT:-8082}:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      - ai-agent-mongo
 
 volumes:
   ie-mongo-data: {}
   dashboard-mongo-data: {}
   dashboard-redis-data: {}
   pipeline-mongo-data: {}
+  ai-agent-mongo-data: {}

@@ -1,0 +1,102 @@
+version: "1"
+services:
+  - type: web
+    name: ai-agent
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /healthz
+    envVars:
+      # Base
+      - key: APP_ENV
+        value: production
+      - key: SECRET_KEY
+        sync: false
+      - key: BASE_URL
+        sync: false
+      - key: BUILD_SHA
+        sync: false
+
+      # MongoDB — deliberately a separate database from the dashboard's
+      # `warrantdb` (see services/ai-agent's own `checkins` collection, which
+      # would collide with the dashboard's `checkins` collection if shared).
+      - key: MONGO_URI
+        sync: false
+      - key: MONGO_DB
+        value: ai_agent
+
+      # Telnyx
+      - key: TELNYX_API_KEY
+        sync: false
+      - key: TELNYX_MESSAGING_FROM_NUMBER
+        sync: false
+      - key: TELNYX_MESSAGING_PROFILE_ID
+        sync: false
+      - key: TELNYX_TOOL_TOKEN
+        sync: false
+      - key: TELNYX_WEBHOOK_SECRET
+        sync: false
+
+      # Twilio (SMS/WhatsApp fallback)
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_FROM_NUMBER
+        sync: false
+      - key: TWILIO_MESSAGING_SERVICE_SID
+        sync: false
+      - key: TWILIO_USE_WHATSAPP
+        sync: false
+      - key: TWILIO_WHATSAPP_FROM
+        sync: false
+
+      # S3 (check-in photo upload)
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: AWS_REGION
+        sync: false
+      - key: S3_BUCKET
+        sync: false
+
+      # On-call agent notification
+      - key: ONCALL_AGENTS_JSON
+        sync: false
+
+      # Office routing / call transfer / scheduling
+      - key: OFFICE_ROUTES_JSON
+        sync: false
+      - key: DEFAULT_OFFICE_NUMBER
+        sync: false
+      - key: STATIC_TRANSFER_NUMBERS_JSON
+        sync: false
+      - key: OFFICE_CALLER_ID
+        sync: false
+      - key: OFFICES_SCHEDULE_JSON
+        sync: false
+      - key: APP_TZ
+        sync: false
+      - key: DIAL_ATTEMPT_TIMEOUT_SEC
+        sync: false
+      - key: TRANSFER_ACCEPT_DIGIT
+        sync: false
+      - key: TRANSFER_DECLINE_DIGIT
+        sync: false
+
+      # Hold music
+      - key: HOLD_MUSIC_URL
+        sync: false
+
+      # IP geolocation (check-in flow)
+      - key: IP_GEO_PROVIDER
+        sync: false
+      - key: IP_GEO_TOKEN
+        sync: false
+      - key: IP_GEO_TTL_SEC
+        sync: false
+
+previews:
+  generation: manual
