@@ -148,11 +148,11 @@ So "full county coverage" is roughly **3 of 6 counties on autopilot**, one manua
 - [x] The "Ground Truth" docs weren't missing — they existed as real files in the source repo's working tree, just gitignored/never committed. Copied directly rather than recreated.
 - Landed on branch `merge/ai-agent-service`, then merged into `main` locally on 2026-08-23 (per user's go-ahead) — **not yet pushed to any remote.**
 
-### Phase 3 — Harden County Scraping
-- [ ] Diagnose and fix the Brazoria network-access issue; re-enable its cron job once a successful staging write is confirmed.
-- [ ] Wire Wharton County into `scheduler/config.py` and add its Render cron job.
-- [ ] Decide Fort Bend's fate: keep manual-only intentionally, or promote to scheduled once you trust it.
-- [ ] Run `scripts/check_v2_promotion_readiness.py` for each source and use it to decide when v2 staging collections are ready to promote to production `simple_*` collections.
+### Phase 3 — Harden County Scraping — mostly done 2026-08-23
+- [x] **Diagnosed Brazoria — root cause is not a network/firewall issue.** `portal-txbrazoria.tylertech.cloud` (the source actually wired to the scheduler) is fully reachable but AWS WAF Bot Control CAPTCHA-challenges the request (`x-amzn-waf-action: captcha` response header, body titled "Human Verification"). Confirmed by inspecting the actual response, not inferred. Not fixable in code — user chose to pursue official API access / an IP allowlist exception from Brazoria County or Tyler Technologies rather than any code-side workaround. Remains disabled until that's resolved; comments in `scheduler/config.py` and `render.yaml` updated with the accurate diagnosis. (Separately: `pubweb.brazoriacountytx.gov`, a second unused Brazoria source in the codebase, does have a genuine connection timeout — but it isn't the one wired to the scheduler.)
+- [x] Wired Wharton into `scheduler/config.py` (`SUPPORTED_SOURCES`, hourly schedule) and added its Render cron job. Live-tested against the real site. Turned out it already had a 19/19 successful run history — just never scheduled.
+- [x] **Fort Bend promoted to scheduled** (twice daily, `--mode auto`) — per user's decision, backed by real evidence: 4/4 actual (non-dry-run) writes in `ingestion_runs` succeeded with zero failures, meeting the original manual-only restriction's own stated bar.
+- [x] Ran `scripts/check_v2_promotion_readiness.py` against real production data (read-only query, `ingestion_runs` collection). **Result: every source is BLOCKED — not due to data quality, but because there have been zero ingestion runs of any kind since 2026-05-20.** The entire pipeline has been dormant for ~3 months. Strong lead on why: `infra/render/pipeline.render.yaml` (possibly the file Render's blueprint actually points at) was missing every cron job definition that exists in the real `services/warrantdb-pipeline/render.yaml` — now synced. Still unconfirmed without the deferred Render dashboard check (see Phase 0/0.5) — but this may be the actual unblock.
 
 ### Phase 4 — Close the CRM/Messaging Gap
 - [ ] Decide: Twilio vs. Telnyx as the single messaging provider for the dashboard (the AI agent already proves Telnyx messaging works).
