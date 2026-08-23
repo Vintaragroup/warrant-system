@@ -5,6 +5,12 @@ services:
     ports:
       - "8080:8080"
     env_file: .env
+    environment:
+      # .env's MONGO_URI is host-oriented (localhost) for scripts run outside
+      # Docker; override here so the container talks to its own local mongo
+      # service instead of trying (and failing) to reach the host's loopback.
+      - MONGO_URI=mongodb://mongo:27017
+      - MONGO_DB=warrantdb
     depends_on:
       - mongo
   mongo:

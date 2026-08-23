@@ -33,7 +33,13 @@ services:
     environment:
       - PORT=8080
       - NODE_ENV=development
-      # Mongo connection comes from server/.env via dotenv; leave unset so local overrides don't stomp Atlas
+      # Explicit local sandbox Mongo — do NOT leave this unset. server/.env's
+      # default is host-oriented (localhost:27018) for scripts run outside
+      # Docker; dotenv won't override an already-set env var, so this line is
+      # what keeps the container itself off the real Atlas cluster. If you
+      # deliberately want this container against Atlas, override MONGO_URI
+      # here explicitly — never make Atlas the silent default again.
+      - MONGO_URI=mongodb://mongo:27017
       - WEB_ORIGIN=${WEB_ORIGIN:-http://localhost:5173}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
       # Enrichment proxy target (UI backend forwards /api/enrichment/* to this base)
@@ -66,7 +72,13 @@ services:
     environment:
       - PORT=8080
       - NODE_ENV=development
-      # Mongo connection comes from server/.env via dotenv; leave unset so local overrides don't stomp Atlas
+      # Explicit local sandbox Mongo — do NOT leave this unset. server/.env's
+      # default is host-oriented (localhost:27018) for scripts run outside
+      # Docker; dotenv won't override an already-set env var, so this line is
+      # what keeps the container itself off the real Atlas cluster. If you
+      # deliberately want this container against Atlas, override MONGO_URI
+      # here explicitly — never make Atlas the silent default again.
+      - MONGO_URI=mongodb://mongo:27017
       - WEB_ORIGIN=${WEB_ORIGIN:-http://localhost:5173}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
       # Enrichment proxy target (UI backend forwards /api/enrichment/* to this base)

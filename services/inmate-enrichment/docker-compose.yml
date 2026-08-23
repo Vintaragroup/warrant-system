@@ -4,6 +4,8 @@ services:
   mongo:
     image: mongo:6
     restart: unless-stopped
+    ports:
+      - "27021:27017"
     volumes:
       - mongo-data:/data/db
     command: [ "mongod", "--replSet", "rs0", "--bind_ip_all" ]
@@ -20,8 +22,8 @@ services:
       dockerfile: api/Dockerfile
     restart: unless-stopped
     environment:
-      - MONGO_URI=${MONGO_URI}
-      - MONGO_DB=${MONGO_DB}
+      - MONGO_URI=mongodb://mongo:27017/inmate_enrichment?replicaSet=rs0
+      - MONGO_DB=inmate_enrichment
       - SUBJECTS_COLLECTION=${SUBJECTS_COLLECTION}
       - REDIS_URL=redis://redis:6379
       - PORT=${PORT}
@@ -61,8 +63,8 @@ services:
       dockerfile: worker/Dockerfile
     restart: unless-stopped
     environment:
-      - MONGO_URI=${MONGO_URI}
-      - MONGO_DB=${MONGO_DB}
+      - MONGO_URI=mongodb://mongo:27017/inmate_enrichment?replicaSet=rs0
+      - MONGO_DB=inmate_enrichment
       - SUBJECTS_COLLECTION=${SUBJECTS_COLLECTION}
       - REDIS_URL=redis://redis:6379
       - ENRICHMENT_WINDOW_HOURS=${ENRICHMENT_WINDOW_HOURS}
