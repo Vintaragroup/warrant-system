@@ -1246,7 +1246,7 @@ const READINESS_RULES = {
   wharton:          { staleHours: 4,  minSuccessRate: 0.90, minDays: 3, required: false, alwaysWatch: true },
   jefferson_lookup: { staleHours: 12, minSuccessRate: 0.90, minDays: 3, required: true },
   brazoria_lookup:  { staleHours: 12, minSuccessRate: 0.90, minDays: 3, required: false, alwaysWatch: true },
-  fortbend_lookup:  { required: false, manualOnly: true },
+  fortbend_lookup:  { staleHours: 30, minSuccessRate: 0.90, minDays: 3, required: false, alwaysWatch: true }, // promoted from manual-only 2026-08-23
 };
 
 const REQUIRED_SOURCES = Object.entries(READINESS_RULES)
