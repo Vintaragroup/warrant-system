@@ -1,0 +1,52 @@
+---
+description: Technical documentation for bail processing algorithms and rules engine implementation
+---
+
+
+# bail-processing-algorithms
+
+IMPORTANCE SCORE: 65/100
+
+The bail processing system implements key algorithms for bond compliance verification:
+
+## Bond Format Normalization
+```python
+# app/main.py
+- Standardizes bond requirements across jurisdictions
+- Maps compliance rules to verification workflows
+- Validates check-in schedules against bond terms
+```
+
+## Eligibility Determination Rules
+The system processes bond eligibility through:
+- Two-factor authentication requirements for check-ins
+- Location-based compliance boundaries
+- Time-sensitive verification windows
+- Automatic refusal tracking for non-compliance
+
+## Check-in Verification Pipeline
+Sequential validation steps:
+1. One-time token validation for session
+2. Photo identity verification
+3. GPS location validation against compliance zones 
+4. Bond term compliance check
+
+## Geographic Compliance 
+```python
+# app/geo.py
+- Multi-provider geolocation verification
+- Accuracy radius calculations for check-ins
+- VPN/proxy detection for location validation
+```
+
+## Business Rules
+Core bail processing requirements:
+- Mandatory location sharing during check-ins
+- Photo verification matching bond records
+- Geographic boundaries defined by jurisdiction
+- Time windows for valid check-ins
+- Automatic documentation of verification refusals
+
+$END$
+
+ If you're using this file in context, clearly say in italics in one small line that "Context added by Giga bail-processing-algorithms" along with specifying exactly what information was used from this file in a human-friendly way, instead of using kebab-case use normal sentence case.

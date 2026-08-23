@@ -1,0 +1,22 @@
+[
+  {
+    "fileName": "main-overview.mdc",
+    "description": "Complete system overview documenting the three core components: Call Center Transfer Management, Bail Status Processing, and Geographic Compliance Monitoring systems"
+  },
+  {
+    "fileName": "transfer-system-algorithms.mdc",
+    "description": "Detailed documentation of the complex transfer routing algorithms including agent availability scheduling, language preferences, timezone handling, and warm transfer workflow implementation from telnyx_tools.py"
+  },
+  {
+    "fileName": "bail-processing-algorithms.mdc",
+    "description": "Technical documentation of bail status processing algorithms including bond format normalization, eligibility determination rules, and fast-path lookup implementation from telnyx_tools.py"
+  },
+  {
+    "fileName": "location-tracking-system.mdc",
+    "description": "Comprehensive documentation of the geolocation system including provider fallback chains, accuracy calculations, VPN detection, and data flow between components from geo.py"
+  },
+  {
+    "fileName": "data-models-relationships.mdc",
+    "description": "Documentation of core data models and relationships between inmates, cases, agents, locations, and bond records, including schema definitions and relationships"
+  }
+]

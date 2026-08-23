@@ -15,10 +15,15 @@ warrant-system/
 │   │                       Deployment: self-hosted / Docker Compose
 │   │                       Internal npm workspace: api/, worker/, shared/, web/
 │   │
-│   └── warrantdb-pipeline/ Python scrapers + FastAPI
-│                           Stack: FastAPI (8080/8081) + MongoDB + scrapers
-│                           Deployment: Render (Python web + worker)
-│                           Note: Dockerfile.disabled — build via Render buildCommand
+│   ├── warrantdb-pipeline/ Python scrapers + FastAPI
+│   │                       Stack: FastAPI (8080/8081) + MongoDB + scrapers
+│   │                       Deployment: Render (Python web + worker)
+│   │                       Note: Dockerfile.disabled — build via Render buildCommand
+│   │
+│   └── ai-agent/           Telnyx voice/SMS agent (FastAPI)
+│                           Stack: FastAPI (8080, mapped to 8082 in local compose) + MongoDB + Telnyx/Twilio/S3
+│                           Deployment: Render (Python web)
+│                           On its own MongoDB database — see Databases below
 │
 └── packages/
     ├── shared-schema/      Stub — future cross-service schema extraction
@@ -40,6 +45,11 @@ warrantdb-pipeline
         ↓
   apps/dashboard
   server/src/routes/ → React frontend
+
+Note: ai-agent's code supports a fast-path simple_* lookup during Telnyx
+calls, but runs on its own separate database today (see Databases below) —
+this path is currently inactive, not a live third consumer of the pipeline's
+data.
 ```
 
 ## Databases
@@ -49,8 +59,9 @@ warrantdb-pipeline
 | inmate-enrichment  | `inmate_enrichment` (configurable) | subjects, raw_payloads, related_parties                                        |
 | warrantdb-pipeline | `warrantdb`                        | simple*harris, simple_brazoria, simple_fortbend, simple_galveston, warrants*\* |
 | dashboard          | `warrantdb` (shared with pipeline) | users, cases, case*enrichment, check_ins, messages, payments, simple*\*        |
+| ai-agent           | `ai_agent` (own database)          | persons, custody_events, inquiries, logs, callback_queue, cases, checkins, links |
 
-Note: dashboard and warrantdb-pipeline share the same MongoDB database (`warrantdb`).
+Note: dashboard and warrantdb-pipeline share the same MongoDB database (`warrantdb`). ai-agent is deliberately **not** on that database — it has its own `checkins`/`cases` collections that would collide in name (though not in purpose) with the dashboard's `check_ins`/`cases` collections if merged onto the same database. ai-agent's code has a fast-path lookup that reads `simple_*` collections *if present in whatever database it's pointed at* (`app/telnyx_tools.py`, checks `db.list_collection_names()` before querying) — but on its own separate `ai_agent` database, those collections don't exist, so that path is currently a graceful no-op rather than live cross-service data access. Wiring it to actually read the pipeline's `simple_*` data would need a deliberate connection to `warrantdb` (read-only) and is out of scope for this merge.
 
 ## Port Map
 
@@ -64,6 +75,8 @@ Note: dashboard and warrantdb-pipeline share the same MongoDB database (`warrant
 | dashboard Redis         | 6381          | mapped from internal 6379                   |
 | dashboard MailHog SMTP  | 1025          | dev only (hotreload profile)                |
 | dashboard MailHog Web   | 8025          | dev only (hotreload profile)                |
+| ai-agent API            | 8082          | container listens on 8080 internally        |
+| ai-agent Mongo          | 27020         | mapped from internal 27017                  |
 
 ## Render Deployments
 
@@ -71,6 +84,7 @@ Note: dashboard and warrantdb-pipeline share the same MongoDB database (`warrant
 | ------------------------------------ | ------------------------------------------------------- |
 | `infra/render/dashboard.render.yaml` | `warrantdb-api` (Docker), `warrantdb-web` (static)      |
 | `infra/render/pipeline.render.yaml`  | `warrant-api` (Python web), `warrant-pipeline` (worker) |
+| `infra/render/ai-agent.render.yaml`  | `ai-agent` (Python web)                                 |
 
 ## Audit Documents
 

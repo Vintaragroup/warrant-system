@@ -1,0 +1,14 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "ai-agent: dev (uvicorn)",
+			"type": "shell",
+			"command": "uvicorn app.main:app --reload --port 8081",
+			"args": [],
+			"isBackground": true,
+			"problemMatcher": [],
+			"group": "build"
+		}
+	]
+}
