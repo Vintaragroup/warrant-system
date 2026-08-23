@@ -22,6 +22,7 @@ import {
   useHarrisSheriffEnrichment,
   useRunHarrisSheriffEnrichment,
 } from '../hooks/cases';
+import { useRelatedParties, useRelatedPartyPull } from '../hooks/enrichment';
 import { useCheckins, useTriggerCheckInPing } from '../hooks/checkins';
 import { useToast } from '../components/ToastContext';
 import { stageLabel } from '../lib/stage';
@@ -745,6 +746,7 @@ export default function CaseDetail() {
     return enrichmentInputs[selectedProviderId] || defaultEnrichmentInput;
   }, [enrichmentInputs, selectedProviderId, defaultEnrichmentInput]);
   const [selectingRecordId, setSelectingRecordId] = useState('');
+  const [reEnrichingPartyId, setReEnrichingPartyId] = useState('');
   const [expandedActivityDetails, setExpandedActivityDetails] = useState({}); // Track expanded enrichment audit accordions
   const fileInputRef = useRef(null);
 
@@ -815,6 +817,15 @@ export default function CaseDetail() {
     enabled: Boolean(caseId) && Boolean(selectedProviderId) && activeTab === 'enrichment',
   });
 
+  const {
+    data: relatedPartiesData,
+    isLoading: relatedPartiesLoading,
+    refetch: refetchRelatedParties,
+  } = useRelatedParties(data?.spn, {
+    enabled: Boolean(data?.spn) && activeTab === 'enrichment',
+  });
+  const relatedParties = Array.isArray(relatedPartiesData?.rows) ? relatedPartiesData.rows : [];
+
   const permittedRoles = useMemo(
     () => (Array.isArray(currentUser?.roles) ? currentUser.roles : []),
     [currentUser?.roles],
@@ -870,6 +881,26 @@ export default function CaseDetail() {
       });
     },
     onSettled: () => setSelectingRecordId(''),
+  });
+
+  const reEnrichParty = useRelatedPartyPull({
+    onSuccess: (response) => {
+      const gained = response?.details?.[0]?.gainedData;
+      pushToast({
+        variant: 'success',
+        title: 'Re-enrich complete',
+        message: gained ? 'New contact data was found.' : 'No new contact data was found.',
+      });
+      refetchRelatedParties();
+    },
+    onError: (err) => {
+      pushToast({
+        variant: 'error',
+        title: 'Re-enrich failed',
+        message: err?.message || 'Unable to re-enrich this party right now.',
+      });
+    },
+    onSettled: () => setReEnrichingPartyId(''),
   });
 
   const enrichmentDoc = enrichmentData?.enrichment || null;
@@ -939,6 +970,12 @@ export default function CaseDetail() {
     if (!caseId || !recordId || !selectedProviderId) return;
     setSelectingRecordId(recordId);
     selectEnrichment.mutate({ caseId, providerId: selectedProviderId, recordId });
+  };
+
+  const handleReEnrichParty = (party) => {
+    if (!data?.spn || !party?.partyId) return;
+    setReEnrichingPartyId(party.partyId);
+    reEnrichParty.mutate({ subjectId: data.spn, partyId: party.partyId, partyName: party.name, aggressive: true });
   };
 
   const handleEnrichmentSubmit = (event) => {
@@ -1970,6 +2007,98 @@ export default function CaseDetail() {
                 No candidates were returned for the last search.
               </div>
             )}
+          </div>
+        )}
+      </SectionCard>
+
+      <SectionCard title="Related parties" subtitle="Extracted relationships and their known contact info">
+        {relatedPartiesLoading ? (
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-600">
+            Loading related parties…
+          </div>
+        ) : relatedParties.length ? (
+          <div className="overflow-x-auto">
+            <table className="min-w-full table-auto border-collapse text-sm">
+              <thead className="bg-slate-100 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+                <tr>
+                  <th className="px-3 py-2">Name</th>
+                  <th className="px-3 py-2">Score</th>
+                  <th className="px-3 py-2">Phones</th>
+                  <th className="px-3 py-2">Emails</th>
+                  <th className="px-3 py-2">Addresses</th>
+                  <th className="px-3 py-2">Accepted</th>
+                  <th className="px-3 py-2" aria-label="Actions" />
+                </tr>
+              </thead>
+              <tbody>
+                {relatedParties.map((party, index) => {
+                  const rowKey = party?.partyId || `${party?.name || 'party'}-${index}`;
+                  const scorePct = typeof party?.lastAudit?.match === 'number'
+                    ? `${Math.round(party.lastAudit.match * 100)}%`
+                    : '—';
+                  const isReEnriching = reEnrichingPartyId === party?.partyId && reEnrichParty.isPending;
+                  return (
+                    <tr key={rowKey} className="border-b border-slate-100">
+                      <td className="px-3 py-3 align-top">
+                        <div className="font-medium text-slate-800">{party?.name || 'Unknown'}</div>
+                        <div className="text-xs text-slate-500">{party?.relationLabel || party?.relationType || ''}</div>
+                      </td>
+                      <td className="px-3 py-3 align-top text-xs text-slate-600">{scorePct}</td>
+                      <td className="px-3 py-3 align-top text-xs text-slate-600">
+                        {party?.contacts?.phones?.length ? (
+                          <ul className="space-y-1">
+                            {party.contacts.phones.map((phone, idx) => (
+                              <li key={`${rowKey}-phone-${idx}`}>{phone}</li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-3 align-top text-xs text-slate-600">
+                        {party?.contacts?.emails?.length ? (
+                          <ul className="space-y-1">
+                            {party.contacts.emails.map((email, idx) => (
+                              <li key={`${rowKey}-email-${idx}`}>{email}</li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-3 align-top text-xs text-slate-600">
+                        {party?.addresses?.length ? (
+                          <ul className="space-y-1">
+                            {party.addresses.map((address, idx) => (
+                              <li key={`${rowKey}-addr-${idx}`}>{address}</li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-3 align-top text-xs text-slate-600">
+                        {party?.lastAudit ? (party.lastAudit.accepted ? 'Yes' : 'No') : '—'}
+                      </td>
+                      <td className="px-3 py-3 align-top text-right">
+                        <button
+                          type="button"
+                          onClick={() => handleReEnrichParty(party)}
+                          disabled={!canRunEnrichment || isReEnriching}
+                          className="inline-flex items-center rounded-lg border border-slate-300 px-3 py-1 text-xs font-medium text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {isReEnriching ? 'Re-enriching…' : 'Re-enrich'}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">
+            No related parties found for this subject.
           </div>
         )}
       </SectionCard>
