@@ -17,7 +17,6 @@ dotenv.config();
 
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27018';
 const MONGO_DB = process.env.MONGO_DB || 'warrantdb';
-const FULL_URI = `${MONGO_URI}/${MONGO_DB}`;
 
 const COUNTY_COLLECTIONS = [
   'simple_harris',
@@ -133,8 +132,12 @@ const generateSampleCases = (county, count = 50) => {
 async function seed() {
   try {
     // Connect to MongoDB
-    console.log(`Connecting to MongoDB at ${MONGO_URI}...`);
+    console.log(`Connecting to MongoDB at ${MONGO_URI} (db: ${MONGO_DB})...`);
+    // Explicit dbName — MONGO_URI alone has no database in its path, so
+    // without this the driver silently falls back to its default "test"
+    // database instead of MONGO_DB.
     await mongoose.connect(MONGO_URI, {
+      dbName: MONGO_DB,
       serverSelectionTimeoutMS: 5000,
     });
     console.log('✓ Connected to MongoDB');
@@ -155,7 +158,7 @@ async function seed() {
       // Generate and insert test data
       const testData = generateSampleCases(county, 50);
       const result = await collection.insertMany(testData);
-      console.log(`✓ ${county}: Inserted ${result.insertedIds.length} test documents`);
+      console.log(`✓ ${county}: Inserted ${Object.keys(result.insertedIds).length} test documents`);
     }
     
     console.log('\n✓ Seeding complete!');
