@@ -236,6 +236,39 @@ r.get('/enrichment/providers', (req, res) => {
   }
 });
 
+// Resolves a case by searching simple_* first, then v2_* pipeline
+// collections — same fallback order as GET /cases/:id. Many CRM routes used
+// to check case existence only via the Case Mongoose model (bound to
+// simple_harris/simple_jefferson), which 404s for any case sourced from the
+// v2_* pipeline — i.e. every case the dashboard's list/detail views actually
+// show today. This is an EXISTENCE/ACCESS check only (used to gate scoped
+// permission access and 404s) — it does not address where CRM overlay data
+// (tags/stage/notes) should physically live for non-Harris/Jefferson
+// counties when actually writing that data; see git history / PR notes.
+async function findRawCaseDocForAccessCheck(req, caseIdParam) {
+  let objectId;
+  try {
+    objectId = new mongoose.Types.ObjectId(caseIdParam);
+  } catch {
+    const err = new Error('Invalid case id');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const scoped = scopedCaseFilter(req, { _id: objectId });
+  const db = mongoose.connection.db;
+  const allCollsToSearch = [...COUNTY_COLLECTIONS, ...V2_COUNTY_COLLECTIONS];
+  for (const collName of allCollsToSearch) {
+    const found = await withTimeout(
+      db.collection(collName).findOne(scoped),
+      MAX_DB_MS,
+      `enrichment case lookup: ${collName}`
+    ).catch(() => null);
+    if (found) return found;
+  }
+  return null;
+}
+
 function buildEnrichmentParams(caseDoc = {}, overrides = {}) {
   const sourceName = overrides.fullName || overrides.name || caseDoc?.full_name || '';
   const nameParts = splitName(sourceName);
@@ -1233,8 +1266,7 @@ r.get('/:id/messages', async (req, res) => {
     }
 
     ensurePermission(req, ['cases:read', 'cases:read:department']);
-    const selector = scopedCaseFilter(req, { _id: objectId });
-    const accessible = await Case.findOne(selector).select({ _id: 1 }).lean();
+    const accessible = await findRawCaseDocForAccessCheck(req, objectId);
     if (!accessible) {
       return res.status(404).json({ error: 'Case not found' });
     }
@@ -1276,8 +1308,7 @@ r.post('/:caseId/messages/:messageId/resend', async (req, res) => {
     }
 
     ensurePermission(req, ['cases:write', 'cases:write:department']);
-    const selector = scopedCaseFilter(req, { _id: caseObjectId });
-    const accessible = await Case.findOne(selector).select({ _id: 1 }).lean();
+    const accessible = await findRawCaseDocForAccessCheck(req, caseObjectId);
     if (!accessible) {
       return res.status(404).json({ error: 'Case not found' });
     }
@@ -1512,7 +1543,7 @@ r.post('/:id/activity', async (req, res) => {
 
     ensurePermission(req, ['cases:write', 'cases:write:department']);
     const selector = scopedCaseFilter(req, { _id: objectId });
-    const accessible = await Case.findOne(selector).select({ _id: 1 }).lean();
+    const accessible = await findRawCaseDocForAccessCheck(req, objectId);
     if (!accessible) {
       return res.status(404).json({ error: 'Case not found' });
     }
@@ -1582,9 +1613,7 @@ r.get('/:id/activity', async (req, res) => {
     }
 
     ensurePermission(req, ['cases:read', 'cases:read:department']);
-    const selector = scopedCaseFilter(req, { _id: objectId });
-    const qCase = Case.findOne(selector).lean();
-    const doc = await withTimeout((qCase.maxTimeMS ? qCase.maxTimeMS(MAX_DB_MS) : qCase), MAX_DB_MS).catch(() => null);
+    const doc = await findRawCaseDocForAccessCheck(req, objectId);
     if (!doc) return res.status(404).json({ error: 'Not found' });
 
     const events = [];
@@ -1699,19 +1728,7 @@ r.get('/:caseId/enrichment/:providerId', async (req, res) => {
       return res.status(404).json({ error: 'Unknown enrichment provider' });
     }
 
-    const selector = scopedCaseFilter(req, { _id: req.params.caseId });
-    let qCase = Case.findOne(selector);
-    if (qCase && typeof qCase.select === 'function') {
-      qCase = qCase.select({ _id: 1 });
-    }
-    if (qCase && typeof qCase.lean === 'function') {
-      qCase = qCase.lean();
-    }
-    const caseDoc = await withTimeout(
-      qCase && typeof qCase.exec === 'function' ? qCase.exec() : qCase,
-      MAX_DB_MS,
-      `${provider.id}:case`
-    );
+    const caseDoc = await findRawCaseDocForAccessCheck(req, req.params.caseId);
 
     if (!caseDoc) {
       return res.status(404).json({ error: 'Case not found' });
@@ -1765,16 +1782,7 @@ r.post('/:caseId/enrichment/:providerId', async (req, res) => {
       return res.status(404).json({ error: 'Unknown enrichment provider' });
     }
 
-    const selector = scopedCaseFilter(req, { _id: req.params.caseId });
-    let qCase = Case.findOne(selector);
-    if (qCase && typeof qCase.lean === 'function') {
-      qCase = qCase.lean();
-    }
-    const caseDoc = await withTimeout(
-      qCase && typeof qCase.exec === 'function' ? qCase.exec() : qCase,
-      MAX_DB_MS,
-      `${provider.id}:case`
-    );
+    const caseDoc = await findRawCaseDocForAccessCheck(req, req.params.caseId);
 
     if (!caseDoc) {
       return res.status(404).json({ error: 'Case not found' });
@@ -1915,16 +1923,7 @@ r.post('/:caseId/enrichment/:providerId/select', async (req, res) => {
       return res.status(400).json({ error: 'recordId is required' });
     }
 
-    const selector = scopedCaseFilter(req, { _id: req.params.caseId });
-    let qCase = Case.findOne(selector);
-    if (qCase && typeof qCase.lean === 'function') {
-      qCase = qCase.lean();
-    }
-    const caseDoc = await withTimeout(
-      qCase && typeof qCase.exec === 'function' ? qCase.exec() : qCase,
-      MAX_DB_MS,
-      `${provider.id}:case`
-    );
+    const caseDoc = await findRawCaseDocForAccessCheck(req, req.params.caseId);
 
     if (!caseDoc) {
       return res.status(404).json({ error: 'Case not found' });
