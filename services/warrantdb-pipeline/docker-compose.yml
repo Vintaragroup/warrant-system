@@ -6,13 +6,14 @@ services:
       - "8080:8080"
     env_file: .env
     environment:
-      # .env's MONGO_URI is host-oriented (localhost) for scripts run outside
-      # Docker; override here so the container talks to its own local mongo
-      # service instead of trying (and failing) to reach the host's loopback.
-      - MONGO_URI=mongodb://mongo:27017
+      # Production shares one MongoDB database between the dashboard and this
+      # pipeline (see docs/architecture/OVERVIEW.md) — the local sandbox
+      # mirrors that: point at the dashboard's local Mongo (apps/dashboard,
+      # docker-compose.dev.yml, host port 27018), not the standalone `mongo`
+      # service below. host.docker.internal is the Docker Desktop hostname
+      # for reaching the host machine from inside a container.
+      - MONGO_URI=mongodb://host.docker.internal:27018
       - MONGO_DB=warrantdb
-    depends_on:
-      - mongo
   mongo:
     image: mongo:7
     restart: always
