@@ -27,27 +27,32 @@ export function createTransportFromEnv() {
   return transporter;
 }
 
-export async function sendInviteEmail({ to, inviteLink, displayName }) {
+export async function sendPasswordSetEmail({ to, link, displayName, mode = 'invite' }) {
   const transporter = createTransportFromEnv();
   if (!transporter) return false;
   const from = process.env.EMAIL_FROM || process.env.SMTP_FROM || `no-reply@${(process.env.WEB_ORIGIN || '').replace(/^https?:\/\//, '')}`;
   const appName = process.env.APP_NAME || 'Bail Bonds Dashboard';
-  const subject = `${appName} – You’re invited`;
+  const isInvite = mode === 'invite';
+  const subject = isInvite ? `${appName} – You’re invited` : `${appName} – Reset your password`;
+  const intro = isInvite
+    ? `You have been invited to ${appName}. Click the link below to set your password and sign in:`
+    : `We received a request to reset your ${appName} password. Click the link below to choose a new one:`;
+  const ignoreLine = isInvite
+    ? 'If you didn’t expect this invite, you can ignore this message.'
+    : 'If you didn’t request this, you can safely ignore this message.';
   const html = `
     <p>Hello${displayName ? ` ${displayName}` : ''},</p>
-    <p>You have been invited to ${appName}. Click the link below to set your password and sign in:</p>
-    <p><a href="${inviteLink}">Set your password and sign in</a></p>
-    <p>If you didn’t expect this invite, you can ignore this message.</p>
+    <p>${intro}</p>
+    <p><a href="${link}">Set your password</a></p>
+    <p>This link expires in 1 hour. ${ignoreLine}</p>
   `;
-  const text = `Hello${displayName ? ` ${displayName}` : ''},\n\n` +
-    `You have been invited to ${appName}. Use the link below to set your password and sign in:\n` +
-    `${inviteLink}\n\n` +
-    `If you didn’t expect this invite, you can ignore this message.`;
+  const text = `Hello${displayName ? ` ${displayName}` : ''},\n\n${intro}\n${link}\n\n` +
+    `This link expires in 1 hour. ${ignoreLine}`;
   try {
     await transporter.sendMail({ from, to, subject, text, html });
     return true;
   } catch (err) {
-    console.warn('Failed to send invite email:', err?.message);
+    console.warn('Failed to send password-set email:', err?.message);
     return false;
   }
 }

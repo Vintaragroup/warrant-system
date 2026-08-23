@@ -3,7 +3,6 @@ import { useEffect } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { AuthLanding } from '../components/auth/AuthLanding';
 import { EmailPasswordLogin } from '../components/auth/EmailPasswordLogin';
-import { MagicLinkRequest } from '../components/auth/MagicLinkRequest';
 import { SocialRedirect } from '../components/auth/SocialRedirect';
 import { MFAChallenge } from '../components/auth/MFAChallenge';
 import { MFAEnrollment } from '../components/auth/MFAEnrollment';
@@ -29,7 +28,6 @@ import { useUser } from '../components/UserContext';
 const SCREEN_COMPONENTS: Record<AuthScreen, React.ComponentType<{ onNavigate: (screen: AuthScreen) => void }>> = {
   landing: AuthLanding,
   login: EmailPasswordLogin,
-  'magic-link': MagicLinkRequest,
   'social-redirect': SocialRedirect,
   'mfa-challenge': MFAChallenge,
   'mfa-enrollment': MFAEnrollment,
@@ -69,7 +67,7 @@ export function AuthRoutes() {
   };
 
   useEffect(() => {
-    const autoRedirectScreens: AuthScreen[] = ['landing', 'login', 'magic-link', 'auth-success'];
+    const autoRedirectScreens: AuthScreen[] = ['landing', 'login', 'auth-success'];
     if (!loading && currentUser && autoRedirectScreens.includes(screenKey)) {
       navigate(redirectTarget, { replace: true });
     }

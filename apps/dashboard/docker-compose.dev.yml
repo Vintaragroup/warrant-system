@@ -46,7 +46,10 @@ services:
       - SMTP_PASS=${SMTP_PASS}
       - EMAIL_FROM=${EMAIL_FROM}
       - APP_NAME=${APP_NAME:-Bail Bonds Dashboard}
-      - GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/firebase
+      - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID}
+      - GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_OAUTH_CLIENT_SECRET}
+      - API_PUBLIC_URL=${API_PUBLIC_URL:-http://localhost:8080}
+      - SESSION_SECRET=${SESSION_SECRET:-dev-only-insecure-session-secret}
     volumes:
       - ./server/src:/app/src
       - ./server/src/openapi.yaml:/app/openapi.yaml
@@ -55,8 +58,6 @@ services:
     depends_on:
       - mongo
       - redis
-    secrets:
-      - firebase
     command: node src/index.js
   api-dev:
     profiles: ["hotreload"]
@@ -78,7 +79,10 @@ services:
       - SMTP_PASS=${SMTP_PASS}
       - EMAIL_FROM=${EMAIL_FROM:-no-reply@localhost}
       - APP_NAME=${APP_NAME:-Bail Bonds Dashboard}
-      - GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/firebase
+      - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID}
+      - GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_OAUTH_CLIENT_SECRET}
+      - API_PUBLIC_URL=${API_PUBLIC_URL:-http://localhost:8080}
+      - SESSION_SECRET=${SESSION_SECRET:-dev-only-insecure-session-secret}
     command: ["sh", "-lc", "npm install --no-audit --no-fund && npm run dev"]
     ports:
       - "8080:8080"
@@ -89,8 +93,6 @@ services:
       - mongo
       - redis
       - mailhog
-    secrets:
-      - firebase
   web:
     profiles: ["static"]
     build:
@@ -98,11 +100,6 @@ services:
       dockerfile: Dockerfile.web
       args:
         VITE_API_URL: ${VITE_API_URL:-/api}
-        VITE_FIREBASE_API_KEY: ${VITE_FIREBASE_API_KEY}
-        VITE_FIREBASE_AUTH_DOMAIN: ${VITE_FIREBASE_AUTH_DOMAIN}
-        VITE_FIREBASE_PROJECT_ID: ${VITE_FIREBASE_PROJECT_ID}
-        VITE_FIREBASE_APP_ID: ${VITE_FIREBASE_APP_ID}
-        VITE_FIREBASE_MEASUREMENT_ID: ${VITE_FIREBASE_MEASUREMENT_ID}
     ports:
       - "5173:80"
     volumes:
@@ -118,11 +115,6 @@ services:
       - VITE_API_URL=${VITE_API_URL_DEV:-/api}
       # Point Vite's proxy to the API; in compose, the service hostname is 'api-dev'
       - VITE_PROXY_API_TARGET=${VITE_PROXY_API_TARGET:-http://api-dev:8080}
-      - VITE_FIREBASE_API_KEY=${VITE_FIREBASE_API_KEY}
-      - VITE_FIREBASE_AUTH_DOMAIN=${VITE_FIREBASE_AUTH_DOMAIN}
-      - VITE_FIREBASE_PROJECT_ID=${VITE_FIREBASE_PROJECT_ID}
-      - VITE_FIREBASE_APP_ID=${VITE_FIREBASE_APP_ID}
-      - VITE_FIREBASE_MEASUREMENT_ID=${VITE_FIREBASE_MEASUREMENT_ID}
     command: sh -c "npm ci --legacy-peer-deps && npm run dev -- --host --port 5173"
     ports:
       - "5175:5173"
@@ -136,6 +128,3 @@ volumes:
   redis-data:
   web_dev_node_modules:
   api_dev_node_modules:
-secrets:
-  firebase:
-    file: ./.secrets/asap-bail-books-firebase-adminsdk-fbsvc-71506047b4.json

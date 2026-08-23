@@ -8,6 +8,11 @@ const UserSchema = new Schema(
     email: { type: String, lowercase: true, trim: true, index: true },
     emailVerified: { type: Boolean, default: false },
     displayName: { type: String, default: '' },
+    passwordHash: { type: String, select: false },
+    googleId: { type: String, index: true, sparse: true },
+    sessionVersion: { type: Number, default: 0 },
+    passwordResetToken: { type: String, select: false },
+    passwordResetTokenExpiresAt: { type: Date, select: false },
     // For development: default to Admin; for production, should be ['BondClient'] or user-assigned
     roles: { type: [String], default: () => (process.env.NODE_ENV === 'development' ? ['Admin'] : ['BondClient']) },
     departments: { type: [String], default: [] },

@@ -1,13 +1,16 @@
 import express from 'express';
-import { firebaseAuth } from '../lib/firebaseAdmin.js';
+import crypto from 'node:crypto';
+import bcrypt from 'bcryptjs';
+import passport, { WEB_ORIGIN } from '../lib/passport.js';
 import User from '../models/User.js';
 import AuthAudit from '../models/AuthAudit.js';
 import AccessRequest from '../models/AccessRequest.js';
-import { requireAuth, optionalAuth, setSessionCookie, clearSessionCookie } from '../middleware/auth.js';
+import { sendPasswordSetEmail } from '../lib/mailer.js';
+import { requireAuth, optionalAuth } from '../middleware/auth.js';
 
 const router = express.Router();
 
-const SESSION_MAX_AGE_MS = Number(process.env.SESSION_MAX_AGE_MS || 1000 * 60 * 60 * 24 * 14);
+const RESET_TOKEN_TTL_MS = 1000 * 60 * 60; // 1 hour
 
 async function recordAuthEvent(event, payload = {}) {
   try {
@@ -22,9 +25,6 @@ async function recordAuthEvent(event, payload = {}) {
   } catch (err) {
     console.warn('Failed to persist auth audit event', err);
   }
-  try {
-    console.info(`[auth] ${event}`, { ...payload, ts: new Date().toISOString() });
-  } catch { /* noop */ }
 }
 
 function sanitizeUser(user) {
@@ -58,59 +58,65 @@ function sanitizeAccessRequest(request) {
   };
 }
 
-router.post('/session', async (req, res) => {
-  const { idToken } = req.body || {};
-  if (!idToken) {
-    return res.status(400).json({ message: 'idToken is required' });
-  }
-
-  try {
-    const decoded = await firebaseAuth.verifyIdToken(idToken, true);
-    const existing = await User.findOne({ uid: decoded.uid }).lean();
-    const updates = {
-      email: decoded.email?.toLowerCase() || undefined,
-      emailVerified: decoded.email_verified || false,
-      displayName: decoded.name || undefined,
-      lastLoginAt: new Date(),
-    };
-    // If this is a first-time login or the user was invited, mark as active now.
-    if (!existing || existing.status === 'invited') {
-      updates.status = 'active';
+router.post('/login', (req, res, next) => {
+  passport.authenticate('local', async (err, user, info) => {
+    if (err) return next(err);
+    if (!user) {
+      await recordAuthEvent('session_failed', {
+        email: req.body?.email,
+        reason: info?.message,
+        ip: req.ip,
+        userAgent: req.get('user-agent'),
+      });
+      return res.status(401).json({ message: info?.message || 'Invalid email or password' });
     }
-    const options = { new: true, upsert: true, setDefaultsOnInsert: true };
-    const userDoc = await User.findOneAndUpdate({ uid: decoded.uid }, { $set: updates }, options);
+    req.login(user, async (loginErr) => {
+      if (loginErr) return next(loginErr);
+      user.lastLoginAt = new Date();
+      await user.save();
+      await recordAuthEvent('session_created', {
+        uid: user.uid,
+        email: user.email,
+        ip: req.ip,
+        userAgent: req.get('user-agent'),
+      });
+      return res.json({ ok: true, user: sanitizeUser(user) });
+    });
+  })(req, res, next);
+});
 
-    await setSessionCookie(res, idToken);
-    await recordAuthEvent('session_created', {
-      uid: decoded.uid,
-      email: decoded.email,
-      ip: req.ip,
-      userAgent: req.get('user-agent'),
+router.get('/google', (req, res, next) => {
+  passport.authenticate('google', { scope: ['profile', 'email'] })(req, res, next);
+});
+
+router.get('/google/callback', (req, res, next) => {
+  passport.authenticate('google', { failureRedirect: `${WEB_ORIGIN}/auth/login` }, async (err, user) => {
+    if (err || !user) {
+      return res.redirect(`${WEB_ORIGIN}/auth/login`);
+    }
+    req.login(user, async (loginErr) => {
+      if (loginErr) return next(loginErr);
+      await recordAuthEvent('session_created', {
+        uid: user.uid,
+        email: user.email,
+        ip: req.ip,
+        userAgent: req.get('user-agent'),
+        metadata: { provider: 'google' },
+      });
+      return res.redirect(`${WEB_ORIGIN}/auth/auth-success`);
     });
-    return res.json({
-      ok: true,
-      user: sanitizeUser(userDoc),
-      sessionExpiresAt: new Date(Date.now() + SESSION_MAX_AGE_MS).toISOString(),
-    });
-  } catch (err) {
-    console.error('Failed to create session:', err);
-    await recordAuthEvent('session_failed', {
-      reason: err.message,
-      ip: req.ip,
-      userAgent: req.get('user-agent'),
-    });
-    return res.status(401).json({ message: 'Invalid ID token' });
-  }
+  })(req, res, next);
 });
 
 router.post('/logout', (req, res) => {
-  clearSessionCookie(res);
-  recordAuthEvent('logout', {
-    uid: req.user?.uid,
-    ip: req.ip,
-    userAgent: req.get('user-agent'),
+  const uid = req.user?.uid;
+  req.logout(() => {
+    req.session?.destroy(() => {
+      res.clearCookie(process.env.SESSION_COOKIE_NAME || '__asap_session');
+      recordAuthEvent('logout', { uid, ip: req.ip, userAgent: req.get('user-agent') });
+      return res.json({ ok: true });
+    });
   });
-  return res.json({ ok: true });
 });
 
 router.get('/me', optionalAuth, async (req, res) => {
@@ -122,11 +128,9 @@ router.get('/me', optionalAuth, async (req, res) => {
 
 router.post('/session/revoke', requireAuth, async (req, res) => {
   try {
-    const uid = req.user.uid;
-    await firebaseAuth.revokeRefreshTokens(uid);
-    clearSessionCookie(res);
+    await User.updateOne({ uid: req.user.uid }, { $inc: { sessionVersion: 1 } });
     await recordAuthEvent('session_revoked', {
-      uid,
+      uid: req.user.uid,
       ip: req.ip,
       userAgent: req.get('user-agent'),
     });
@@ -135,6 +139,54 @@ router.post('/session/revoke', requireAuth, async (req, res) => {
     console.error('Failed to revoke sessions:', err);
     return res.status(500).json({ message: 'Failed to revoke sessions' });
   }
+});
+
+// Shared by both "forgot password" and "accept invite" flows — both are the
+// same action from the user's perspective: follow an emailed link, set a password.
+router.post('/forgot-password', async (req, res) => {
+  const email = String(req.body?.email || '').trim().toLowerCase();
+  if (!email) {
+    return res.status(400).json({ message: 'email is required' });
+  }
+  const user = await User.findOne({ email });
+  // Always respond 202 regardless of whether the account exists, to avoid
+  // leaking which emails have accounts.
+  if (user && user.status !== 'deleted') {
+    const token = crypto.randomBytes(32).toString('hex');
+    user.passwordResetToken = crypto.createHash('sha256').update(token).digest('hex');
+    user.passwordResetTokenExpiresAt = new Date(Date.now() + RESET_TOKEN_TTL_MS);
+    await user.save();
+    const link = `${WEB_ORIGIN}/auth/forgot-password?token=${token}`;
+    await sendPasswordSetEmail({ to: email, link, displayName: user.displayName, mode: 'reset' });
+    await recordAuthEvent('password_reset_requested', { uid: user.uid, email });
+  }
+  return res.status(202).json({ ok: true });
+});
+
+router.post('/reset-password', async (req, res) => {
+  const { token, password } = req.body || {};
+  if (!token || !password) {
+    return res.status(400).json({ message: 'token and password are required' });
+  }
+  if (String(password).length < 8) {
+    return res.status(400).json({ message: 'Password must be at least 8 characters' });
+  }
+  const hashedToken = crypto.createHash('sha256').update(String(token)).digest('hex');
+  const user = await User.findOne({
+    passwordResetToken: hashedToken,
+    passwordResetTokenExpiresAt: { $gt: new Date() },
+  }).select('+passwordResetToken +passwordResetTokenExpiresAt');
+  if (!user) {
+    return res.status(400).json({ message: 'This link is invalid or has expired' });
+  }
+  user.passwordHash = await bcrypt.hash(String(password), 12);
+  user.passwordResetToken = undefined;
+  user.passwordResetTokenExpiresAt = undefined;
+  user.sessionVersion = (user.sessionVersion || 0) + 1; // invalidate any existing sessions
+  if (user.status === 'invited') user.status = 'active';
+  await user.save();
+  await recordAuthEvent('password_reset_completed', { uid: user.uid, email: user.email });
+  return res.json({ ok: true });
 });
 
 router.post('/access-request', async (req, res) => {

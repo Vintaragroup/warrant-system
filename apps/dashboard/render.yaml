@@ -35,12 +35,14 @@ services:
         sync: false
       - key: APP_NAME
         value: Bail Bonds Dashboard
-      # If your server supports GOOGLE_APPLICATION_CREDENTIALS path pointing to a secret file,
-      # create a Secret File named firebase.json in the Render Dashboard and set this path accordingly.
-      - key: GOOGLE_APPLICATION_CREDENTIALS
-        value: /opt/render/project/secrets/firebase.json
-      - key: FIREBASE_PROJECT_ID
+      - key: GOOGLE_OAUTH_CLIENT_ID
         sync: false
+      - key: GOOGLE_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: API_PUBLIC_URL
+        sync: false # e.g. https://warrantdb-api.onrender.com — used to build the Google OAuth callback URL
+      - key: SESSION_SECRET
+        sync: false # generate with `openssl rand -hex 32`
 
 staticSites:
   - name: warrantdb-web
@@ -53,16 +55,6 @@ staticSites:
     envVars:
       - key: VITE_API_URL
         sync: false # set to your API base URL (e.g., https://warrantdb-api.onrender.com)
-      - key: VITE_FIREBASE_API_KEY
-        sync: false
-      - key: VITE_FIREBASE_AUTH_DOMAIN
-        sync: false
-      - key: VITE_FIREBASE_PROJECT_ID
-        sync: false
-      - key: VITE_FIREBASE_APP_ID
-        sync: false
-      - key: VITE_FIREBASE_MEASUREMENT_ID
-        sync: false
     routes:
       # SPA rewrite: send all non-asset routes to index.html
       - type: rewrite

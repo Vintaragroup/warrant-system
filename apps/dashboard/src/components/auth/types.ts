@@ -1,7 +1,6 @@
 export type AuthScreen =
   | 'landing'
   | 'login'
-  | 'magic-link'
   | 'social-redirect'
   | 'mfa-challenge'
   | 'mfa-enrollment'

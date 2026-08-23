@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Mail, CheckCircle, Key, Eye, EyeOff } from 'lucide-react';
 import { PillButton } from '../ui/pill-button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
+import { API_BASE } from '../../lib/api';
 import type { AuthScreen } from './types';
 
 interface ForgotPasswordProps {
@@ -11,51 +13,84 @@ interface ForgotPasswordProps {
 }
 
 export function ForgotPassword({ onNavigate }: ForgotPasswordProps) {
-  const [step, setStep] = useState<'request' | 'success' | 'reset'>('request');
+  const [searchParams] = useSearchParams();
+  const resetToken = searchParams.get('token');
+  const [step, setStep] = useState<'request' | 'success' | 'reset'>(resetToken ? 'reset' : 'request');
   const [email, setEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleRequestReset = (e: React.FormEvent) => {
+  const handleRequestReset = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    
+
     if (!email) {
       setError('Email is required');
       return;
     }
-    
+
     if (!/\S+@\S+\.\S+/.test(email)) {
       setError('Please enter a valid email address');
       return;
     }
-    
-    setStep('success');
+
+    setSubmitting(true);
+    try {
+      await fetch(`${API_BASE}/auth/forgot-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      // Always show success, regardless of whether the account exists —
+      // avoids leaking which emails have accounts.
+      setStep('success');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to send reset email');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const handleResetPassword = (e: React.FormEvent) => {
+  const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    
+
     if (!newPassword || !confirmPassword) {
       setError('Please fill in all fields');
       return;
     }
-    
+
     if (newPassword !== confirmPassword) {
       setError('Passwords do not match');
       return;
     }
-    
+
     if (newPassword.length < 8) {
       setError('Password must be at least 8 characters long');
       return;
     }
-    
-    onNavigate('login');
+
+    setSubmitting(true);
+    try {
+      const response = await fetch(`${API_BASE}/auth/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: resetToken, password: newPassword }),
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload?.message || 'This link is invalid or has expired');
+      }
+      onNavigate('login');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to reset password');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   // Reset password form (accessed via email link)
@@ -121,8 +156,8 @@ export function ForgotPassword({ onNavigate }: ForgotPasswordProps) {
                   <p className="text-sm text-destructive">{error}</p>
                 )}
 
-                <PillButton type="submit" className="w-full h-12">
-                  Update password
+                <PillButton type="submit" className="w-full h-12" disabled={submitting}>
+                  {submitting ? 'Updating…' : 'Update password'}
                 </PillButton>
               </form>
 
@@ -182,15 +217,8 @@ export function ForgotPassword({ onNavigate }: ForgotPasswordProps) {
               </div>
 
               <div className="space-y-3">
-                <PillButton 
-                  className="w-full h-12"
-                  onClick={() => setStep('reset')}
-                >
-                  Demo: Reset password
-                </PillButton>
-                
-                <PillButton 
-                  variant="outline" 
+                <PillButton
+                  variant="outline"
                   className="w-full h-12"
                   onClick={() => onNavigate('login')}
                 >
@@ -242,8 +270,8 @@ export function ForgotPassword({ onNavigate }: ForgotPasswordProps) {
                 )}
               </div>
 
-              <PillButton type="submit" className="w-full h-12">
-                Send reset link
+              <PillButton type="submit" className="w-full h-12" disabled={submitting}>
+                {submitting ? 'Sending…' : 'Send reset link'}
               </PillButton>
             </form>
 

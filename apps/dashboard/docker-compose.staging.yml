@@ -10,9 +10,10 @@ services:
       - MONGO_URI=${MONGO_URI}
       - MONGO_DB=${MONGO_DB:-warrantdb}
       - WEB_ORIGIN=${WEB_ORIGIN}
-      - GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/firebase
-    secrets:
-      - firebase
+      - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID}
+      - GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_OAUTH_CLIENT_SECRET}
+      - API_PUBLIC_URL=${API_PUBLIC_URL}
+      - SESSION_SECRET=${SESSION_SECRET}
     ports:
       - "8080:8080"
   web:
@@ -21,15 +22,7 @@ services:
       dockerfile: Dockerfile.web
       args:
         VITE_API_URL: ${VITE_API_URL}
-        VITE_FIREBASE_API_KEY: ${VITE_FIREBASE_API_KEY}
-        VITE_FIREBASE_AUTH_DOMAIN: ${VITE_FIREBASE_AUTH_DOMAIN}
-        VITE_FIREBASE_PROJECT_ID: ${VITE_FIREBASE_PROJECT_ID}
-        VITE_FIREBASE_APP_ID: ${VITE_FIREBASE_APP_ID}
-        VITE_FIREBASE_MEASUREMENT_ID: ${VITE_FIREBASE_MEASUREMENT_ID}
     ports:
       - "5173:80"
     volumes:
       - ./public/env.js:/usr/share/nginx/html/env.js:ro
-secrets:
-  firebase:
-    file: ./.secrets/asap-bail-books-firebase-adminsdk-fbsvc-71506047b4.json

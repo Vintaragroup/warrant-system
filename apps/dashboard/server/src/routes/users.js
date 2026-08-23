@@ -1,8 +1,11 @@
 import express from 'express';
-import { firebaseAuth } from '../lib/firebaseAdmin.js';
+import crypto from 'node:crypto';
 import User from '../models/User.js';
 import { assertPermission, hasPermission } from './utils/authz.js';
-import { sendInviteEmail } from '../lib/mailer.js';
+import { sendPasswordSetEmail } from '../lib/mailer.js';
+import { WEB_ORIGIN } from '../lib/passport.js';
+
+const INVITE_TOKEN_TTL_MS = 1000 * 60 * 60; // 1 hour
 
 const router = express.Router();
 
@@ -116,23 +119,6 @@ function enforceScopeAssignment(req, departments = [], counties = []) {
   }
 }
 
-async function ensureFirebaseUser({ email, displayName }) {
-  let record;
-  try {
-    record = await firebaseAuth.getUserByEmail(email);
-    if (displayName && record.displayName !== displayName) {
-      await firebaseAuth.updateUser(record.uid, { displayName });
-      record = await firebaseAuth.getUser(record.uid);
-    }
-    return { record, created: false };
-  } catch (err) {
-    if (err?.code !== 'auth/user-not-found') {
-      throw err;
-    }
-  }
-  record = await firebaseAuth.createUser({ email, displayName });
-  return { record, created: true };
-}
 
 router.get('/', asyncHandler(async (req, res) => {
   if (!hasPermission(req, 'users:manage') && !hasPermission(req, 'users:manage:department')) {
@@ -178,18 +164,23 @@ router.post('/', asyncHandler(async (req, res) => {
   enforceRoleAssignmentPermissions(req, roles);
   enforceScopeAssignment(req, departments, counties);
 
-  const { record, created } = await ensureFirebaseUser({ email, displayName });
   const inviterId = await lookupInviterId(req);
-  const existing = await User.findOne({ uid: record.uid }).lean();
+  const existing = await User.findOne({ email }).select('+passwordResetToken +passwordResetTokenExpiresAt');
+  const created = !existing;
   const now = new Date();
+
+  const token = crypto.randomBytes(32).toString('hex');
   const updates = {
+    uid: existing?.uid || crypto.randomUUID(),
     email,
-    displayName: displayName || record.displayName || '',
+    displayName: displayName || existing?.displayName || '',
     roles,
     departments,
     counties,
     status,
     invitedAt: existing?.invitedAt || now,
+    passwordResetToken: crypto.createHash('sha256').update(token).digest('hex'),
+    passwordResetTokenExpiresAt: new Date(Date.now() + INVITE_TOKEN_TTL_MS),
   };
   if (!existing?.invitedBy && inviterId) {
     updates.invitedBy = inviterId;
@@ -199,25 +190,17 @@ router.post('/', asyncHandler(async (req, res) => {
   }
 
   const doc = await User.findOneAndUpdate(
-    { uid: record.uid },
+    { email },
     { $set: updates },
     { new: true, upsert: true, setDefaultsOnInsert: true }
   );
 
-  let inviteLink = null;
+  const inviteLink = `${WEB_ORIGIN}/auth/forgot-password?token=${token}`;
   let emailed = false;
   try {
-    inviteLink = await firebaseAuth.generatePasswordResetLink(email);
+    emailed = await sendPasswordSetEmail({ to: email, link: inviteLink, displayName: updates.displayName, mode: 'invite' });
   } catch (err) {
-    console.warn('Failed to generate invite link', err?.message);
-  }
-
-  if (inviteLink) {
-    try {
-      emailed = await sendInviteEmail({ to: email, inviteLink, displayName: updates.displayName });
-    } catch (err) {
-      console.warn('Failed to send invite email', err?.message);
-    }
+    console.warn('Failed to send invite email', err?.message);
   }
 
   res.status(created ? 201 : 200).json({ user: sanitizeUserDoc(doc), inviteLink, emailed, message: emailed ? 'Invitation email sent' : 'Invitation link generated' });
@@ -245,21 +228,13 @@ router.patch('/:uid', asyncHandler(async (req, res) => {
   }
 
   const updates = {};
-  let shouldUpdateFirebase = false;
-  let firebaseUpdate = {};
 
   if (payload.email) {
-    const email = String(payload.email).trim().toLowerCase();
-    updates.email = email;
-    firebaseUpdate.email = email;
-    shouldUpdateFirebase = true;
+    updates.email = String(payload.email).trim().toLowerCase();
   }
 
   if (payload.displayName !== undefined) {
-    const displayName = payload.displayName ? String(payload.displayName) : '';
-    updates.displayName = displayName;
-    firebaseUpdate.displayName = displayName;
-    shouldUpdateFirebase = true;
+    updates.displayName = payload.displayName ? String(payload.displayName) : '';
   }
 
   if (payload.roles) {
@@ -303,14 +278,6 @@ router.patch('/:uid', asyncHandler(async (req, res) => {
     { new: true }
   );
 
-  if (shouldUpdateFirebase) {
-    try {
-      await firebaseAuth.updateUser(uid, firebaseUpdate);
-    } catch (err) {
-      console.warn('Failed to update Firebase user', err?.message);
-    }
-  }
-
   res.json({ user: sanitizeUserDoc(doc) });
 }));
 
@@ -333,7 +300,7 @@ router.post('/:uid/revoke', asyncHandler(async (req, res) => {
     }
   }
 
-  await firebaseAuth.revokeRefreshTokens(uid);
+  await User.updateOne({ uid }, { $inc: { sessionVersion: 1 } });
   res.json({ ok: true });
 }));
 

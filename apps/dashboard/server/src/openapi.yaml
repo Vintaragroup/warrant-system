@@ -339,20 +339,22 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/CountySnapshotItem'
-  /auth/session:
+  /auth/login:
     post:
-      summary: Exchange Firebase ID token for server session
+      summary: Sign in with email and password, establishing a server session
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [idToken]
+              required: [email, password]
               properties:
-                idToken:
+                email:
                   type: string
-                  description: Firebase ID token obtained on the client
+                  format: email
+                password:
+                  type: string
       responses:
         '200':
           description: Session cookie set
@@ -361,9 +363,57 @@ paths:
               schema:
                 $ref: '#/components/schemas/AuthSessionResponse'
         '401':
-          description: Invalid token
+          description: Invalid email or password
+  /auth/google:
+    get:
+      summary: Begin Google OAuth sign-in (redirects to Google)
+      responses:
+        '302':
+          description: Redirect to Google's consent screen
+  /auth/google/callback:
+    get:
+      summary: Google OAuth callback — establishes a server session and redirects back to the app
+      responses:
+        '302':
+          description: Redirect to the app
+  /auth/forgot-password:
+    post:
+      summary: Request a password-reset email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        '202':
+          description: Accepted regardless of whether the email has an account (avoids leaking account existence)
+  /auth/reset-password:
+    post:
+      summary: Set a new password using a reset/invite token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, password]
+              properties:
+                token:
+                  type: string
+                password:
+                  type: string
+                  minLength: 8
+      responses:
+        '200':
+          description: Password updated
         '400':
-          description: Missing idToken
+          description: Token is invalid, expired, or password too short
   /auth/me:
     get:
       summary: Current authenticated user profile
@@ -393,7 +443,7 @@ paths:
           description: Not authenticated
   /auth/session/revoke:
     post:
-      summary: Revoke Firebase refresh tokens for current user
+      summary: Invalidate all of the current user's existing sessions
       responses:
         '200':
           description: Sessions revoked

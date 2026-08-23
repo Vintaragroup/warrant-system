@@ -29,7 +29,7 @@ tmp/*.sanitized.har
 tmp/*HAR_v*.har
 /tmp/Bail Bonds Dashboard not connected.html
 
-# Secrets & Firebase keys
+# Secrets
 .secrets/
 .env
 public/env.js

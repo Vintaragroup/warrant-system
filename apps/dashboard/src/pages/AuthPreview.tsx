@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { AuthLanding } from '../components/auth/AuthLanding';
 import { EmailPasswordLogin } from '../components/auth/EmailPasswordLogin';
-import { MagicLinkRequest } from '../components/auth/MagicLinkRequest';
 import { SocialRedirect } from '../components/auth/SocialRedirect';
 import { MFAChallenge } from '../components/auth/MFAChallenge';
 import { MFAEnrollment } from '../components/auth/MFAEnrollment';
@@ -18,7 +17,6 @@ import type { AuthScreen } from '../components/auth/types';
 const SCREEN_COMPONENTS: Record<AuthScreen, (props: { onNavigate: (screen: AuthScreen) => void }) => JSX.Element> = {
   landing: (props) => <AuthLanding {...props} />,
   login: (props) => <EmailPasswordLogin {...props} />,
-  'magic-link': (props) => <MagicLinkRequest {...props} />,
   'social-redirect': (props) => <SocialRedirect {...props} />,
   'mfa-challenge': (props) => <MFAChallenge {...props} />,
   'mfa-enrollment': (props) => <MFAEnrollment {...props} />,
@@ -35,7 +33,6 @@ const SCREEN_COMPONENTS: Record<AuthScreen, (props: { onNavigate: (screen: AuthS
 const SCREEN_OPTIONS: Array<{ value: AuthScreen; label: string }> = [
   { value: 'landing', label: 'Auth Landing' },
   { value: 'login', label: 'Email / Password' },
-  { value: 'magic-link', label: 'Magic Link' },
   { value: 'social-redirect', label: 'Social Redirect' },
   { value: 'mfa-challenge', label: 'MFA Challenge' },
   { value: 'mfa-enrollment', label: 'MFA Enrollment' },

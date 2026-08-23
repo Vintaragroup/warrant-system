@@ -1,20 +1,12 @@
 // Lightweight API client for the dashboard (uses browser fetch)
-import { firebaseAuthClient } from './firebaseClient';
 // Base URL can be provided at runtime via window.__ENV__.VITE_API_URL, or at build time via import.meta.env.VITE_API_URL.
 // Default to same-origin proxy path '/api' to work with Nginx/Vite proxy.
-//
-// Mobile Safari note: Some iOS configurations (ITP/content blockers) can interfere with cross-site cookies.
-// To be resilient, we also attach an Authorization: Bearer <Firebase ID token> when available.
-// The server already supports bearer auth alongside the session cookie.
+// Auth is carried entirely by the session cookie (credentials: 'include').
 
+// Kept for backward compatibility with call sites that spread this into their
+// own fetch headers — auth is now carried entirely by the session cookie, so
+// there's no bearer token to attach.
 export async function getAuthHeader() {
-  try {
-    const user = firebaseAuthClient?.currentUser;
-    const token = user ? await user.getIdToken().catch(() => null) : null;
-    if (token) return { Authorization: `Bearer ${token}` };
-  } catch {
-    // ignore auth header errors
-  }
   return undefined;
 }
 
@@ -64,11 +56,9 @@ async function parseJsonResponse(res) {
 async function httpGet(path) {
   const fullPath = path.startsWith('/') ? path : `/${path}`;
   let res;
-  const headers = await getAuthHeader();
   try {
     res = await fetch(`${API_BASE}${fullPath}`, {
       credentials: 'include',
-      headers,
     });
   } catch (_e) {
     reportOverlay(`Network error fetching ${API_BASE}${fullPath}: ${_e?.message || _e}`);

@@ -6,7 +6,7 @@ import process from 'node:process';
 //  AUTH_BEARER=eyJ... node scripts/smoke-dashboard.mjs
 //  AUTH_COOKIE="__asap_session=..." node scripts/smoke-dashboard.mjs
 //  node scripts/smoke-dashboard.mjs --base http://localhost:8080/api/dashboard --bearer $TOKEN
-//  node scripts/smoke-dashboard.mjs --signin --email user@example.com --password '...' --apiKey $VITE_FIREBASE_API_KEY
+//  node scripts/smoke-dashboard.mjs --signin --email user@example.com --password '...'
 
 const WINDOWS = ['24h','48h','72h','7d','30d'];
 
@@ -24,32 +24,31 @@ const BASE = (args.get('base') || process.env.BASE_URL || 'http://localhost:8080
 let AUTH_BEARER = args.get('bearer') || process.env.AUTH_BEARER || '';
 let AUTH_COOKIE = args.get('cookie') || process.env.AUTH_COOKIE || '';
 
-// Optional Firebase email/password sign-in to obtain ID token via REST
+// Optional email/password sign-in against POST /auth/login to obtain a session cookie
 async function signInWithEmailPassword() {
   const doSignin = args.get('signin') === 'true' || args.get('signin') === true || process.env.AUTH_SIGNIN === 'true';
   const email = args.get('email') || process.env.AUTH_EMAIL;
   const password = args.get('password') || process.env.AUTH_PASSWORD;
-  const apiKey = args.get('apiKey') || process.env.VITE_FIREBASE_API_KEY || process.env.FIREBASE_WEB_API_KEY;
   if (!doSignin) return;
-  if (!email || !password || !apiKey) {
-    console.error('signin requested but missing email/password/apiKey');
+  if (!email || !password) {
+    console.error('signin requested but missing email/password');
     return;
   }
-  const url = `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${encodeURIComponent(apiKey)}`;
-  const res = await fetch(url, {
+  const loginUrl = `${BASE.replace(/\/dashboard$/, '')}/auth/login`;
+  const res = await fetch(loginUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password, returnSecureToken: true }),
+    body: JSON.stringify({ email, password }),
   });
   if (!res.ok) {
-    const text = await res.text().catch(()=>'');
+    const text = await res.text().catch(() => '');
     console.error(`Failed to sign in: ${res.status} ${res.statusText} ${text}`);
     return;
   }
-  const json = await res.json();
-  if (json.idToken) {
-    AUTH_BEARER = json.idToken;
-    console.log('Signed in and obtained ID token.');
+  const setCookie = res.headers.get('set-cookie');
+  if (setCookie) {
+    AUTH_COOKIE = setCookie.split(';')[0];
+    console.log('Signed in and obtained session cookie.');
   }
 }
 

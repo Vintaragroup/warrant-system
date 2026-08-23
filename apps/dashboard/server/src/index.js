@@ -15,6 +15,8 @@ import cases from './routes/cases.js';
 import checkins from './routes/checkins.js';
 import documents from './routes/documents.js';
 import messagesRoutes, { twilioWebhooks } from './routes/messages.js';
+import { sessionMiddleware } from './lib/session.js';
+import passport from './lib/passport.js';
 import authRoutes from './routes/auth.js';
 import userRoutes from './routes/users.js';
 import accessRequestRoutes from './routes/accessRequests.js';
@@ -125,6 +127,10 @@ app.use(cors({
   credentials: true,
 }));
 app.use(rateLimit({ windowMs: 60_000, max: 120 }));
+
+app.use(sessionMiddleware);
+app.use(passport.initialize());
+app.use(passport.session());
 
 app.use('/api/health', health);
 app.get('/api/health/light', (_req, res) => res.json({ ok: true, pid: process.pid, ts: new Date().toISOString() }));
