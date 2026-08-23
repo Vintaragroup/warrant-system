@@ -187,8 +187,9 @@ User's explicit condition before any Render redeploy: prove dev is actually pull
 **Net gate status**: county scraping (3/5 sources proven, Galveston needs a real-network retest, Brazoria still externally blocked), enrichment infrastructure (fixed, but both providers need account attention before they'll return data), frontend/CRM (working, with the write-target architecture decision flagged), Telnyx (fully verified) — mostly green, not fully green. Brazoria/Galveston and the two enrichment vendor accounts are genuine external blockers, not engineering work; the CRM write-target question is a real decision that should happen before or alongside any Render rebuild, not after.
 
 ### Phase 4 — Close the CRM/Messaging Gap
-- [ ] Decide: Twilio vs. Telnyx as the single messaging provider for the dashboard (the AI agent already proves Telnyx messaging works).
-- [ ] Replace the dashboard's mock `INTEGRATIONS` list in `Admin.jsx` with a real status check once a provider is chosen.
+- [x] **Decided 2026-08-23: Telnyx** is the single messaging provider going forward (not Twilio) — the AI agent already proves it works.
+- [ ] Migrate the dashboard's messaging queue (`server/src/lib/messaging/twilio.js`, `server/src/jobs/messaging.js`, `server/src/services/messaging.js`) from Twilio to Telnyx, following the pattern already proven in `services/ai-agent`.
+- [ ] Build a real Telnyx status panel in `Admin.jsx` — the "mock INTEGRATIONS list" this item originally referred to turned out to already be gone from the monorepo copy (`Admin.jsx` currently just shows an "Integration management coming soon" placeholder) — this is new UI to build, not a replacement of stale mock data.
 - [ ] Finish check-ins reminders/GPS queue (documented as outstanding in `final-feature-readiness.md`).
 
 ### Phase 5 — Consolidation Cleanup
