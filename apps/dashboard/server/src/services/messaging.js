@@ -3,7 +3,7 @@ import Message from '../models/Message.js';
 import CaseAudit from '../models/CaseAudit.js';
 import Case from '../models/Case.js';
 import { getMessagingQueue } from '../jobs/messaging.js';
-import { getTwilioClient, getMessagingServiceSid, getStatusCallbackUrl } from '../lib/messaging/twilio.js';
+import { sendTelnyxMessage } from '../lib/messaging/telnyx.js';
 
 const { ObjectId } = mongoose.Types;
 
@@ -37,7 +37,7 @@ export async function enqueueOutboundMessage({ caseId, to, body, actor, meta }) 
     to,
     body,
     status: 'queued',
-    provider: 'twilio',
+    provider: 'telnyx',
     meta: {
       ...(meta || {}),
       createdBy: actor || null,
@@ -91,28 +91,17 @@ export async function processOutboundMessageJob(data) {
   }
 
   try {
-    message.provider = 'twilio';
+    message.provider = 'telnyx';
     await message.markSending();
 
-    const client = getTwilioClient();
-    const response = await client.messages.create({
-      to: message.to,
-      body: message.body,
-      messagingServiceSid: getMessagingServiceSid(),
-      statusCallback: getStatusCallbackUrl(),
-    });
+    // Telnyx's send response only confirms acceptance (queued/sending) — it
+    // never resolves final delivery synchronously the way Twilio sometimes
+    // did. Final delivery/failure always arrives later via the status webhook
+    // (applyTelnyxStatusUpdate), so we only ever mark 'sent' here.
+    const response = await sendTelnyxMessage({ to: message.to, body: message.body });
 
-    message.from = response.from || message.from;
-
-    if (response.status === 'failed' || response.status === 'undelivered') {
-      await message.markFailed(response.errorCode, response.errorMessage);
-    } else if (response.status === 'delivered') {
-      await message.markDelivered();
-      message.providerMessageId = response.sid;
-      await message.save();
-    } else {
-      await message.markSent(response.sid);
-    }
+    message.from = response?.from?.phone_number || message.from;
+    await message.markSent(response?.id);
   } catch (err) {
     console.error(`Failed to send message ${messageId}`, err?.message || err);
     await message.markFailed(err?.code, err?.message || 'send_failed');
@@ -164,44 +153,49 @@ export async function resendMessage({ caseId, messageId, actor }) {
   });
 }
 
-export async function applyTwilioStatusUpdate({ messageSid, messageStatus, to, from, errorCode, errorMessage }) {
-  if (!messageSid) {
-    throw new Error('Missing MessageSid');
+/**
+ * Applies a Telnyx message-status webhook event to the matching Message doc.
+ *
+ * Field mapping is based on Telnyx's documented Message Delivery Update
+ * webhook schema (payload.to[].status per-recipient, payload.errors[] on
+ * failure) — confirm against one real captured webhook before treating this
+ * as final, since Telnyx's schema nesting has shifted across API versions.
+ */
+export async function applyTelnyxStatusUpdate({ eventType, payload }) {
+  const providerMessageId = payload?.id;
+  if (!providerMessageId) {
+    throw new Error('Missing Telnyx message id in webhook payload');
   }
-  const message = await Message.findOne({ providerMessageId: messageSid });
+  const message = await Message.findOne({ providerMessageId });
   if (!message) {
-    console.warn(`Twilio status update for ${messageSid} ignored: message not found`);
+    console.warn(`Telnyx status update for ${providerMessageId} ignored: message not found`);
     return null;
   }
 
-  if (from) message.from = from;
-  if (to) message.to = to;
+  if (payload?.from?.phone_number) message.from = payload.from.phone_number;
+  const toNumber = Array.isArray(payload?.to) ? payload.to[0]?.phone_number : null;
+  if (toNumber) message.to = toNumber;
 
-  const status = (messageStatus || '').toLowerCase();
-  switch (status) {
-    case 'delivered':
-      await message.markDelivered();
-      break;
-    case 'failed':
-    case 'undelivered':
-      await message.markFailed(errorCode, errorMessage);
-      break;
-    case 'queued':
-    case 'accepted':
-    case 'sending':
-    case 'sent':
-      await message.markSent(message.providerMessageId || messageSid);
-      break;
-    default:
-      console.log(`Twilio status ${status} for ${messageSid} logged`);
-      break;
+  const recipientStatus = Array.isArray(payload?.to) ? payload.to[0]?.status : null;
+  const errors = payload?.errors;
+  const hasErrors = Array.isArray(errors) && errors.length > 0;
+
+  if (hasErrors || recipientStatus === 'delivery_failed' || recipientStatus === 'sending_failed') {
+    const first = errors?.[0];
+    await message.markFailed(first?.code, first?.detail || first?.title);
+  } else if (recipientStatus === 'delivered' || (eventType === 'message.finalized' && !hasErrors)) {
+    await message.markDelivered();
+  } else if (recipientStatus === 'sent' || eventType === 'message.sent') {
+    await message.markSent(message.providerMessageId || providerMessageId);
+  } else {
+    console.log(`Telnyx event ${eventType} for ${providerMessageId} logged (status=${recipientStatus})`);
   }
 
   await message.save();
   return message;
 }
 
-export async function recordInboundMessage({ from, to, body, messageSid, raw }) {
+export async function recordInboundMessage({ from, to, body, providerMessageId, raw }) {
   const doc = await Message.create({
     direction: 'in',
     channel: 'sms',
@@ -209,8 +203,8 @@ export async function recordInboundMessage({ from, to, body, messageSid, raw }) 
     to,
     body,
     status: 'delivered',
-    provider: 'twilio',
-    providerMessageId: messageSid,
+    provider: 'telnyx',
+    providerMessageId,
     meta: { raw },
   });
   return doc;

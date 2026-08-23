@@ -37,7 +37,7 @@
     "passport-local": "^1.0.0",
     "stripe": "^14.0.0",
     "swagger-ui-express": "^5.0.1",
-    "twilio": "^4.22.0",
+    "tweetnacl": "^1.0.3",
     "yaml": "^2.8.1",
     "zod": "^3.23.8"
   },

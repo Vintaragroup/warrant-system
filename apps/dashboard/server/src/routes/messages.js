@@ -1,11 +1,11 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { assertPermission as ensurePermission } from './utils/authz.js';
-import { enqueueOutboundMessage, listMessages, applyTwilioStatusUpdate, recordInboundMessage } from '../services/messaging.js';
-import { validateTwilioSignature } from '../lib/messaging/twilio.js';
+import { enqueueOutboundMessage, listMessages, applyTelnyxStatusUpdate, recordInboundMessage } from '../services/messaging.js';
+import { verifyTelnyxWebhookSignature } from '../lib/messaging/telnyx.js';
 
 const router = Router();
-export const twilioWebhooks = Router();
+export const telnyxWebhooks = Router();
 
 const sendSchema = z.object({
   caseId: z.string().min(3),
@@ -51,51 +51,53 @@ router.post('/send', async (req, res) => {
 
 
 
-function verifyTwilio(req, res) {
-  const signature = req.headers['x-twilio-signature'];
-  const url = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
-  const params = req.body || {};
-  const valid = validateTwilioSignature({ url, signature, params });
+function verifyTelnyx(req, res) {
+  const signature = req.headers['telnyx-signature-ed25519'];
+  const timestamp = req.headers['telnyx-timestamp'];
+  const rawBody = req.rawBody;
+  const valid = verifyTelnyxWebhookSignature({ signature, timestamp, rawBody });
   if (!valid) {
-    console.warn('Twilio webhook signature invalid');
+    console.warn('Telnyx webhook signature invalid');
     res.status(403).send('Invalid signature');
     return false;
   }
   return true;
 }
 
-twilioWebhooks.post('/status', async (req, res) => {
-  if (!verifyTwilio(req, res)) return;
+telnyxWebhooks.post('/status', async (req, res) => {
+  if (!verifyTelnyx(req, res)) return;
   try {
-    const payload = {
-      messageSid: req.body?.MessageSid,
-      messageStatus: req.body?.MessageStatus,
-      to: req.body?.To,
-      from: req.body?.From,
-      errorCode: req.body?.ErrorCode,
-      errorMessage: req.body?.ErrorMessage,
-    };
-    await applyTwilioStatusUpdate(payload);
+    const eventType = req.body?.data?.event_type;
+    const payload = req.body?.data?.payload;
+    await applyTelnyxStatusUpdate({ eventType, payload });
     res.status(200).send('ok');
   } catch (err) {
-    console.error('Twilio status webhook error', err?.message || err);
+    console.error('Telnyx status webhook error', err?.message || err);
     res.status(500).send('error');
   }
 });
 
-twilioWebhooks.post('/inbound', async (req, res) => {
-  if (!verifyTwilio(req, res)) return;
+// Telnyx can be configured to fan multiple event types (sent/finalized/received)
+// into one webhook URL depending on the Messaging Profile setup — ignore
+// anything that isn't an inbound message here.
+telnyxWebhooks.post('/inbound', async (req, res) => {
+  if (!verifyTelnyx(req, res)) return;
   try {
+    const eventType = req.body?.data?.event_type;
+    if (eventType !== 'message.received') {
+      return res.status(200).send('ignored');
+    }
+    const payload = req.body?.data?.payload;
     await recordInboundMessage({
-      from: req.body?.From,
-      to: req.body?.To,
-      body: req.body?.Body,
-      messageSid: req.body?.MessageSid,
-      raw: req.body,
+      from: payload?.from?.phone_number,
+      to: Array.isArray(payload?.to) ? payload.to[0]?.phone_number : null,
+      body: payload?.text,
+      providerMessageId: payload?.id,
+      raw: payload,
     });
     res.status(200).send('ok');
   } catch (err) {
-    console.error('Twilio inbound webhook error', err?.message || err);
+    console.error('Telnyx inbound webhook error', err?.message || err);
     res.status(500).send('error');
   }
 });

@@ -5,6 +5,7 @@ import { useCases } from '../hooks/cases';
 import { getJSON } from '../hooks/dashboard';
 import { useUser } from '../components/UserContext';
 import ScraperOpsPanel from './ScraperOpsPanel';
+import TelnyxStatusPanel from './TelnyxStatusPanel';
 
 export default function Admin() {
   const navigate = useNavigate();
@@ -120,11 +121,7 @@ export default function Admin() {
       <ScraperOpsPanel />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <SectionCard title="Integrations" subtitle="External system connections">
-          <p className="py-4 text-sm text-slate-500">
-            Integration management coming soon.
-          </p>
-        </SectionCard>
+        <TelnyxStatusPanel />
 
         <SectionCard title="Users & roles" subtitle="Access control">
           <p className="py-2 text-sm text-slate-500">

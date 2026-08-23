@@ -59,7 +59,7 @@ const MessageSchema = new Schema(
     readAt:      { type: Date },
 
     // Provider details / diagnostics
-    provider:          { type: String, trim: true }, // e.g., 'twilio'
+    provider:          { type: String, trim: true }, // e.g., 'telnyx'
     providerMessageId: { type: String, index: true, sparse: true, trim: true },
     errorCode:         { type: String, trim: true },
     errorMessage:      { type: String, trim: true },

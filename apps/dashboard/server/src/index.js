@@ -14,7 +14,7 @@ import dashboard from './routes/dashboard.js';
 import cases from './routes/cases.js';
 import checkins from './routes/checkins.js';
 import documents from './routes/documents.js';
-import messagesRoutes, { twilioWebhooks } from './routes/messages.js';
+import messagesRoutes, { telnyxWebhooks } from './routes/messages.js';
 import { sessionMiddleware } from './lib/session.js';
 import passport from './lib/passport.js';
 import authRoutes from './routes/auth.js';
@@ -26,6 +26,7 @@ import enrichmentProxy from './routes/enrichmentProxy.js';
 import reportsRoutes from './routes/reports.js';
 import callQueueRoutes from './routes/callQueue.js';
 import adminIngestionRoutes from './routes/adminIngestion.js';
+import telnyxStatusRoutes from './routes/telnyxStatus.js';
 import { requireAuth } from './middleware/auth.js';
 import { initQueues } from './jobs/index.js';
 
@@ -108,9 +109,17 @@ app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
 }));
 app.post('/api/payments/stripe/webhook', express.raw({ type: 'application/json' }), stripeWebhookHandler);
+// Telnyx signs the raw JSON bytes of the webhook body, so this must be mounted
+// (with its own body parser capturing req.rawBody) before the global JSON
+// parser below consumes and re-serializes the body — same reason the Stripe
+// webhook above uses express.raw() ahead of the global parser.
+app.use(
+  '/api/messages/telnyx',
+  express.json({ verify: (req, _res, buf) => { req.rawBody = buf; } }),
+  telnyxWebhooks
+);
 app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
-app.use('/api/messages/twilio', express.urlencoded({ extended: false }), twilioWebhooks);
 
 const ENV_ORIGINS = (process.env.WEB_ORIGIN || '')
   .split(',')
@@ -147,6 +156,7 @@ app.use('/api/enrichment', requireAuth, enrichmentProxy);
 app.use('/api/reports', requireAuth, reportsRoutes);
 app.use('/api/call-queue', requireAuth, callQueueRoutes);
 app.use('/api/admin/ingestion', requireAuth, adminIngestionRoutes);
+app.use('/api/admin/telnyx', requireAuth, telnyxStatusRoutes);
 app.use('/api/metadata', metadataRoutes);
 app.use('/uploads', express.static(new URL('../uploads', import.meta.url).pathname));
 
