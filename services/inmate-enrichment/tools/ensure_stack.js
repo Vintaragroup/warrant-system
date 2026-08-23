@@ -4,7 +4,9 @@ Ensures Docker stack (mongo, mongo-setup, redis, api, worker) is up.
 - If --rebuild is passed, rebuild api and worker images first.
 - Waits for:
   - Docker daemon
-  - redis on 127.0.0.1:6379
+  - redis, checked via `docker compose exec redis redis-cli ping` (redis is not
+    published to the host — see docker-compose.yml — so a host-side TCP check
+    to 127.0.0.1:6379 will never succeed even when the stack is healthy)
   - api on http://127.0.0.1:4000/health returning { ok: true }
 Usage:
   npm run stack:up
@@ -54,6 +56,20 @@ function waitTcp(host, port, timeoutMs) {
   });
 }
 
+function waitRedisInNetwork(timeoutMs) {
+  const start = Date.now();
+  return new Promise((resolve, reject) => {
+    (function tryOnce(){
+      try {
+        const out = sh('docker compose exec -T redis redis-cli ping').trim();
+        if (out === 'PONG') return resolve(true);
+      } catch (e) { /* redis not ready yet, or container still starting */ }
+      if (Date.now() - start > timeoutMs) return reject(new Error('Timeout waiting for redis (via docker compose exec)'));
+      setTimeout(tryOnce, 500);
+    })();
+  });
+}
+
 function waitHealth(url, timeoutMs) {
   const start = Date.now();
   return new Promise((resolve, reject) => {
@@ -98,9 +114,11 @@ async function main(){
   console.log('Starting app services: api, worker...');
   try { composeUp(['api','worker']); } catch (e) { console.warn('Compose up warning:', e.message || String(e)); }
 
-  // Wait for Redis (container port is bridged; use localhost:6379 per compose default)
-  console.log('Waiting for Redis on 127.0.0.1:6379...');
-  try { await waitTcp('127.0.0.1', 6379, 30_000); } catch (e) { console.error(e.message); process.exit(1); }
+  // Redis is intentionally not published to the host (see docker-compose.yml) —
+  // check readiness from inside the network via the api container instead of
+  // localhost:6379, which never accepts external connections.
+  console.log('Waiting for Redis (checked via `docker compose exec redis redis-cli ping`)...');
+  try { await waitRedisInNetwork(30_000); } catch (e) { console.error(e.message); process.exit(1); }
 
   // Wait for API health on 4000
   console.log('Waiting for API health on http://127.0.0.1:4000/health ...');
