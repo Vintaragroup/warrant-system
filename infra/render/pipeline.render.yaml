@@ -30,3 +30,195 @@ services:
       - key: HARRIS_DATASETS_PAGE
         value: https://www.hcdistrictclerk.com/Common/e-services/PublicDatasets.aspx
 
+  # ── V2 Staging Cron Jobs ──────────────────────────────────────────────────────
+  #
+  # These jobs write to STAGING collections only (v2_galveston_events,
+  # v2_harris_reports, v2_lookup_results, v2_report_manifest).
+  # They do NOT touch any production collection.
+  #
+  # Schedule logic is enforced by --respect-schedule: each job calls
+  # should_run_source() before executing and writes a skipped audit record if
+  # it fires outside its configured window.  This lets Render heartbeat
+  # frequently while admin_config controls the actual cadence.
+  #
+  # Prerequisites (one-time, per environment):
+  #   1. Run scripts/create_v2_indexes.py against the target Atlas database.
+  #   2. Set MONGO_URI / MONGO_DB in the Render service environment.
+  #   3. Confirm: PYTHONPATH=$PWD python3 scripts/smoke_test_ingestion_v2.py
+  #
+  # Brazoria cron is commented out (source disabled) until a successful staging
+  # write is confirmed outside the local network.
+  # Fort Bend is omitted (strategy=manual — triggered via Admin UI only).
+
+  - type: cron
+    name: v2-galveston-staging
+    # Heartbeat every 15 min.  should_run_source() enforces interval_minutes=15
+    # and max_runs_per_day=64 via admin_config.  Writes to v2_galveston_events.
+    schedule: "*/15 * * * *"
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: >-
+      python3 scripts/run_ingestion_v2.py
+      --source galveston
+      --respect-schedule
+      --trigger scheduled
+      --limit 250
+    envVars:
+      - key: MONGO_URI
+        sync: false
+      - key: MONGO_DB
+        value: warrantdb
+      - key: USE_V2_INGESTION
+        value: "true"
+      - key: ENABLE_V2_GALVESTON
+        value: "true"
+      - key: DRY_RUN
+        value: "false"
+      - key: ALLOW_ADMIN_NON_DRY_RUN
+        value: "false"
+
+  - type: cron
+    name: v2-harris-reports-staging
+    # Hourly heartbeat.  should_run_source() restricts to run_times=["01:30"] CT
+    # with max_runs_per_day=1.  Writes up to 4 report files to v2_harris_reports.
+    schedule: "0 * * * *"
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: >-
+      python3 scripts/run_ingestion_v2.py
+      --source harris_reports
+      --respect-schedule
+      --trigger scheduled
+      --limit 4
+    envVars:
+      - key: MONGO_URI
+        sync: false
+      - key: MONGO_DB
+        value: warrantdb
+      - key: USE_V2_INGESTION
+        value: "true"
+      - key: ENABLE_V2_HARRIS_REPORTS
+        value: "true"
+      - key: DRY_RUN
+        value: "false"
+      - key: ALLOW_ADMIN_NON_DRY_RUN
+        value: "false"
+
+  - type: cron
+    name: v2-jefferson-staging
+    # Hourly heartbeat.  should_run_source() restricts to run_times=
+    # ["06:15","12:15","18:15"] CT with max_runs_per_day=3.
+    # booking_date is resolved to today's CT date via config default_args.
+    schedule: "15 * * * *"
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: >-
+      python3 scripts/run_ingestion_v2.py
+      --source jefferson_lookup
+      --respect-schedule
+      --trigger scheduled
+      --limit 100
+    envVars:
+      - key: MONGO_URI
+        sync: false
+      - key: MONGO_DB
+        value: warrantdb
+      - key: USE_V2_INGESTION
+        value: "true"
+      - key: ENABLE_V2_LOOKUPS
+        value: "true"
+      - key: DRY_RUN
+        value: "false"
+      - key: ALLOW_ADMIN_NON_DRY_RUN
+        value: "false"
+
+  # - type: cron
+  #   name: v2-brazoria-staging
+  #   # DISABLED: source=brazoria_lookup enabled=false in admin_config.
+  #   # should_run_source() will skip this job even if uncommented.
+  #   # Root cause (confirmed 2026-08-23): portal-txbrazoria.tylertech.cloud
+  #   # is protected by AWS WAF Bot Control, which CAPTCHA-challenges the
+  #   # scraper's requests (x-amzn-waf-action: captcha response header) —
+  #   # not a firewall/connectivity issue, not fixable in code. Needs
+  #   # official API access or an IP allowlist exception from Brazoria
+  #   # County / Tyler Technologies before re-enabling.
+  #   schedule: "0 12,0 * * *"
+  #   runtime: python
+  #   buildCommand: pip install -r requirements.txt
+  #   startCommand: >-
+  #     python3 scripts/run_ingestion_v2.py
+  #     --source brazoria_lookup
+  #     --respect-schedule
+  #     --trigger scheduled
+  #     --limit 100
+  #   envVars:
+  #     - key: MONGO_URI
+  #       sync: false
+  #     - key: MONGO_DB
+  #       value: warrantdb
+  #     - key: USE_V2_INGESTION
+  #       value: "true"
+  #     - key: ENABLE_V2_LOOKUPS
+  #       value: "true"
+  #     - key: DRY_RUN
+  #       value: "false"
+  #     - key: ALLOW_ADMIN_NON_DRY_RUN
+  #       value: "false"
+
+  - type: cron
+    name: v2-wharton-staging
+    # Hourly heartbeat.  should_run_source() enforces interval_minutes=60 and
+    # max_runs_per_day=24 via admin_config.  Writes to v2_wharton_events.
+    schedule: "5 * * * *"
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: >-
+      python3 scripts/run_ingestion_v2.py
+      --source wharton
+      --respect-schedule
+      --trigger scheduled
+      --limit 250
+    envVars:
+      - key: MONGO_URI
+        sync: false
+      - key: MONGO_DB
+        value: warrantdb
+      - key: USE_V2_INGESTION
+        value: "true"
+      - key: ENABLE_V2_WHARTON
+        value: "true"
+      - key: DRY_RUN
+        value: "false"
+      - key: ALLOW_ADMIN_NON_DRY_RUN
+        value: "false"
+
+  - type: cron
+    name: v2-fortbend-staging
+    # Twice daily.  should_run_source() enforces run_times=["05:00","17:00"]
+    # CT and max_runs_per_day=2 via admin_config. --mode auto (aa-zz sweep,
+    # 676 prefix combinations) matches the invocation already proven with 4/4
+    # successful real writes via the dashboard's manual bulk-sweep trigger.
+    schedule: "0 5,17 * * *"
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: >-
+      python3 scripts/run_ingestion_v2.py
+      --source fortbend_lookup
+      --mode auto
+      --respect-schedule
+      --trigger scheduled
+      --limit 0
+    envVars:
+      - key: MONGO_URI
+        sync: false
+      - key: MONGO_DB
+        value: warrantdb
+      - key: USE_V2_INGESTION
+        value: "true"
+      - key: ENABLE_V2_LOOKUPS
+        value: "true"
+      - key: DRY_RUN
+        value: "false"
+      - key: ALLOW_ADMIN_NON_DRY_RUN
+        value: "false"
+

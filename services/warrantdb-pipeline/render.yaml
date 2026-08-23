@@ -136,8 +136,12 @@ services:
   #   name: v2-brazoria-staging
   #   # DISABLED: source=brazoria_lookup enabled=false in admin_config.
   #   # should_run_source() will skip this job even if uncommented.
-  #   # Enable only after a successful staging write is confirmed outside the
-  #   # local network (pubweb.brazoriacountytx.gov network/source issue).
+  #   # Root cause (confirmed 2026-08-23): portal-txbrazoria.tylertech.cloud
+  #   # is protected by AWS WAF Bot Control, which CAPTCHA-challenges the
+  #   # scraper's requests (x-amzn-waf-action: captcha response header) —
+  #   # not a firewall/connectivity issue, not fixable in code. Needs
+  #   # official API access or an IP allowlist exception from Brazoria
+  #   # County / Tyler Technologies before re-enabling.
   #   schedule: "0 12,0 * * *"
   #   runtime: python
   #   buildCommand: pip install -r requirements.txt
@@ -161,6 +165,60 @@ services:
   #     - key: ALLOW_ADMIN_NON_DRY_RUN
   #       value: "false"
 
-  # Fort Bend (fortbend_lookup) is intentionally omitted.
-  # strategy=manual in admin_config — trigger via CLI or Admin UI only.
+  - type: cron
+    name: v2-wharton-staging
+    # Hourly heartbeat.  should_run_source() enforces interval_minutes=60 and
+    # max_runs_per_day=24 via admin_config.  Writes to v2_wharton_events.
+    schedule: "5 * * * *"
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: >-
+      python3 scripts/run_ingestion_v2.py
+      --source wharton
+      --respect-schedule
+      --trigger scheduled
+      --limit 250
+    envVars:
+      - key: MONGO_URI
+        sync: false
+      - key: MONGO_DB
+        value: warrantdb
+      - key: USE_V2_INGESTION
+        value: "true"
+      - key: ENABLE_V2_WHARTON
+        value: "true"
+      - key: DRY_RUN
+        value: "false"
+      - key: ALLOW_ADMIN_NON_DRY_RUN
+        value: "false"
+
+  - type: cron
+    name: v2-fortbend-staging
+    # Twice daily.  should_run_source() enforces run_times=["05:00","17:00"]
+    # CT and max_runs_per_day=2 via admin_config. --mode auto (aa-zz sweep,
+    # 676 prefix combinations) matches the invocation already proven with 4/4
+    # successful real writes via the dashboard's manual bulk-sweep trigger.
+    schedule: "0 5,17 * * *"
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: >-
+      python3 scripts/run_ingestion_v2.py
+      --source fortbend_lookup
+      --mode auto
+      --respect-schedule
+      --trigger scheduled
+      --limit 0
+    envVars:
+      - key: MONGO_URI
+        sync: false
+      - key: MONGO_DB
+        value: warrantdb
+      - key: USE_V2_INGESTION
+        value: "true"
+      - key: ENABLE_V2_LOOKUPS
+        value: "true"
+      - key: DRY_RUN
+        value: "false"
+      - key: ALLOW_ADMIN_NON_DRY_RUN
+        value: "false"
 

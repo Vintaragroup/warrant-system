@@ -22,6 +22,7 @@ SUPPORTED_SOURCES = [
     "fortbend_lookup",
     "jefferson_lookup",
     "brazoria_lookup",
+    "wharton",
 ]
 
 _COLLECTION = "admin_config"
@@ -82,18 +83,23 @@ DEFAULT_SOURCE_CONFIGS: Dict[str, Dict[str, Any]] = {
     "fortbend_lookup": {
         "type": "ingestion_source",
         "source": "fortbend_lookup",
-        "enabled": False,
+        # Promoted from manual-only 2026-08-23: 4/4 real (non-dry-run) writes
+        # via the dashboard's --mode auto sweep succeeded (21, 872, 10, 22
+        # records respectively), zero failures — the "confirmed staging
+        # write" bar the manual-only restriction was originally waiting on.
+        "enabled": True,
         "mode": "staging",
-        "dry_run_default": True,
+        "dry_run_default": False,
         "schedule": {
-            # strategy=manual: only runs when explicitly triggered via CLI or Admin UI.
-            # Do NOT add to Render cron until a confirmed staging write succeeds.
-            "strategy": "manual",
+            # Twice daily, not interval-based — a full aa-zz sweep (676
+            # prefix combinations via --mode auto) is heavy enough that
+            # overlapping runs should be avoided.
+            "strategy": "run_times",
             "interval_minutes": None,
-            "run_times": [],
+            "run_times": ["05:00", "17:00"],
             "timezone": "America/Chicago",
             "skip_weekends": False,
-            "max_runs_per_day": 0,
+            "max_runs_per_day": 2,
             "allowed_days": [1, 2, 3, 4, 5, 6, 7],
         },
         "limits": {
@@ -135,8 +141,12 @@ DEFAULT_SOURCE_CONFIGS: Dict[str, Dict[str, Any]] = {
     "brazoria_lookup": {
         "type": "ingestion_source",
         "source": "brazoria_lookup",
-        # Disabled: keep commented out of Render cron until a successful staging
-        # write is confirmed outside the local network.
+        # Disabled: portal-txbrazoria.tylertech.cloud is protected by AWS WAF
+        # Bot Control, which CAPTCHA-challenges the scraper's requests
+        # (response header x-amzn-waf-action: captcha) — confirmed 2026-08-23
+        # by inspecting the actual response, not a firewall/connectivity issue.
+        # Not fixable in code; needs official API access or an IP allowlist
+        # exception from Brazoria County / Tyler Technologies before re-enabling.
         "enabled": False,
         "mode": "staging",
         "dry_run_default": False,
@@ -155,6 +165,32 @@ DEFAULT_SOURCE_CONFIGS: Dict[str, Dict[str, Any]] = {
         },
         "default_args": {
             "booking_date": "today",
+        },
+        "read_flags": {},
+        "updated_at": None,
+        "updated_by": "system",
+    },
+    "wharton": {
+        "type": "ingestion_source",
+        "source": "wharton",
+        "enabled": True,
+        "mode": "staging",
+        "dry_run_default": False,
+        "schedule": {
+            # Hourly: comfortably under the dashboard's staleHours=4 readiness
+            # threshold for this source (adminIngestion.js READINESS_RULES),
+            # without polling as aggressively as Galveston's live jail roster.
+            "strategy": "interval",
+            "interval_minutes": 60,
+            "run_times": [],
+            "timezone": "America/Chicago",
+            "skip_weekends": False,
+            "max_runs_per_day": 24,
+            "allowed_days": [1, 2, 3, 4, 5, 6, 7],
+        },
+        "limits": {
+            "default_limit": 250,
+            "max_limit": 500,
         },
         "read_flags": {},
         "updated_at": None,

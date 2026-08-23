@@ -10,7 +10,8 @@ Per-source checks
   harris_reports   ≥3 daily successes, success_rate ≥95%, latest_success <36h
   jefferson_lookup ≥3 days date-mode runs, success_rate ≥90%, latest <12h
   brazoria_lookup  always "watch" unless explicitly enabled
-  fortbend_lookup  always "manual-only"
+  fortbend_lookup  ≥3 days observed, success_rate ≥90%, latest_success <30h
+  wharton          ≥3 days observed, success_rate ≥90%, latest_success <4h
 
 Global gate
 ───────────
@@ -83,11 +84,20 @@ _SOURCE_RULES: Dict[str, Dict[str, Any]] = {
         "always_watch": True,
     },
     "fortbend_lookup": {
-        "stale_hours": None,
-        "min_success_rate": None,
-        "min_days_observed": None,
+        # Promoted from manual-only 2026-08-23 — see scheduler/config.py.
+        # Twice-daily schedule, so a wider stale window than the interval-based sources.
+        "stale_hours": 30,
+        "min_success_rate": 0.90,
+        "min_days_observed": 3,
         "required": False,
-        "manual_only": True,
+    },
+    "wharton": {
+        # Thresholds match the dashboard's own READINESS_RULES for this source
+        # (apps/dashboard/server/src/routes/adminIngestion.js).
+        "stale_hours": 4,
+        "min_success_rate": 0.90,
+        "min_days_observed": 3,
+        "required": False,
     },
 }
 
