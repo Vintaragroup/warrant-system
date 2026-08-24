@@ -3,7 +3,10 @@ services:
     type: web
     runtime: docker
     plan: starter
-    # Docker build from monorepo
+    # Docker build from monorepo — rootDir scopes everything below (including
+    # dockerfilePath/dockerContext) to apps/dashboard/, matching where this
+    # service's code actually lives in warrant-system.
+    rootDir: apps/dashboard
     dockerfilePath: server/Dockerfile
     dockerContext: ./server
     # Health check for container readiness (lightweight, no DB)

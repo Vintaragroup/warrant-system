@@ -5,6 +5,9 @@ services:
     name: warrant-api
     runtime: python
     plan: starter
+    # rootDir scopes build/start commands to services/warrantdb-pipeline/,
+    # where this service's code actually lives in warrant-system.
+    rootDir: services/warrantdb-pipeline
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
     envVars:
@@ -43,6 +46,7 @@ services:
     # and max_runs_per_day=64 via admin_config.  Writes to v2_galveston_events.
     schedule: "*/15 * * * *"
     runtime: python
+    rootDir: services/warrantdb-pipeline
     buildCommand: pip install -r requirements.txt
     startCommand: >-
       python3 scripts/run_ingestion_v2.py
@@ -70,6 +74,7 @@ services:
     # with max_runs_per_day=1.  Writes up to 4 report files to v2_harris_reports.
     schedule: "0 * * * *"
     runtime: python
+    rootDir: services/warrantdb-pipeline
     buildCommand: pip install -r requirements.txt
     startCommand: >-
       python3 scripts/run_ingestion_v2.py
@@ -98,6 +103,7 @@ services:
     # booking_date is resolved to today's CT date via config default_args.
     schedule: "15 * * * *"
     runtime: python
+    rootDir: services/warrantdb-pipeline
     buildCommand: pip install -r requirements.txt
     startCommand: >-
       python3 scripts/run_ingestion_v2.py
@@ -158,6 +164,7 @@ services:
     # max_runs_per_day=24 via admin_config.  Writes to v2_wharton_events.
     schedule: "5 * * * *"
     runtime: python
+    rootDir: services/warrantdb-pipeline
     buildCommand: pip install -r requirements.txt
     startCommand: >-
       python3 scripts/run_ingestion_v2.py
@@ -187,6 +194,7 @@ services:
     # successful real writes via the dashboard's manual bulk-sweep trigger.
     schedule: "0 5,17 * * *"
     runtime: python
+    rootDir: services/warrantdb-pipeline
     buildCommand: pip install -r requirements.txt
     startCommand: >-
       python3 scripts/run_ingestion_v2.py
