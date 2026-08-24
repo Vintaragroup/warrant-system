@@ -23,6 +23,13 @@ services:
         value: warrantdb
       - key: WEB_ORIGIN
         sync: false # the frontend's origin (Vercel URL) — required for CORS + cookie sameSite=none
+      # Sessions are Redis-backed (server/src/lib/session.js, connect-redis) with no
+      # fallback store. Without this set, it defaults to redis://localhost:6379, which
+      # doesn't exist on Render — every request touching a session (including login)
+      # hangs indefinitely retrying a connection that can never succeed, rather than
+      # failing fast. Point this at a real Redis/Key Value instance before going live.
+      - key: REDIS_URL
+        sync: false
       # SMTP settings for invitation emails
       - key: SMTP_HOST
         sync: false
