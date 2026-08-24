@@ -568,6 +568,22 @@ def _transfer_numbers_by_schedule(county: Optional[str], lang: Optional[str] = N
 # ---------- FAST PATH over simple_* collections ----------
 SIMPLE_COUNTIES = ["harris", "brazoria", "galveston", "fortbend"]
 
+# simple_* collections stopped receiving new bookings (frozen 8-12+ months as
+# of 2026-08) and never covered jefferson/wharton at all. v2_* is the pipeline's
+# current output — searched as a second pass so historical simple_* data (which
+# v2_* may not have backfilled) still matches too. v2_lookup_results is shared
+# across fortbend/jefferson/brazoria, so queries against it need an explicit
+# county filter merged in (unlike the per-county collections below).
+V2_COUNTY_COLLECTIONS = {
+    "harris": ["v2_harris_reports"],
+    "galveston": ["v2_galveston_events"],
+    "wharton": ["v2_wharton_events"],
+    "fortbend": ["v2_lookup_results"],
+    "jefferson": ["v2_lookup_results", "v2_jefferson_events"],
+    "brazoria": ["v2_lookup_results"],
+}
+V2_SHARED_COLLECTIONS = {"v2_lookup_results"}
+
 def _normalize_county_key(county: Optional[str]) -> Optional[str]:
     if not county:
         return None
@@ -669,6 +685,38 @@ def _list_simple_cols(county_hint: Optional[str] = None, *, exclusive: bool = Fa
             ordered.append(col)
     return ordered
 
+def _list_v2_cols(county_hint: Optional[str] = None, *, exclusive: bool = False):
+    """Same ordering behavior as _list_simple_cols, but returns
+    (collection, extra_filter) pairs. v2_lookup_results is shared across
+    fortbend/jefferson/brazoria: when a specific county is requested it's
+    searched once with a county filter merged in; when searching broadly
+    (no exclusive hint) it's searched once, unfiltered, covering all three."""
+    existing = set(_db.list_collection_names())
+    all_names = {name for names in V2_COUNTY_COLLECTIONS.values() for name in names}
+    available = {name for name in all_names if name in existing}
+
+    ordered: List[Any] = []
+    seen_names: set = set()
+
+    def add(name: str, extra: Dict[str, Any]):
+        if name not in available or name in seen_names:
+            return
+        ordered.append((_db[name], extra))
+        seen_names.add(name)
+
+    if county_hint:
+        key = _normalize_county_key(county_hint)
+        if key:
+            for name in V2_COUNTY_COLLECTIONS.get(key, []):
+                extra = {"county": key} if name in V2_SHARED_COLLECTIONS else {}
+                add(name, extra)
+            if exclusive:
+                return ordered
+
+    for name in sorted(available):
+        add(name, {})
+    return ordered
+
 def _split_name(full_name: str) -> tuple[Optional[str], Optional[str]]:
     if not full_name:
         return None, None
@@ -742,11 +790,18 @@ def _find_in_simple(full_name: str, *, dob: Optional[str]=None, county_hint: Opt
     if not queries:
         queries.append({"first_name": {"$regex": f"^{re.escape(first or last or full_name)}", "$options": "i"}})
 
+    # (collection, extra_filter) pairs — simple_* first (existing behavior
+    # preserved as-is), then v2_* as a second pass so records only present in
+    # the currently-updating pipeline output are still found. simple_* is
+    # kept first rather than replaced: it may hold older history v2_* never
+    # backfilled.
     cols: List[Any] = []
     if county_hint:
-        cols = _list_simple_cols(county_hint, exclusive=True)
+        cols = [(c, {}) for c in _list_simple_cols(county_hint, exclusive=True)]
+        cols += _list_v2_cols(county_hint, exclusive=True)
     if not cols:
-        cols = _list_simple_cols()
+        cols = [(c, {}) for c in _list_simple_cols()]
+        cols += _list_v2_cols()
     if not cols:
         return None
 
@@ -757,9 +812,10 @@ def _find_in_simple(full_name: str, *, dob: Optional[str]=None, county_hint: Opt
     for q in queries:
         if q not in dedup_queries:
             dedup_queries.append(q)
-    for col in cols:
+    for col, extra_filter in cols:
         for q in dedup_queries:
-            cur = col.find(q).sort([("booking_date", -1)]).limit(5)
+            full_q = {**q, **extra_filter} if extra_filter else q
+            cur = col.find(full_q).sort([("booking_date", -1)]).limit(5)
             for d in cur:
                 did = str(d.get("_id"))
                 if did in seen_ids:
