@@ -53,7 +53,7 @@ curl -I https://ai-agent-warrant.onrender.com/hold_music/moonlightdrive.mp3
 Then test the endpoint:
 
 ```bash
-TOKEN="rKEY0198AF24FDB934B96F9A4E90539801E0_JdT29x8sSAEZgK80velwNQ"
+TOKEN="<your TELNYX_TOOL_TOKEN, from the ai-agent service env>"
 
 curl -H "Authorization: Bearer $TOKEN" \
   https://ai-agent-warrant.onrender.com/telnyx/hold_music_test
