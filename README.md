@@ -45,10 +45,22 @@ Each service also has its own compose file for isolated development.
 
 ## Render Deployments
 
-- Dashboard: `infra/render/dashboard.render.yaml`
+- Dashboard backend: `infra/render/dashboard.render.yaml`
 - Pipeline: `infra/render/pipeline.render.yaml`
 - AI agent: `infra/render/ai-agent.render.yaml`
 - Inmate enrichment: not deployed to Render (self-hosted)
+
+## Deploying the dashboard frontend to Vercel (self-service)
+
+The dashboard frontend (`apps/dashboard`) is a static Vite/React build — it deploys to Vercel independently of the backend, and doesn't require any account or config from a prior deploy. `apps/dashboard/vercel.json` already declares the build settings and the SPA rewrite (needed so client-side routes like `/cases/123` don't 404 on direct load) — Vercel just needs to be pointed at the repo:
+
+1. In Vercel: **Add New → Project → Import Git Repository**, select `Vintaragroup/warrant-system`.
+   - If the repo doesn't show up as importable, it's a GitHub App authorization issue, not a Vercel one — check **GitHub → Organization settings → Third-party Access → Vercel** and confirm it's granted access to this repo (or "All repositories").
+2. **Root Directory**: `apps/dashboard`. Vercel auto-detects the Vite framework from there; `vercel.json` supplies the build command, output directory, and SPA rewrite.
+3. **Environment Variables** — add one:
+   - `VITE_API_URL` = the dashboard backend's URL (e.g. `https://warrantdb-api.onrender.com`).
+4. Deploy. No CLI, no API key, no other config needed.
+5. **One follow-up step on the backend side**: once you have the Vercel URL, set `WEB_ORIGIN` on the Render dashboard backend service to that URL (Render dashboard → `warrantdb-api` → Environment), and redeploy the backend. This is required for CORS and cross-origin session cookies to work — without it, the frontend will load but login will fail silently.
 
 ## Documentation
 

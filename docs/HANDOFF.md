@@ -122,7 +122,7 @@ The system was deliberately suspended on Render for a period while this consolid
 | Service | Platform | Status | Deploys from |
 |---|---|---|---|
 | `warrantdb-api` (dashboard backend) | Render (Docker, Starter) | 🟢 Live, healthy | `warrant-system` / `main` — **done** |
-| Dashboard frontend | Vercel | 🔴 **Blocked** — Vercel's GitHub App isn't authorized for this repo; project creation fails silently. Needs someone with GitHub org admin to grant access, then retry. | `warrant-system` / `main`, once unblocked |
+| Dashboard frontend | Vercel | 🟡 **Not yet deployed** — self-service, no blocker in the code. `apps/dashboard/vercel.json` is committed with the build config + SPA rewrite; see the "Deploying the dashboard frontend to Vercel" section in `README.md` for the exact click-path (~5 minutes, any Vercel account). One attempt from this session's own Vercel account hit a GitHub App authorization issue specific to that account/team — not expected to recur on a fresh account, but if it does, it's a GitHub org **Third-party Access** permission for the Vercel App, not a Vercel or repo config problem. | `warrant-system` / `main`, once deployed |
 | Pipeline (`warrant-api` + 5 county crons) | Render | 🔴 **Not yet deployed** from `warrant-system` — still running from the old `warrantdb-pipeline` standalone repo | pending Blueprint deploy from `infra/render/pipeline.render.yaml` |
 | `ai-agent-warrant` (live phone number) | Render | 🟢 Live, working | `AI_Agent_Warrant` (standalone repo) — **not** `warrant-system`, see §6 |
 | `warrant-pipeline` (old worker) | Render | 🟢 Running but does nothing (`sleep infinity`) | old `warrantdb-pipeline` repo — candidate for deletion |
@@ -155,7 +155,7 @@ Ranked roughly by severity:
 ## 6. Final phases to close the loop
 
 ### Immediate (infrastructure rebuild, in progress)
-- [ ] Get Vercel's GitHub App authorized for `Vintaragroup/warrant-system`, then finish the frontend deploy (project creation, `VITE_API_URL`).
+- [ ] Deploy the frontend to Vercel — self-service, see "Deploying the dashboard frontend to Vercel" in `README.md` (~5 minutes: import the repo, set Root Directory to `apps/dashboard`, set `VITE_API_URL`, deploy).
 - [ ] Set the dashboard backend's `WEB_ORIGIN` to the real Vercel URL once it exists (required for CORS + cross-origin cookies).
 - [ ] Deploy the pipeline Blueprint (`infra/render/pipeline.render.yaml`) from `warrant-system` — creates the web service + 5 county crons; set real `MONGO_URI` on each.
 - [ ] Full end-to-end verification pass on the *new* deployments: real login, real case data, real CRM write, one real cron-triggered scrape landing in Atlas.
