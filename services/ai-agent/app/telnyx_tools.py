@@ -681,7 +681,7 @@ def _list_simple_cols(county_hint: Optional[str] = None, *, exclusive: bool = Fa
 
     for c in SIMPLE_COUNTIES:
         col = available.get(c)
-        if col and col not in ordered:
+        if col is not None and col not in ordered:
             ordered.append(col)
     return ordered
 
