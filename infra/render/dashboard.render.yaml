@@ -10,7 +10,7 @@ services:
     healthCheckPath: /api/health/light
     # Restrict auto-deploys to a stable branch
     autoDeploy: false
-    branch: deploy/production
+    branch: main
     envVars:
       - key: NODE_ENV
         value: production
@@ -19,7 +19,7 @@ services:
       - key: MONGO_DB
         value: warrantdb
       - key: WEB_ORIGIN
-        sync: false
+        sync: false # the frontend's origin (Vercel URL) — required for CORS + cookie sameSite=none
       # SMTP settings for invitation emails
       - key: SMTP_HOST
         sync: false
@@ -43,23 +43,21 @@ services:
         sync: false # e.g. https://warrantdb-api.onrender.com — used to build the Google OAuth callback URL
       - key: SESSION_SECRET
         sync: false # generate with `openssl rand -hex 32`
+      # Telnyx messaging (see server/src/lib/messaging/telnyx.js) — added 2026-08-24,
+      # after the Twilio->Telnyx migration. Messaging degrades gracefully without
+      # these set; not required for the core dashboard (auth/cases/CRM) to work.
+      - key: TELNYX_API_KEY
+        sync: false
+      - key: TELNYX_MESSAGING_FROM_NUMBER
+        sync: false
+      - key: TELNYX_MESSAGING_PROFILE_ID
+        sync: false
+      - key: TELNYX_PUBLIC_KEY
+        sync: false
 
-staticSites:
-  - name: warrantdb-web
-    plan: starter
-    buildCommand: npm ci && npm run build
-    publishPath: ./dist
-    # Restrict auto-deploys to a stable branch
-    autoDeploy: false
-    branch: deploy/production
-    envVars:
-      - key: VITE_API_URL
-        sync: false # set to your API base URL (e.g., https://warrantdb-api.onrender.com)
-    routes:
-      # SPA rewrite: send all non-asset routes to index.html
-      - type: rewrite
-        source: /*
-        destination: /index.html
+# Frontend deploys to Vercel instead (apps/dashboard, Vite static build) —
+# decided 2026-08-24. No staticSites block here anymore; see Vercel project
+# "warrant-system" (rootDirectory: apps/dashboard) for the frontend deploy.
 
 previews:
   generation: manual

@@ -13,22 +13,9 @@ services:
       - key: MONGO_DB
         value: warrantdb
 
-  # Background worker used by scheduled jobs
-  - type: worker
-    name: warrant-pipeline
-    runtime: python
-    plan: starter
-    buildCommand: pip install -r requirements.txt
-    startCommand: sleep infinity
-    envVars:
-      - key: MONGO_URI
-        sync: false
-      - key: MONGO_DB
-        value: warrantdb
-      - key: HARRIS_BASE_FILES_URL
-        value: https://www.hcdistrictclerk.com/Common/e-services/Files
-      - key: HARRIS_DATASETS_PAGE
-        value: https://www.hcdistrictclerk.com/Common/e-services/PublicDatasets.aspx
+  # NOTE: the old "warrant-pipeline" background worker (startCommand: sleep
+  # infinity) was removed 2026-08-24 — confirmed it did nothing; the actual
+  # scraping work happens via the cron jobs below, not a persistent worker.
 
   # ── V2 Staging Cron Jobs ──────────────────────────────────────────────────────
   #
