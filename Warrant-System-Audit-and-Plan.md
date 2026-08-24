@@ -126,7 +126,7 @@ So "full county coverage" is roughly **3 of 6 counties on autopilot**, one manua
 ### Phase 0 — Verify & Stabilize (this week, low risk)
 - [ ] Confirm in the Render dashboard which repo/branch each live service actually deploys from (dashboard API, dashboard web, pipeline API, pipeline worker/crons, AI agent).
 - [ ] Confirm current status of the Twilio A2P 10DLC campaign.
-- [ ] Confirm whether `AI_Agent_Warrant` is live-handling real calls today.
+- [x] **Confirmed 2026-08-23/24**: yes — `+17133256085` routes to the Telnyx Assistant, whose tools all point at `ai-agent-warrant.onrender.com` (the standalone repo's deployment, confirmed via git remote, not this monorepo). Just fixed two real production bugs there directly (see Phase 4) and verified against real live calls — it's genuinely serving real traffic, and the standalone-repo/monorepo split is a real, now-proven risk (both bugs had to be fixed in two places to actually take effect).
 - [ ] Once confirmed, **archive** the three superseded standalone repos (`bail-bonds-UI-app`, `inmate_enrichment`, `warrantdb-pipeline`) — GitHub's "Archive" (not delete) so history is preserved but nobody accidentally commits to a dead branch.
 
 ### Phase 0.5 — Security & Housekeeping in `WarrentDB` (found 2026-08-22, do immediately — see Section 8)
@@ -207,7 +207,7 @@ User's explicit condition before any Render redeploy: prove dev is actually pull
 - [ ] Extract genuinely shared fields into `packages/shared-schema` (currently a stub).
 - [ ] Standardize env var naming across services (`MONGO_DB` vs `MONGO_DB_NAME`, proxy URL naming, etc. — already catalogued in the existing `ENV_AUDIT.md` files).
 - [ ] Remove the vestigial `sleep infinity` Render worker in the pipeline service now that cron jobs do the real work.
-- [ ] Repoint (or recreate) Render services to deploy from `warrant-system` as the single source of truth, retiring the standalone repos' deploy hooks.
+- [ ] Repoint (or recreate) Render services to deploy from `warrant-system` as the single source of truth, retiring the standalone repos' deploy hooks. **Elevated priority 2026-08-24**: this now includes the AI agent, not just the pipeline — `ai-agent-warrant.onrender.com` still deploys from the standalone `AI_Agent_Warrant` repo, and today's fix work proved the split is a real, live risk (two real bugs each needed fixing in two separate places to actually go live; easy to fix one and forget the other next time).
 
 ---
 

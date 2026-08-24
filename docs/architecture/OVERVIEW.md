@@ -8,6 +8,8 @@ warrant-system/
 │   └── dashboard/          React/Vite frontend + Express API backend
 │                           Deployment: Render (static site + Docker web service)
 │                           Port: 8080 (API), served via Nginx in production
+│                           Messaging: Telnyx (sole provider as of 2026-08-23 —
+│                           migrated off Twilio; see server/src/lib/messaging/telnyx.js)
 │
 ├── services/
 │   ├── inmate-enrichment/  TypeScript enrichment pipeline
@@ -58,10 +60,12 @@ data.
 | ------------------ | ---------------------------------- | ------------------------------------------------------------------------------ |
 | inmate-enrichment  | `inmate_enrichment` (configurable) | subjects, raw_payloads, related_parties                                        |
 | warrantdb-pipeline | `warrantdb`                        | simple*harris, simple_brazoria, simple_fortbend, simple_galveston, warrants*\* |
-| dashboard          | `warrantdb` (shared with pipeline) | users, cases, case*enrichment, check_ins, messages, payments, simple*\*        |
+| dashboard          | `warrantdb` (shared with pipeline) | users, cases, case*enrichment, check_ins, messages, payments, simple*\*, crm_overlays |
 | ai-agent           | `ai_agent` (own database)          | persons, custody_events, inquiries, logs, callback_queue, cases, checkins, links |
 
 Note: dashboard and warrantdb-pipeline share the same MongoDB database (`warrantdb`). ai-agent is deliberately **not** on that database — it has its own `checkins`/`cases` collections that would collide in name (though not in purpose) with the dashboard's `check_ins`/`cases` collections if merged onto the same database. ai-agent's code has a fast-path lookup that reads `simple_*` collections *if present in whatever database it's pointed at* (`app/telnyx_tools.py`, checks `db.list_collection_names()` before querying) — but on its own separate `ai_agent` database, those collections don't exist, so that path is currently a graceful no-op rather than live cross-service data access. Wiring it to actually read the pipeline's `simple_*` data would need a deliberate connection to `warrantdb` (read-only) and is out of scope for this merge.
+
+Note (added 2026-08-23): `crm_overlays` is a new, app-owned, dashboard-only collection (`server/src/models/CrmOverlay.js`) holding CRM state (stage, tags, notes, attachments) for every case, keyed by the case's own `_id` regardless of which `simple_*`/`v2_*` collection it actually lives in. It's deliberately decoupled from the pipeline's own collections — `warrantdb-pipeline` re-upserts `simple_*`/`v2_*` documents on every scrape cycle, so CRM fields living inside those documents would risk being silently overwritten on a re-scrape. `warrantdb-pipeline`'s row above only lists `simple_*` collections, but the pipeline also writes `v2_*` staging collections (`v2_harris_reports`, `v2_galveston_events`, etc.) into the same `warrantdb` database — that omission predates this session's work and hasn't been verified/fixed here.
 
 ## Port Map
 
