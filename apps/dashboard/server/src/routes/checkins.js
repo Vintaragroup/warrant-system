@@ -2,10 +2,11 @@ import { Router } from 'express';
 import mongoose from 'mongoose';
 import CheckIn from '../models/CheckIn.js';
 import CheckInPing from '../models/CheckInPing.js';
-import Case, { CaseJefferson } from '../models/Case.js';
 import User from '../models/User.js';
 import { filterByDepartment } from './utils/authz.js';
 import { assertPermission as ensurePermission } from './utils/authz.js';
+import { scopedCaseFilter } from './utils/caseAccess.js';
+import { buildV2UnionPipeline } from '../lib/v2Collections.js';
 import { getGpsQueue } from '../jobs/index.js';
 import { refreshGpsSchedule } from '../services/checkinsQueueService.js';
 
@@ -106,22 +107,22 @@ r.get('/options', async (req, res) => {
     if (!ensureMongoConnected(res)) return;
     ensurePermission(req, ['cases:read', 'cases:read:department']);
 
-    const scopedCaseFilter = filterByDepartment({}, req, ['county'], { includeUnassigned: true });
+    const caseScopedFilter = scopedCaseFilter(req, {});
+    const project = { _id: 1, full_name: 1, county: 1, case_number: 1, '_upsert_key.anchor': 1 };
+    const { pipeline, baseCollection } = buildV2UnionPipeline(
+      caseScopedFilter,
+      project,
+      CLIENT_OPTION_LIMIT,
+      { sortField: 'booking_date_n' }
+    );
 
-    const caseModels = [Case, CaseJefferson].filter(Boolean);
-    const perModelLimit = Math.max(Math.ceil(CLIENT_OPTION_LIMIT / caseModels.length), 5);
-
-    const casePromises = caseModels.map((Model) => {
-      const query = Model.find(scopedCaseFilter)
-        .select({ _id: 1, full_name: 1, county: 1, case_number: 1, person: 1, '_upsert_key.anchor': 1 })
-        .sort({ updatedAt: -1, booking_date: -1 })
-        .limit(perModelLimit)
-        .lean();
-
-      return withTimeout((query.maxTimeMS ? query.maxTimeMS(MAX_DB_MS) : query), MAX_DB_MS).catch((err) => {
-        console.error('checkins options (cases) error', err?.message);
-        return [];
-      });
+    const db = mongoose.connection.db;
+    const casePromise = withTimeout(
+      db.collection(baseCollection).aggregate(pipeline).toArray(),
+      MAX_DB_MS
+    ).catch((err) => {
+      console.error('checkins options (cases) error', err?.message);
+      return [];
     });
 
     const officerQuery = User.find({
@@ -133,17 +134,15 @@ r.get('/options', async (req, res) => {
       .limit(100)
       .lean();
 
-    const [caseResults, officerDocs] = await Promise.all([
-      Promise.all(casePromises),
+    const [caseDocs, officerDocs] = await Promise.all([
+      casePromise,
       withTimeout((officerQuery.maxTimeMS ? officerQuery.maxTimeMS(MAX_DB_MS) : officerQuery), MAX_DB_MS).catch((err) => {
         console.error('checkins options (officers) error', err?.message);
         return [];
       }),
     ]);
 
-    const caseDocs = Array.isArray(caseResults) ? caseResults.flat() : [];
-
-    const clientOptions = caseDocs
+    const clientOptions = (Array.isArray(caseDocs) ? caseDocs : [])
       .map(mapCaseToClientOption)
       .filter(Boolean)
       .slice(0, CLIENT_OPTION_LIMIT);

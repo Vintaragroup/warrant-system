@@ -291,6 +291,7 @@ export default function Cases() {
         caseId,
         id: item.case_number || id,
         name: item.full_name || 'Unknown',
+        mugshotUrl: item.mugshotUrl || null,
         county: prettyCounty(item.county),
         bookingDate: item.booking_date || '—',
         dob: item.dob || null,
@@ -554,6 +555,22 @@ export default function Cases() {
             ) : (
               <DataTable
                 columns={[
+                  {
+                    key: 'mugshotUrl',
+                    header: '',
+                    render: (value) =>
+                      value ? (
+                        <div className="h-9 w-9 flex-shrink-0 overflow-hidden rounded-full border border-slate-200">
+                          <img
+                            src={value}
+                            alt=""
+                            loading="lazy"
+                            onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                            className="h-full w-full object-cover"
+                          />
+                        </div>
+                      ) : null,
+                  },
                   { key: 'name', header: 'Person' },
                   { key: 'id', header: 'Case ID' },
                   { key: 'county', header: 'County' },

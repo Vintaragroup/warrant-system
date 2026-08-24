@@ -60,6 +60,8 @@ const SourceAddressSchema = new Schema(
   { _id: false }
 );
 
+export { ChecklistItemSchema, AttachmentSchema, SourceAddressSchema };
+
 const CaseSchema = new Schema(
   {
     // Display / identity

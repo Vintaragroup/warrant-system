@@ -2666,6 +2666,18 @@ export default function CaseDetail() {
 
   return (
     <div className="space-y-6">
+      <div className="flex items-start gap-4">
+        {data.mugshotUrl ? (
+          <div className="h-16 w-16 flex-shrink-0 overflow-hidden rounded-lg border border-slate-200">
+            <img
+              src={data.mugshotUrl}
+              alt=""
+              onError={(e) => { e.currentTarget.style.display = 'none'; }}
+              className="h-full w-full object-cover"
+            />
+          </div>
+        ) : null}
+        <div className="flex-1">
       <PageHeader
         title={data.full_name || 'Case detail'}
         subtitle={headerSubtitle}
@@ -2703,6 +2715,8 @@ export default function CaseDetail() {
           </div>
         )}
       />
+        </div>
+      </div>
 
       <div className="flex flex-wrap items-center gap-2">
         {Boolean(data?.needs_attention) && Array.isArray(data?.attention_reasons) && data.attention_reasons.length > 0 ? (

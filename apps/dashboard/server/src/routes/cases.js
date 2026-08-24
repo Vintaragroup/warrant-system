@@ -1,11 +1,17 @@
 import { Router } from 'express';
 import mongoose from 'mongoose';
-import Case from '../models/Case.js';
+import CrmOverlay from '../models/CrmOverlay.js';
 import Message from '../models/Message.js';
 import CaseAudit from '../models/CaseAudit.js';
 import CaseEnrichment from '../models/CaseEnrichment.js';
 import { listMessages, resendMessage as queueResendMessage } from '../services/messaging.js';
-import { assertPermission as ensurePermission, filterByDepartment, hasPermission } from './utils/authz.js';
+import { assertPermission as ensurePermission, hasPermission } from './utils/authz.js';
+import {
+  COUNTY_COLLECTIONS,
+  V2_COUNTY_COLLECTIONS,
+  scopedCaseFilter,
+  findRawCaseDocForAccessCheck,
+} from './utils/caseAccess.js';
 import { listProviders as listEnrichmentProviders, getProvider as getEnrichmentProvider, getDefaultProviderId } from '../lib/enrichment/registry.js';
 import { splitName, nextExpiry } from '../lib/enrichment/utils.js';
 import {
@@ -14,25 +20,6 @@ import {
   buildV2WindowFilter,
   buildCountyStage,
 } from '../lib/v2Collections.js';
-
-// County collections mapping (read directly from simple_* collections)
-const COUNTY_COLLECTIONS = [
-  'simple_brazoria',
-  'simple_fortbend',
-  'simple_galveston',
-  'simple_harris',
-  'simple_jefferson',
-];
-
-// V2 pipeline collections — used as fallback in GET /cases/:id so that records
-// displayed by the dashboard (which reads v2_* collections) can be resolved.
-const V2_COUNTY_COLLECTIONS = [
-  'v2_galveston_events',
-  'v2_harris_reports',
-  'v2_wharton_events',
-  'v2_lookup_results',
-  'v2_jefferson_events',
-];
 
 const COUNTY_MAP = new Map([
   ['brazoria', 'simple_brazoria'],
@@ -91,6 +78,19 @@ const r = Router();
 const ALLOWED_MANUAL_TAGS = new Set(['priority', 'needs_attention', 'disregard']);
 const TRUE_SET = new Set(['1', 'true', 'yes']);
 const CRM_STAGES = ['new', 'contacted', 'qualifying', 'accepted', 'denied'];
+
+// Only Galveston (`media: [{rel:'mugshot', url}]`) and Jefferson (`mugshot_url`)
+// scrapers currently capture a booking photo. The jail vendor's own "no photo
+// on file" sentinel (missing-image-profile) must be treated as absent, not
+// rendered as a broken image.
+function extractMugshotUrl(doc) {
+  const fromMedia = Array.isArray(doc?.media)
+    ? doc.media.find((m) => m?.rel === 'mugshot')?.url
+    : null;
+  const candidate = fromMedia || doc?.mugshot_url || null;
+  if (!candidate || /missing-image/i.test(candidate)) return null;
+  return candidate;
+}
 const CRM_CHECKLIST = [
   { key: 'id', label: 'Photo ID', required: true },
   { key: 'references', label: 'References verified', required: true },
@@ -98,18 +98,6 @@ const CRM_CHECKLIST = [
   { key: 'collateral', label: 'Collateral documented', required: false },
   { key: 'co_signer', label: 'Co-signer interviewed', required: false },
 ];
-
-const CASE_SCOPE_FIELDS = [
-  'crm_details.assignedDepartment',
-  'crm_details.department',
-  'crm_details.assignedTo',
-  'department',
-  'county',
-];
-
-function scopedCaseFilter(req, baseFilter = {}, options = { includeUnassigned: true }) {
-  return filterByDepartment(baseFilter, req, CASE_SCOPE_FIELDS, options);
-}
 
 function ensureMongoConnected(res) {
   if (!mongoose.connection || mongoose.connection.readyState !== 1) {
@@ -236,38 +224,6 @@ r.get('/enrichment/providers', (req, res) => {
   }
 });
 
-// Resolves a case by searching simple_* first, then v2_* pipeline
-// collections — same fallback order as GET /cases/:id. Many CRM routes used
-// to check case existence only via the Case Mongoose model (bound to
-// simple_harris/simple_jefferson), which 404s for any case sourced from the
-// v2_* pipeline — i.e. every case the dashboard's list/detail views actually
-// show today. This is an EXISTENCE/ACCESS check only (used to gate scoped
-// permission access and 404s) — it does not address where CRM overlay data
-// (tags/stage/notes) should physically live for non-Harris/Jefferson
-// counties when actually writing that data; see git history / PR notes.
-async function findRawCaseDocForAccessCheck(req, caseIdParam) {
-  let objectId;
-  try {
-    objectId = new mongoose.Types.ObjectId(caseIdParam);
-  } catch {
-    const err = new Error('Invalid case id');
-    err.statusCode = 400;
-    throw err;
-  }
-
-  const scoped = scopedCaseFilter(req, { _id: objectId });
-  const db = mongoose.connection.db;
-  const allCollsToSearch = [...COUNTY_COLLECTIONS, ...V2_COUNTY_COLLECTIONS];
-  for (const collName of allCollsToSearch) {
-    const found = await withTimeout(
-      db.collection(collName).findOne(scoped),
-      MAX_DB_MS,
-      `enrichment case lookup: ${collName}`
-    ).catch(() => null);
-    if (found) return found;
-  }
-  return null;
-}
 
 function buildEnrichmentParams(caseDoc = {}, overrides = {}) {
   const sourceName = overrides.fullName || overrides.name || caseDoc?.full_name || '';
@@ -736,6 +692,8 @@ r.get('/', async (req, res) => {
       tags: 1,
       bond_label: 1,
       manual_tags: 1,
+      media: 1,        // booking photo (Galveston) — stripped after mugshotUrl is derived
+      mugshot_url: 1,  // booking photo (Jefferson) — stripped after mugshotUrl is derived
       crm_stage: 1,
       crm_details: 1,
   // Phone enrichment fields (simple_harris)
@@ -850,6 +808,9 @@ r.get('/', async (req, res) => {
     const caseIds = items.map((item) => item._id).filter(Boolean);
     const { contactSet, lastMap } = await fetchContactMeta(caseIds);
 
+    const overlays = await CrmOverlay.find({ caseId: { $in: caseIds } }).lean().catch(() => []);
+    const overlayMap = new Map(overlays.map((o) => [String(o.caseId), o]));
+
     // Map items for charge fallback and attention flags
     let mappedItems = items.map(item => {
       if ((!item.charge || item.charge === '') && item.offense) {
@@ -873,6 +834,17 @@ r.get('/', async (req, res) => {
 
       item.needs_attention = needs_attention;
       item.attention_reasons = reasons;
+      item.mugshotUrl = extractMugshotUrl(item);
+      delete item.media;
+      delete item.mugshot_url;
+
+      const overlay = overlayMap.get(String(item._id));
+      if (overlay) {
+        item.manual_tags = overlay.manual_tags;
+        item.crm_stage = overlay.crm_stage;
+        item.crm_details = overlay.crm_details;
+      }
+
       if (!Array.isArray(item.manual_tags)) item.manual_tags = [];
     const idStr = String(item._id);
     item.contacted = contactSet.has(idStr);
@@ -987,31 +959,44 @@ r.patch('/:id/tags', async (req, res) => {
       return res.status(400).json({ error: `Invalid tags: ${invalid.join(', ')}` });
     }
 
-    const selector = scopedCaseFilter(req, { _id: req.params.id });
-    const existing = await withTimeout(
-      Case.findOne(selector).select({ manual_tags: 1 }),
-      MAX_DB_MS
-    );
+    let objectId;
+    try {
+      objectId = new mongoose.Types.ObjectId(req.params.id);
+    } catch {
+      return res.status(400).json({ error: 'Invalid case id' });
+    }
 
-    if (!existing) {
+    const accessible = await findRawCaseDocForAccessCheck(req, req.params.id);
+    if (!accessible) {
       return res.status(404).json({ error: 'Case not found' });
     }
 
-    const updateQuery = Case.updateOne(
-      selector,
-      { $set: { manual_tags: normalized, updatedAt: new Date() } }
+    const overlayBefore = await withTimeout(
+      CrmOverlay.findOne({ caseId: objectId }).select({ manual_tags: 1 }).lean(),
+      MAX_DB_MS
     );
+    const before = Array.isArray(overlayBefore?.manual_tags) ? overlayBefore.manual_tags : [];
 
     await withTimeout(
-      (updateQuery.maxTimeMS ? updateQuery.maxTimeMS(MAX_DB_MS) : updateQuery),
+      CrmOverlay.findOneAndUpdate(
+        { caseId: objectId },
+        {
+          $set: { manual_tags: normalized },
+          $setOnInsert: {
+            caseId: objectId,
+            sourceCollection: accessible.collection,
+            county: accessible.doc?.county || null,
+          },
+        },
+        { upsert: true, setDefaultsOnInsert: true }
+      ),
       MAX_DB_MS
     );
 
-    const before = Array.isArray(existing.manual_tags) ? existing.manual_tags : [];
-    const changed = before.sort().join(',') !== normalized.sort().join(',');
+    const changed = before.slice().sort().join(',') !== normalized.slice().sort().join(',');
     if (changed) {
       await CaseAudit.create({
-        caseId: existing._id,
+        caseId: objectId,
         type: 'manual_tags',
         actor: req.user?.email || req.user?.id || 'system',
         details: { before, after: normalized },
@@ -1132,38 +1117,20 @@ r.get('/:id', async (req, res) => {
       return res.status(400).json({ error: 'Invalid case id' });
     }
     
-    const db = mongoose.connection.db;
-    let doc = null;
-    
-    // Search simple_* county collections first, then v2_* pipeline collections as fallback.
-    // The dashboard list views read from v2_* collections, so their _ids must be resolved here too.
-    const allCollsToSearch = [...COUNTY_COLLECTIONS, ...V2_COUNTY_COLLECTIONS];
-    for (const collName of allCollsToSearch) {
-      const coll = db.collection(collName);
-      const found = await withTimeout(
-        coll.findOne({ _id: objectId }),
-        MAX_DB_MS,
-        `cases get from ${collName}`
-      ).catch(() => null);
-      
-      if (found) {
-        doc = found;
-        break;
-      }
-    }
-    
-    if (!doc) return res.status(404).json({ error: 'Not found' });
-    
-    // Now enrich with metadata from Case model
-    let caseMetadata = null;
+    const accessible = await findRawCaseDocForAccessCheck(req, req.params.id);
+    if (!accessible) return res.status(404).json({ error: 'Not found' });
+    const doc = accessible.doc;
+
+    // Now enrich with CRM state from the overlay collection
+    let overlay = null;
     try {
-      caseMetadata = await Case.findOne({ _id: objectId }).lean();
+      overlay = await CrmOverlay.findOne({ caseId: objectId }).lean();
     } catch (e) {
-      console.warn('Failed to fetch case metadata for', objectId.toString(), e?.message);
+      console.warn('Failed to fetch CRM overlay for', objectId.toString(), e?.message);
     }
 
-    // Use metadata if available, otherwise default values
-    const meta = caseMetadata || {};
+    // Use overlay if available, otherwise default values
+    const meta = overlay || {};
     if (!Array.isArray(meta.manual_tags)) meta.manual_tags = [];
     if (!meta.crm_stage) meta.crm_stage = 'new';
     
@@ -1217,6 +1184,9 @@ r.get('/:id', async (req, res) => {
         },
       },
     };
+    response.mugshotUrl = extractMugshotUrl(doc);
+    delete response.media;
+    delete response.mugshot_url;
 
     const attachmentsRaw = Array.isArray(response.crm_details.attachments) ? response.crm_details.attachments : [];
     const normalizedAttachments = normalizeAttachments(attachmentsRaw, attachmentsRaw);
@@ -1225,9 +1195,9 @@ r.get('/:id', async (req, res) => {
     const needBackfillAttachments = attachmentsRaw.some((att) => att && !att.id);
     const needBackfillContact = (!response.crm_details?.address || !response.crm_details?.address?.streetLine1) && (normalizedCrmAddress.streetLine1 || normalizedCrmAddress.city || normalizedPhone);
     
-    if (caseMetadata && (needBackfillAttachments || needBackfillContact)) {
-      await Case.updateOne(
-        { _id: objectId },
+    if (overlay && (needBackfillAttachments || needBackfillContact)) {
+      await CrmOverlay.updateOne(
+        { caseId: objectId },
         {
           $set: {
             'crm_details.attachments': normalizedAttachments,
@@ -1344,15 +1314,23 @@ r.patch('/:id/stage', async (req, res) => {
       return res.status(400).json({ error: 'Invalid stage' });
     }
 
-    const selector = scopedCaseFilter(req, { _id: req.params.id });
-    const existing = await withTimeout(
-      Case.findOne(selector).select({ crm_stage: 1 }),
+    let objectId;
+    try {
+      objectId = new mongoose.Types.ObjectId(req.params.id);
+    } catch {
+      return res.status(400).json({ error: 'Invalid case id' });
+    }
+
+    const accessible = await findRawCaseDocForAccessCheck(req, req.params.id);
+    if (!accessible) return res.status(404).json({ error: 'Case not found' });
+
+    const overlayBefore = await withTimeout(
+      CrmOverlay.findOne({ caseId: objectId }).select({ crm_stage: 1 }).lean(),
       MAX_DB_MS
     );
+    const currentStage = overlayBefore?.crm_stage || 'new';
 
-    if (!existing) return res.status(404).json({ error: 'Case not found' });
-
-    if (existing.crm_stage === stage) {
+    if (currentStage === stage) {
       return res.json({ crm_stage: stage });
     }
 
@@ -1363,21 +1341,25 @@ r.patch('/:id/stage', async (req, res) => {
       note,
     };
 
-    const updateQuery = Case.updateOne(
-      selector,
-      {
-        $set: { crm_stage: stage, updatedAt: new Date() },
-        $push: { crm_stage_history: historyEntry },
-      }
-    );
-
     await withTimeout(
-      (updateQuery.maxTimeMS ? updateQuery.maxTimeMS(MAX_DB_MS) : updateQuery),
+      CrmOverlay.findOneAndUpdate(
+        { caseId: objectId },
+        {
+          $set: { crm_stage: stage },
+          $push: { crm_stage_history: historyEntry },
+          $setOnInsert: {
+            caseId: objectId,
+            sourceCollection: accessible.collection,
+            county: accessible.doc?.county || null,
+          },
+        },
+        { upsert: true, setDefaultsOnInsert: true }
+      ),
       MAX_DB_MS
     );
 
     await CaseAudit.create({
-      caseId: existing._id,
+      caseId: objectId,
       type: 'stage_change',
       actor: req.user?.email || req.user?.id || 'system',
       details: { stage, note },
@@ -1400,20 +1382,23 @@ r.patch('/:id/crm', async (req, res) => {
   try {
     if (!ensureMongoConnected(res)) return;
     ensurePermission(req, ['cases:write', 'cases:write:department']);
-    const selector = scopedCaseFilter(req, { _id: req.params.id });
-    let qExisting = Case.findOne(selector);
-    if (qExisting && typeof qExisting.lean === 'function') {
-      qExisting = qExisting.lean();
+    let objectId;
+    try {
+      objectId = new mongoose.Types.ObjectId(req.params.id);
+    } catch {
+      return res.status(400).json({ error: 'Invalid case id' });
     }
+
+    const accessible = await findRawCaseDocForAccessCheck(req, req.params.id);
+    if (!accessible) return res.status(404).json({ error: 'Case not found' });
+
     const existing = await withTimeout(
-      qExisting && typeof qExisting.exec === 'function' ? qExisting.exec() : qExisting,
+      CrmOverlay.findOne({ caseId: objectId }).lean(),
       MAX_DB_MS
     ).catch((err) => {
       console.error('PATCH /cases/:id/crm load error', err?.message);
       return null;
     });
-
-    if (!existing) return res.status(404).json({ error: 'Case not found' });
 
     const payload = req.body || {};
     const update = {};
@@ -1474,7 +1459,7 @@ r.patch('/:id/crm', async (req, res) => {
       };
     }
 
-    const previousAttachments = Array.isArray(existing.crm_details?.attachments)
+    const previousAttachments = Array.isArray(existing?.crm_details?.attachments)
       ? existing.crm_details.attachments
       : [];
 
@@ -1490,15 +1475,19 @@ r.patch('/:id/crm', async (req, res) => {
       return res.status(400).json({ error: 'No CRM fields provided' });
     }
 
-    update.updatedAt = new Date();
-
-    let updateQuery = Case.findOneAndUpdate(selector, { $set: update }, { new: true });
-    if (updateQuery && typeof updateQuery.lean === 'function') {
-      updateQuery = updateQuery.lean();
-    }
-    const toAwait = (updateQuery && typeof updateQuery.exec === 'function') ? updateQuery.exec() : updateQuery;
     const doc = await withTimeout(
-      (toAwait && typeof toAwait.maxTimeMS === 'function') ? toAwait.maxTimeMS(MAX_DB_MS) : toAwait,
+      CrmOverlay.findOneAndUpdate(
+        { caseId: objectId },
+        {
+          $set: update,
+          $setOnInsert: {
+            caseId: objectId,
+            sourceCollection: accessible.collection,
+            county: accessible.doc?.county || null,
+          },
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      ).lean(),
       MAX_DB_MS
     ).catch((err) => {
       console.error('PATCH /cases/:id/crm update error', err?.message);
@@ -1508,7 +1497,7 @@ r.patch('/:id/crm', async (req, res) => {
     if (!doc) return res.status(404).json({ error: 'Case not found' });
 
     await CaseAudit.create({
-      caseId: doc._id,
+      caseId: objectId,
       type: 'crm_update',
       actor: req.user?.email || req.user?.id || 'system',
       details: { updated: Object.keys(update) },
@@ -1542,8 +1531,7 @@ r.post('/:id/activity', async (req, res) => {
     }
 
     ensurePermission(req, ['cases:write', 'cases:write:department']);
-    const selector = scopedCaseFilter(req, { _id: objectId });
-    const accessible = await findRawCaseDocForAccessCheck(req, objectId);
+    const accessible = await findRawCaseDocForAccessCheck(req, req.params.id);
     if (!accessible) {
       return res.status(404).json({ error: 'Case not found' });
     }
@@ -1574,14 +1562,23 @@ r.post('/:id/activity', async (req, res) => {
     });
 
     if (followUpAt) {
-      const update = {
-        'crm_details.followUpAt': followUpAt,
-        updatedAt: new Date(),
-      };
       await withTimeout(
-        Case.updateOne(selector, { $set: update }),
+        CrmOverlay.findOneAndUpdate(
+          { caseId: objectId },
+          {
+            $set: { 'crm_details.followUpAt': followUpAt },
+            $setOnInsert: {
+              caseId: objectId,
+              sourceCollection: accessible.collection,
+              county: accessible.doc?.county || null,
+            },
+          },
+          { upsert: true, setDefaultsOnInsert: true }
+        ),
         MAX_DB_MS
-      ).catch(() => {});
+      ).catch((err) => {
+        console.error('POST /cases/:id/activity followUpAt write error', err?.message);
+      });
     }
 
     const event = {
@@ -1613,8 +1610,9 @@ r.get('/:id/activity', async (req, res) => {
     }
 
     ensurePermission(req, ['cases:read', 'cases:read:department']);
-    const doc = await findRawCaseDocForAccessCheck(req, objectId);
-    if (!doc) return res.status(404).json({ error: 'Not found' });
+    const accessible = await findRawCaseDocForAccessCheck(req, req.params.id);
+    if (!accessible) return res.status(404).json({ error: 'Not found' });
+    const doc = accessible.doc;
 
     const events = [];
     if (doc.createdAt) {
@@ -1728,11 +1726,12 @@ r.get('/:caseId/enrichment/:providerId', async (req, res) => {
       return res.status(404).json({ error: 'Unknown enrichment provider' });
     }
 
-    const caseDoc = await findRawCaseDocForAccessCheck(req, req.params.caseId);
+    const accessible = await findRawCaseDocForAccessCheck(req, req.params.caseId);
 
-    if (!caseDoc) {
+    if (!accessible) {
       return res.status(404).json({ error: 'Case not found' });
     }
+    const caseDoc = accessible.doc;
 
     let qEnrichment = CaseEnrichment.findOne({
       caseId: caseDoc._id,
@@ -1782,11 +1781,12 @@ r.post('/:caseId/enrichment/:providerId', async (req, res) => {
       return res.status(404).json({ error: 'Unknown enrichment provider' });
     }
 
-    const caseDoc = await findRawCaseDocForAccessCheck(req, req.params.caseId);
+    const accessible = await findRawCaseDocForAccessCheck(req, req.params.caseId);
 
-    if (!caseDoc) {
+    if (!accessible) {
       return res.status(404).json({ error: 'Case not found' });
     }
+    const caseDoc = accessible.doc;
 
     let qLatest = CaseEnrichment.findOne({
       caseId: caseDoc._id,
@@ -1923,11 +1923,12 @@ r.post('/:caseId/enrichment/:providerId/select', async (req, res) => {
       return res.status(400).json({ error: 'recordId is required' });
     }
 
-    const caseDoc = await findRawCaseDocForAccessCheck(req, req.params.caseId);
+    const accessible = await findRawCaseDocForAccessCheck(req, req.params.caseId);
 
-    if (!caseDoc) {
+    if (!accessible) {
       return res.status(404).json({ error: 'Case not found' });
     }
+    const caseDoc = accessible.doc;
 
     let qSel = CaseEnrichment.findOne({
       caseId: caseDoc._id,

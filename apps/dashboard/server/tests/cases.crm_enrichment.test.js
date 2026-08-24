@@ -6,13 +6,17 @@ vi.mock('../src/routes/utils/authz.js', () => ({
   hasPermission: () => true,
 }));
 
-let CaseModel;
+let CrmOverlayModel;
 let CaseEnrichmentModel;
+let findRawCaseDocForAccessCheck;
 let mockProvider;
 
 // Mock mongoose connection to bypass ensureMongoConnected()
 vi.mock('mongoose', () => {
-  class FakeObjectId {}
+  class FakeObjectId {
+    constructor(v) { this.value = v; }
+    toString() { return String(this.value); }
+  }
   class FakeSchema {
     static Types = { ObjectId: FakeObjectId, Mixed: Object };
     constructor(def) { this.def = def; this._virtuals = new Map(); this.methods = {}; this._indexes = []; }
@@ -23,7 +27,7 @@ vi.mock('mongoose', () => {
   const model = () => ({ findOne: vi.fn(), aggregate: vi.fn(), create: vi.fn() });
   return {
     default: {
-      connection: { readyState: 1 },
+      connection: { readyState: 1, modelNames: () => [], model, db: { collection: () => ({ findOne: vi.fn() }) } },
       Types: { ObjectId: FakeObjectId },
       Schema: FakeSchema,
       model,
@@ -31,13 +35,29 @@ vi.mock('mongoose', () => {
   };
 });
 
-vi.mock('../src/models/Case.js', async () => {
-  const updateOne = vi.fn();
+// Real models/Case.js is left unmocked — it only defines sub-schemas
+// (ChecklistItemSchema/AttachmentSchema) that CrmOverlay.js imports, and
+// building those against the fake mongoose above is harmless. Nothing in
+// routes/cases.js touches the Case model directly anymore.
+
+vi.mock('../src/models/CrmOverlay.js', async () => {
   const findOne = vi.fn();
-  const findOneAndUpdate = vi.fn(() => ({ lean: () => ({ exec: () => Promise.resolve({ _id: '507f1f77bcf86cd799439011', crm_details: {} }) }) }));
-  const aggregate = vi.fn(() => ({ option: () => ({ exec: () => Promise.resolve([]) }) }));
-  CaseModel = { updateOne, findOne, findOneAndUpdate, aggregate };
-  return { default: CaseModel };
+  const findOneAndUpdate = vi.fn(() => ({ lean: () => ({ exec: () => Promise.resolve({ caseId: '507f1f77bcf86cd799439011', crm_details: {} }) }) }));
+  const find = vi.fn(() => ({ lean: () => Promise.resolve([]) }));
+  CrmOverlayModel = { findOne, findOneAndUpdate, find };
+  return { default: CrmOverlayModel };
+});
+
+vi.mock('../src/routes/utils/caseAccess.js', () => {
+  findRawCaseDocForAccessCheck = vi.fn();
+  return {
+    COUNTY_COLLECTIONS: ['simple_harris', 'simple_jefferson'],
+    V2_COUNTY_COLLECTIONS: ['v2_harris_reports'],
+    ALL_CASE_COLLECTIONS: ['simple_harris', 'simple_jefferson', 'v2_harris_reports'],
+    CASE_SCOPE_FIELDS: ['county'],
+    scopedCaseFilter: (req, filter) => filter,
+    findRawCaseDocForAccessCheck,
+  };
 });
 
 vi.mock('../src/models/CaseEnrichment.js', async () => {
@@ -88,35 +108,79 @@ function makeApp() {
   return app;
 }
 
+const CASE_ID = '507f1f77bcf86cd799439011';
+
 describe('Cases CRM + Enrichment', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('PATCH /cases/:id/crm updates phone and address', async () => {
-    CaseModel.updateOne.mockResolvedValue({ acknowledged: true, matchedCount: 1, modifiedCount: 1 });
-    CaseModel.findOne.mockResolvedValue({ _id: '507f1f77bcf86cd799439011', crm_details: {} });
+  it('PATCH /cases/:id/crm updates phone and address via CrmOverlay, keyed by caseId', async () => {
+    findRawCaseDocForAccessCheck.mockResolvedValue({
+      doc: { _id: CASE_ID, county: 'harris' },
+      collection: 'v2_harris_reports',
+    });
+    CrmOverlayModel.findOne.mockReturnValue({ lean: () => Promise.resolve(null) });
+    CrmOverlayModel.findOneAndUpdate.mockReturnValue({
+      lean: () => Promise.resolve({ caseId: CASE_ID, crm_stage: 'new', crm_details: { phone: '+1-555-0111', address: { city: 'Houston' } } }),
+    });
 
     const app = makeApp();
     const res = await request(app)
-      .patch('/cases/507f1f77bcf86cd799439011/crm')
+      .patch(`/cases/${CASE_ID}/crm`)
       .send({ phone: '+1-555-0111', address: { city: 'Houston', stateCode: 'TX', postalCode: '77001' } });
 
     expect(res.status).toBeLessThan(400);
-    expect(CaseModel.findOneAndUpdate).toHaveBeenCalledWith(
-      { _id: '507f1f77bcf86cd799439011' },
+    expect(CrmOverlayModel.findOneAndUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ caseId: expect.anything() }),
       expect.objectContaining({
         $set: expect.objectContaining({
           'crm_details.phone': '+1-555-0111',
           'crm_details.address': expect.objectContaining({ city: 'Houston' }),
         }),
       }),
-      expect.objectContaining({ new: true })
+      expect.objectContaining({ upsert: true, new: true })
     );
   });
 
+  it('PATCH /cases/:id/crm 404s when the case does not exist in any source collection', async () => {
+    findRawCaseDocForAccessCheck.mockResolvedValue(null);
+
+    const app = makeApp();
+    const res = await request(app)
+      .patch(`/cases/${CASE_ID}/crm`)
+      .send({ phone: '+1-555-0111' });
+
+    expect(res.status).toBe(404);
+    expect(CrmOverlayModel.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('PATCH /cases/:id/stage is idempotent — no write/audit when the stage is unchanged', async () => {
+    findRawCaseDocForAccessCheck.mockResolvedValue({
+      doc: { _id: CASE_ID, county: 'harris' },
+      collection: 'v2_harris_reports',
+    });
+    CrmOverlayModel.findOne.mockReturnValue({
+      select: () => ({ lean: () => Promise.resolve({ crm_stage: 'contacted' }) }),
+    });
+
+    const app = makeApp();
+    const res = await request(app)
+      .patch(`/cases/${CASE_ID}/stage`)
+      .send({ stage: 'contacted' });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ crm_stage: 'contacted' });
+    expect(CrmOverlayModel.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
   it('Enrichment latest/run/select flow', async () => {
-    const caseId = '507f1f77bcf86cd799439011';
+    const caseId = CASE_ID;
+    findRawCaseDocForAccessCheck.mockResolvedValue({
+      doc: { _id: caseId, full_name: 'John Doe', county: 'harris' },
+      collection: 'v2_harris_reports',
+    });
+
     // latest: none
     CaseEnrichmentModel.findOne
       .mockResolvedValueOnce(null) // for GET latest
@@ -130,7 +194,6 @@ describe('Cases CRM + Enrichment', () => {
         toObject() { return { id: 'enr1', provider: 'whitepages', candidates: [{ recordId: 'cand1' }], selectedRecords: [] }; },
       });
 
-    CaseModel.findOne.mockResolvedValue({ _id: caseId, full_name: 'John Doe', crm_details: { phone: '+1-555-0100' } });
     CaseEnrichmentModel.create.mockResolvedValue({
       toObject() { return { id: 'enr1', provider: 'whitepages', status: 'ok', candidates: [{ recordId: 'cand1' }], params: { fullName: 'John Doe' } }; },
       candidates: [{ recordId: 'cand1' }],
