@@ -95,7 +95,7 @@
     "terser": "^5.44.0",
     "typescript": "^5.7.2",
     "vite": "~7.2.7",
-    "vitest": "^1.6.0",
+    "vitest": "^3.2.4",
     "whatwg-fetch": "^3.6.20"
   }
 }
